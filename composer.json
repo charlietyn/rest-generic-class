@@ -1,7 +1,8 @@
 {
     "name": "ronu/rest-generic-class",
     "description": "Base Class for generic restfull api",
-    "type": "library",
+    "version": "1.0.0",
+    "type": "vcs",
     "license": "MIT",
     "autoload": {
         "psr-4": {
