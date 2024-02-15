@@ -18,7 +18,7 @@ use Maatwebsite\Excel\Facades\Excel;
  * @property Model $modelClass
  *
  * */
-class Services
+class BaseService
 {
 
     /** @var BaseModel|string $modelClass */
