@@ -1,0 +1,21 @@
+{
+    "name": "ronu/rest-generic-class",
+    "description": "Base Class for generic restfull api",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Ronu\\RestGenericClass\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "charlietyn",
+            "email": "charlietyn@gmail.com"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {
+        "php": "^8.0"
+    }
+}
