@@ -1,7 +1,7 @@
 <?php
 /**Generate by ASGENS
-*@author Charlietyn
-*/
+ * @author Charlietyn
+ */
 
 
 namespace Ronu\RestGenericClass;
@@ -48,7 +48,7 @@ class BaseService
 
     private function relations($query, $params): Builder
     {
-        /**@var Builder $query **/
+        /**@var Builder $query * */
         if ($params == 'all' || array_search("all", $params) !== false)
             $query = $query->with($this->modelClass::RELATIONS);
         else
@@ -83,7 +83,7 @@ class BaseService
         return $query;
     }
 
-     private function oper($query, $params, $condition = "and"): Builder
+    private function oper($query, $params, $condition = "and"): Builder
     {
         if (is_string($params))
             $params = json_decode($params, true);
@@ -91,7 +91,7 @@ class BaseService
             if ($index === "or" || $index === "and")
                 $condition = $index;
             $where = $condition == "and" ? "where" : "orWhere";
-            if ((!is_numeric($index) && !str_contains($index, ".")) && (array_key_exists("or", $parameter) || array_key_exists("and", $parameter)) || ($index === "or" || $index === "and")) {
+            if ((!is_numeric($index) && ($index != "or" && $index != "and")) && (is_array($parameter) && (array_key_exists("or", $parameter) || array_key_exists("and", $parameter))) || ($index === "or" || $index === "and")) {
                 if (array_key_exists("or", $parameter))
                     $query = $this->oper($query, $parameter['or'], "or");
                 elseif (array_key_exists("and", $parameter))
@@ -132,7 +132,7 @@ class BaseService
                     if (strpos(strtolower($where), "null")) {
                         $oper = [$oper[0]];
                     }
-                    if (!str_contains($index, "."))
+                    if (is_numeric($index))
                         $query = $query->$where(...$oper);
                     else {
                         $query = $query->whereHas($index, function ($query) use ($oper) {
@@ -144,12 +144,14 @@ class BaseService
         }
         return $query;
     }
+
     public function process_oper($value): array|false
     {
         return explode("|", $value);
     }
 
-    public  function process_query($params,$query):Builder{
+    public function process_query($params, $query): Builder
+    {
         if (isset($params["attr"])) {
             $query->av = $this->eq_attr($query, $params['attr']);
         }
@@ -169,10 +171,11 @@ class BaseService
         }
         return $query;
     }
+
     public function list_all($params): array|LengthAwarePaginator
     {
         $query = $this->modelClass->query();
-        $query=$this->process_query($params,$query);
+        $query = $this->process_query($params, $query);
         if (isset($params['pagination']))
             return $this->pagination($query, $params['pagination']);
         return ['data' => $query->get()->jsonSerialize()];
