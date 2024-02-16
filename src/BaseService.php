@@ -132,10 +132,12 @@ class BaseService
                     if (strpos(strtolower($where), "null")) {
                         $oper = [$oper[0]];
                     }
+
+                    $nestedWhere=$where."Has";
                     if (is_numeric($index))
                         $query = $query->$where(...$oper);
                     else {
-                        $query = $query->whereHas($index, function ($query) use ($oper) {
+                        $query = $query->$nestedWhere($index, function ($query) use ($oper,$where) {
                             $query->where(...$oper);
                         });
                     }
