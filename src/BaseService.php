@@ -100,8 +100,10 @@ class BaseService
                     $query = $this->oper($query, $parameter, $index);
             } else {
                 if (is_array($parameter) || str_contains($parameter, '|')) {
-                    if (is_array($parameter))
+                    if (is_array($parameter)) {
+                        $index=array_key_first($parameter);
                         $parameter = array_pop($parameter);
+                    }
                     $oper = $this->process_oper($parameter);
                     if (array_search(strtolower("notbetween"), array_map('strtolower', $oper))) {
                         $where = $where . "NotBetween";
