@@ -1,7 +1,7 @@
 <?php
 
 
-namespace Ronu\RestGenericClass;
+namespace Ronu\Core\Requests\RestGenericClass;
 
 
 use Illuminate\Foundation\Validation\ValidatesRequests;
