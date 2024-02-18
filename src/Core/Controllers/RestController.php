@@ -3,7 +3,7 @@
  *@author Charlietyn
  */
 
-namespace Ronu\Core\Controllers\RestGenericClass;
+namespace Ronu\RestGenericClass\Core\Controllers;
 
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Foundation\Bus\DispatchesJobs;

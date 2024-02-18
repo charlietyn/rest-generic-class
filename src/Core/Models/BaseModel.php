@@ -3,7 +3,7 @@
  *@author Charlietyn
  */
 
-namespace Ronu\Core\Models\RestGenericClass;
+namespace Ronu\RestGenericClass\Core\Models;
 
 use App\Scopes\NonDeletedScope;
 use Illuminate\Database\Eloquent\Model;

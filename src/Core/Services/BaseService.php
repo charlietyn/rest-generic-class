@@ -4,7 +4,7 @@
  */
 
 
-namespace Ronu\Core\Services\RestGenericClass;
+namespace Ronu\RestGenericClass\Core\Services;
 
 
 use Illuminate\Database\Eloquent\Builder;
