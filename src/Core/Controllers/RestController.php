@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Ronu\RestGenericClass\Core\Requests\BaseFormRequest;
 
 class RestController extends BaseController
 {
@@ -40,7 +41,7 @@ class RestController extends BaseController
      * Display a listing of the resource.
      * @return []
      */
-public function process_request(Request $request):array
+    public function process_request(Request $request):array
     {
         $parameters = [];
         $payloads=array_merge($request->query(),$request->request->all());
