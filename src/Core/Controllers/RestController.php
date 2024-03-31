@@ -88,7 +88,7 @@ class RestController extends BaseController
         return $result;
     }
 
-    public function update(Request $request, $id):array
+    public function update(Request $request, $id):mixed
     {
         DB::beginTransaction();
         try {
@@ -102,7 +102,7 @@ class RestController extends BaseController
         return $result;
     }
 
-    public function updateMultiple(Request $request):array
+    public function updateMultiple(Request $request):mixed
     {
         DB::beginTransaction();
         try {
@@ -117,7 +117,7 @@ class RestController extends BaseController
         return $result;
     }
 
-    public function show(Request $request, $id):BaseModel
+    public function show(Request $request, $id):mixed
     {
         $params = $this->process_request($request);
         return $this->service->show($params, $id);

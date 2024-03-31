@@ -348,7 +348,7 @@ class BaseService
         return $result;
     }
 
-    public function show($params, $id): BaseModel
+    public function show($params, $id): mixed
     {
         $query = $this->modelClass->query();
         if (isset($params['relations'])) {
