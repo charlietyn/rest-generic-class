@@ -229,7 +229,7 @@ class BaseModel extends Model
     static public function update_multiple(array $params)
     {
         $result = [];
-        $result['sucess'] = true;
+        $result['success'] = true;
         $model = new self();
         foreach ($params as $index => $item) {
             $id = $item[$model->getPrimaryKey()];
@@ -240,7 +240,7 @@ class BaseModel extends Model
             $res = $model->save();
             $result["models"][] = $res;
             if (!$res['success'])
-                $result['sucess'] = false;
+                $result['success'] = false;
         }
         return $result;
     }

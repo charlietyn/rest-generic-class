@@ -101,7 +101,7 @@ class BaseService
             } else {
                 if (is_array($parameter) || str_contains($parameter, '|')) {
                     if (is_array($parameter)) {
-                        $index=array_key_first($parameter);
+                        $index = array_key_first($parameter);
                         $parameter = array_pop($parameter);
                     }
                     $oper = $this->process_oper($parameter);
@@ -135,11 +135,11 @@ class BaseService
                         $oper = [$oper[0]];
                     }
 
-                    $nestedWhere=$where."Has";
+                    $nestedWhere = $where . "Has";
                     if (is_numeric($index))
                         $query = $query->$where(...$oper);
                     else {
-                        $query = $query->$nestedWhere($index, function ($query) use ($oper,$where) {
+                        $query = $query->$nestedWhere($index, function ($query) use ($oper, $where) {
                             $query->where(...$oper);
                         });
                     }
@@ -176,13 +176,14 @@ class BaseService
         return $query;
     }
 
-    public function list_all($params): array|LengthAwarePaginator
+    public function list_all($params, $toJson = true): mixed
     {
         $query = $this->modelClass->query();
         $query = $this->process_query($params, $query);
         if (isset($params['pagination']))
             return $this->pagination($query, $params['pagination']);
-        return ['data' => $query->get()->jsonSerialize()];
+        $value = $query->get();
+        return $toJson ? ['data' => $value->jsonSerialize()] : $value->toArray();
     }
 
     public function get_parents($modelClass, $attributes = null, $scenario = 'create', $specific = false): array
@@ -337,13 +338,13 @@ class BaseService
     public function update_multiple(array $params): array
     {
         $result = [];
-        $result['sucess'] = true;
+        $result['success'] = true;
         foreach ($params as $index => $item) {
             $id = $item[$this->modelClass->getPrimaryKey()];
             $res = $this->update($item, $id);
             $result["models"][] = $res;
             if (!$res['success'])
-                $result['sucess'] = false;
+                $result['success'] = false;
         }
         return $result;
     }
