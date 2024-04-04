@@ -53,7 +53,6 @@ class RestController extends BaseController
         array_key_exists('pagination', $payloads) ? $parameters['pagination'] = $request['pagination'] : $parameters['pagination'] = null;
         array_key_exists('orderby', $payloads) ? $parameters['orderby'] = $request['orderby'] : $parameters['orderby'] = null;
         array_key_exists('oper', $payloads) ? $parameters['oper'] = $request['oper'] : $parameters['oper'] = null;
-
         return $parameters;
     }
 
@@ -77,7 +76,7 @@ class RestController extends BaseController
     {
         DB::beginTransaction();
         try {
-            $params = $request->all();
+            $params = count($request->all())!=0?$request->all():json_decode($request->getContent(),true);
             $result = $this->service->create($params);
             if ($result['success'])
                 DB::commit();
@@ -92,7 +91,7 @@ class RestController extends BaseController
     {
         DB::beginTransaction();
         try {
-            $params = $request->all();
+            $params = count($request->all())!=0?$request->all():json_decode($request->getContent(),true);
             $result = $this->service->update($params, $id);
             DB::commit();
         } catch (\Throwable $e) {
@@ -106,7 +105,7 @@ class RestController extends BaseController
     {
         DB::beginTransaction();
         try {
-            $params = $request->all();
+            $params = count($request->all())!=0?$request->all():json_decode($request->getContent(),true);
             $result = $this->service->update_multiple($params);
             if ($result['success'])
                 DB::commit();
@@ -138,7 +137,7 @@ class RestController extends BaseController
 
     public function deleteById(Request $request):array
     {
-        $params = $request->all();
+        $params = count($request->all())!=0?$request->all():json_decode($request->getContent(),true);
         DB::beginTransaction();
         try {
             $result = $this->service->destroybyid($params);
