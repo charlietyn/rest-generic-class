@@ -11,6 +11,7 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
 
     use ValidatesRequests;
 
+
     public function parseRules($path)
     {
         $scenario = $this->getScenario();
@@ -23,25 +24,26 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
     {
         $scenario = array_key_exists('_scenario', $this->all()) ? $this->all()['_scenario'] : null;
         if (!$scenario)
-            switch ($this->method()) {
-                case 'POST':
-                    $scenario = 'create';
-                    break;
-                case 'GET'||'DELETE':
-                    $scenario = 'query';
-                    break;
-                case 'PUT' || 'PATCH':
-                    $scenario = 'update';
-                    break;
-                default:
-                    $scenario = 'create';
-            }
+            $scenario=$this->conditionalScenario($this->method());
         return $scenario;
     }
 
     public function rules(): array
     {
         return [];
+    }
+
+    public function conditionalScenario($method): string
+    {
+        $conditional= [
+            'POST' => "create",
+            'GET' => "query",
+            'DELETE' => "query",
+            'PUT' => "update",
+            'PATCH' => "update",
+            'DEFAULT' => "create",
+        ];
+        return  $conditional[$method];
     }
 
     private function query_rules()
