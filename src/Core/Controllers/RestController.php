@@ -46,6 +46,7 @@ class RestController extends BaseController
         $parameters = [];
         $payloads=array_merge($request->query(),$request->request->all());
         array_key_exists('relations', $payloads) ? $parameters['relations'] = $request['relations'] : $parameters['relations'] = null;
+        array_key_exists('_nested', $payloads) ? $parameters['_nested'] = $request['_nested'] : $parameters['_nested'] = false;
         array_key_exists('soft_delete', $payloads) ? $parameters['soft_delete'] = $request['soft_delete'] : $parameters['soft_delete'] = null;
         array_key_exists('attr', $payloads) ? $parameters['attr'] = $request['attr'] : $parameters['attr'] = null;
         array_key_exists('eq', $payloads) ? $parameters['attr'] = $request['eq'] : false;

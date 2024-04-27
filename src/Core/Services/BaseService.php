@@ -46,14 +46,28 @@ class BaseService
         return $query->paginate($pageSize);
     }
 
-    private function relations($query, $params): Builder
+    private function relations($query, $params, $oper=[]): Builder
     {
+        $flatt_array = $oper?$this->flatten_array($oper):[];
         /**@var Builder $query * */
         if ($params == 'all' || array_search("all", $params) !== false)
             $query = $query->with($this->modelClass::RELATIONS);
-        else
-            $query = $query->with($params);
+        else {
+            foreach ($params as $p)
+                $query = $query->with($p, function ($query) use ($flatt_array,$p) {
+                    if(array_key_exists($p,$flatt_array)) {
+                        $array_values = array_values($this->process_oper($flatt_array[$p]));
+                        $query->where(...$array_values);
+                    }
+                });
+        }
         return $query;
+    }
+
+    private function flatten_array(array $array)
+    {
+        return iterator_to_array(
+            new \RecursiveIteratorIterator(new \RecursiveArrayIterator($array)));
     }
 
     private function eq_attr($query, $params): Builder
@@ -156,11 +170,12 @@ class BaseService
 
     public function process_query($params, $query): Builder
     {
+        $nested=isset($params['_nested'])?$params['_nested']:false;
         if (isset($params["attr"])) {
             $query->av = $this->eq_attr($query, $params['attr']);
         }
         if (isset($params['relations'])) {
-            $query = $this->relations($query, $params['relations']);
+            $query = $this->relations($query, $params['relations'], $nested?$params["oper"]:null);
         }
         if (isset($params['select'])) {
             $query = $query->select($params['select']);
@@ -351,9 +366,10 @@ class BaseService
 
     public function show($params, $id): mixed
     {
+        $nested=isset($params['_nested'])?$params['_nested']:false;
         $query = $this->modelClass->query();
         if (isset($params['relations'])) {
-            $query = $this->relations($query, $params['relations']);
+            $query = $this->relations($query, $params['relations'],$nested?$params["oper"]:null);
         }
         if (isset($params['select'])) {
             $query = $query->select($params['select']);
