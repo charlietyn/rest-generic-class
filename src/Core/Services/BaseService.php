@@ -53,13 +53,14 @@ class BaseService
         if ($params == 'all' || array_search("all", $params) !== false)
             $query = $query->with($this->modelClass::RELATIONS);
         else {
-            foreach ($params as $p)
-                $query = $query->with($p, function ($query) use ($flatt_array,$p) {
-                    if(array_key_exists($p,$flatt_array)) {
-                        $array_values = array_values($this->process_oper($flatt_array[$p]));
-                        $query->where(...$array_values);
-                    }
-                });
+            $query = $query->with($params);
+//            foreach ($params as $p)
+//                $query = $query->with($p, function ($query) use ($flatt_array,$p) {
+//                    if(array_key_exists($p,$flatt_array)) {
+//                        $array_values = array_values($this->process_oper($flatt_array[$p]));
+//                        $query->where(...$array_values);
+//                    }
+//                });
         }
         return $query;
     }
