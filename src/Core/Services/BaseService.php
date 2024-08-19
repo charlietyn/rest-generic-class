@@ -39,7 +39,7 @@ class BaseService
         if (is_string($pagination))
             $pagination = json_decode($pagination, true);
         $currentPage = isset($pagination["page"]) ? $pagination["page"] : 1;
-        $pageSize = isset($pagination["pageSize"]) ? $pagination["pageSize"] : $this->modelClass->perPage;
+        $pageSize=isset($pagination["pageSize"]) ? $pagination["pageSize"] :  (isset($pagination["pagesize"])?$pagination["pagesize"]:null);
         Paginator::currentPageResolver(function () use ($currentPage) {
             return $currentPage;
         });
