@@ -11,6 +11,8 @@ use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Str;
+use Ronu\RestGenericClass\Core\Extension\Eloquent\Relations\MongoBelongTo;
 
 class BaseModel extends Model
 {
@@ -268,6 +270,44 @@ class BaseModel extends Model
         return $result;
     }
 
+    public function belongsToMongo($related, $foreignKey = null, $ownerKey = null, $relation = null)
+    {
+        if (is_null($relation)) {
+            $relation = $this->guessBelongsToRelation();
+        }
+        $instance = $this->newRelatedInstance($related);
+        if (is_null($foreignKey)) {
+            $foreignKey = Str::snake($relation) . '_' . $instance->getKeyName();
+        }
+        $ownerKey = $ownerKey ?: $instance->getKeyName();
+        return new MongoBelongTo(
+            $instance->newQuery(), $this, $foreignKey, $ownerKey, $relation
+        );
+    }
+
+    public function hasManyMongo($related, $foreignKey = null, $localKey = null)
+    {
+        $instance = $this->newRelatedInstance($related);
+
+        $foreignKey = $foreignKey ?: $this->getForeignKey();
+
+        $localKey = $localKey ?: $this->getKeyName();
+
+        return $this->newHasMany(
+            $instance->newQuery(), $this, $foreignKey, $localKey
+        );
+    }
+
+    public function hasOneMongo($related, $foreignKey = null, $localKey = null)
+    {
+        $instance = $this->newRelatedInstance($related);
+
+        $foreignKey = $foreignKey ?: $this->getForeignKey();
+
+        $localKey = $localKey ?: $this->getKeyName();
+
+        return $this->newHasOne($instance->newQuery(), $this, $instance->getTable() . '.' . $foreignKey, $localKey);
+    }
 }
 
 
