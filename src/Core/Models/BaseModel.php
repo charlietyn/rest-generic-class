@@ -13,6 +13,7 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Str;
 use Ronu\RestGenericClass\Core\Extension\Eloquent\Relations\MongoBelongTo;
+use Ronu\RestGenericClass\Core\Extension\Eloquent\Relations\MongoHasMany;
 
 class BaseModel extends Model
 {
@@ -293,7 +294,7 @@ class BaseModel extends Model
 
         $localKey = $localKey ?: $this->getKeyName();
 
-        return $this->newHasMany(
+        return new  MongoHasMany(
             $instance->newQuery(), $this, $foreignKey, $localKey
         );
     }
