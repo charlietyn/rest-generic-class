@@ -7,6 +7,8 @@ namespace Ronu\RestGenericClass\Core\Models;
 
 use App\Scopes\NonDeletedScope;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOneOrMany;
 use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Notifications\Notifiable;
@@ -100,9 +102,10 @@ class BaseModel extends Model
     public function save_model(array $attributes = [], $scenario = 'create')
     {
         $parent = null;
+        $this->setScenario($scenario);
         if (count($attributes) === 0)
             $attributes = $this->attributes;
-        if (isset($attributes[$this->getPrimaryKey()])) {
+        if (isset($attributes[$this->getPrimaryKey()]) && $scenario=='create') {
             $this->setScenario('update');
         }
         $validate_all = $this->validate_all($attributes, $this->getScenario());
