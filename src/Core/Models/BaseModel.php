@@ -88,7 +88,10 @@ class BaseModel extends Model
 
     public function self_validate($scenario = 'create', $specific = false, $validate_pk = true)
     {
-        $rules = $this->rules($scenario);
+        $attrKeys=array_keys($this->attributes);
+        $rules=array_filter($this->rules($scenario), function($v) use ($attrKeys) {
+            return in_array($v, $attrKeys);
+        }, ARRAY_FILTER_USE_KEY);
         if (!$validate_pk) {
             unset($rules[$this->getPrimaryKey()]);
         }
