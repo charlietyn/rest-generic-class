@@ -202,6 +202,15 @@ class BaseService
         return $toJson ? ['data' => $value->jsonSerialize()] : $value->toArray();
     }
 
+    public function get_one($params, $toJson = true): mixed
+    {
+        $query = $this->modelClass->query();
+        $query = $this->process_query($params, $query);
+        unset($params['pagination']);
+        $value = $query->get();
+        return $toJson ? ['data' => $value->jsonSerialize()[0]] : $value->toArray()[0];
+    }
+
     public function get_parents($modelClass, $attributes = null, $scenario = 'create', $specific = false): array
     {
         $parent_array = [];

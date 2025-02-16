@@ -66,8 +66,7 @@ class RestController extends BaseController
     public function getOne(Request $request):array
     {
         $params = $this->process_request($request);
-        unset($params['pagination']);
-        return $this->service->list_all($params)[0];
+        return $this->service->get_one($params);
     }
 
     /**
