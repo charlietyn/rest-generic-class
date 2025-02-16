@@ -60,8 +60,14 @@ class RestController extends BaseController
     public function index(Request $request):LengthAwarePaginator|array
     {
         $params = $this->process_request($request);
-        $result = $this->service->list_all($params);
-        return $result;
+        return $this->service->list_all($params);
+    }
+
+    public function getOne(Request $request):array
+    {
+        $params = $this->process_request($request);
+        unset($params['pagination']);
+        return $this->service->list_all($params)[0];
     }
 
     /**
