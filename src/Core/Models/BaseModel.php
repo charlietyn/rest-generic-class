@@ -90,16 +90,15 @@ class BaseModel extends Model
     {
         $attrKeys=array_keys($this->attributes);
         $originalsRules=$this->rules($scenario);
-        $rules=array_filter($originalsRules, function($v) use ($attrKeys) {
-            return in_array($v, $attrKeys);
-        }, ARRAY_FILTER_USE_KEY);
+        $rules=array_filter($originalsRules, function($v,$k) use ($attrKeys) {
+            return in_array($k, $attrKeys) || str_contains($v,'required');
+        }, ARRAY_FILTER_USE_BOTH);
         if (!$validate_pk) {
             unset($rules[$this->getPrimaryKey()]);
         }
         if ($specific) {
             $rules = array_intersect_key($rules, $this->attributes);
         }
-        $rules=count($rules)>0?$rules:$originalsRules;
         $valid = $this->getValidationFactory()->make($this->attributes, $rules);
         return ["success" => !$valid->fails(), "errors" => $valid->errors()->getMessages(), 'model' => get_called_class()];
     }
