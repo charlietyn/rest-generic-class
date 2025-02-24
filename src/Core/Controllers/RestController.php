@@ -82,7 +82,7 @@ class RestController extends BaseController
     {
         DB::beginTransaction();
         try {
-            $params = count($request->all())!=0?$request->all():json_decode($request->getContent(),true);
+            $params = count($request->all())!=0?$request->all():json_decode($request->getContent(),true)??[];
             $result = $this->service->create($params);
             if ($result['success'])
                 DB::commit();

@@ -89,7 +89,8 @@ class BaseModel extends Model
     public function self_validate($scenario = 'create', $specific = false, $validate_pk = true)
     {
         $attrKeys=array_keys($this->attributes);
-        $rules=array_filter($this->rules($scenario), function($v) use ($attrKeys) {
+        $originalsRules=$this->rules($scenario);
+        $rules=array_filter($originalsRules, function($v) use ($attrKeys) {
             return in_array($v, $attrKeys);
         }, ARRAY_FILTER_USE_KEY);
         if (!$validate_pk) {
@@ -98,6 +99,7 @@ class BaseModel extends Model
         if ($specific) {
             $rules = array_intersect_key($rules, $this->attributes);
         }
+        $rules=count($rules)>0?$rules:$originalsRules;
         $valid = $this->getValidationFactory()->make($this->attributes, $rules);
         return ["success" => !$valid->fails(), "errors" => $valid->errors()->getMessages(), 'model' => get_called_class()];
     }
