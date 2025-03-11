@@ -13,6 +13,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Mail;
 use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * @property Model $modelClass
@@ -320,10 +321,16 @@ class BaseService
         return $result;
     }
 
+    /**
+     * @throws \HttpException
+     */
     public function create(array $params): array
     {
         if (isset($params[$this->modelClass::MODEL]) || array_key_exists(0, $params)) {
-            $result = $this->save_array($params[$this->modelClass::MODEL]);
+            $params = $params[$this->modelClass::MODEL] ?? $params;
+            if (!$params)
+                throw new \HttpException(400, 'Bad Request:Params must be an array value');
+            $result = $this->save_array($params);
         } else {
             $result = $this->save($params);
         }
