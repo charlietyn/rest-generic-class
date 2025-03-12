@@ -11,6 +11,7 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
 
     use ValidatesRequests;
 
+    protected $entity_name = "";
 
     public function parseRules($path)
     {
@@ -24,7 +25,7 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
     {
         $scenario = array_key_exists('_scenario', $this->all()) ? $this->all()['_scenario'] : null;
         if (!$scenario)
-            $scenario=$this->conditionalScenario($this->method());
+            $scenario = $this->conditionalScenario($this->method());
         return $scenario;
     }
 
@@ -35,15 +36,24 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
 
     public function conditionalScenario($method): string
     {
-        $conditional= [
+        $scenario = $method;
+        $conditional = [
             'POST' => "create",
             'GET' => "query",
             'DELETE' => "query",
             'PUT' => "update",
             'PATCH' => "update",
             'DEFAULT' => "create",
+            'BULK_CREATE' => "bulk_create",
+            'BULK_UPDATE' => "bulk_update",
         ];
-        return  $conditional[$method];
+        $content =(array)json_decode(request()->getContent());
+        if ($method == 'POST' && count($content)==1 && array_key_first($content)===$this->entity_name && substr_count(request()->getPathInfo(), '/') == 2)
+            $scenario = 'BULK_CREATE';
+        elseif (str_ends_with(request()->decodedPath(), '/update_multiple')) {
+            $scenario = 'BULK_UPDATE';
+        }
+        return $conditional[$scenario];
     }
 
     private function query_rules()
@@ -56,7 +66,7 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
         $specific = isset($this->all()['_specific']);
         $attributes = $this->all();
         $rules = $specific ? array_intersect_key($this->rules(), $attributes) : $this->rules();
-        $this->validate($this, $rules,$this->messages(),$attributes);
+        $this->validate($this, $rules, $this->messages(), $attributes);
     }
 
 }

@@ -329,7 +329,7 @@ class BaseService
         if (isset($params[$this->modelClass::MODEL]) || array_key_exists(0, $params)) {
             $params = $params[$this->modelClass::MODEL] ?? $params;
             if (!$params)
-                throw new \HttpException(400, 'Bad Request:Params must be an array value');
+                throw new \HttpException(400, 'Bad Request:Params must be an array or object value');
             $result = $this->save_array($params);
         } else {
             $result = $this->save($params);
