@@ -4,11 +4,12 @@ namespace Ronu\RestGenericClass\Core\Helpers;
 
 class HelpersValidations
 {
-    public static function validateUniqueValueInUpdateArray($attribute, $value, $fail,$request,$id): void
+    public static function validateUniqueValueInUpdateArray($attribute, $value, $fail, $request, $id, $dbconection = null): void
     {
         $dataAttributes = explode('.', $attribute);
         $lengthAttributes = count($dataAttributes);
         $table = $lengthAttributes > 0 ? $dataAttributes[0] : 0;
+        $table = $dbconection ? $dbconection . '.' . $table : $table;
         $index = $lengthAttributes > 1 ? $dataAttributes[1] : 0;
         $userId = $request->users[$index][$id] ?? null;
         $attribute = $lengthAttributes > 2 ? $dataAttributes[2] : 0;
