@@ -356,9 +356,9 @@ class BaseService
         $this->modelClass = $this->modelClass->query()->findOrFail($id);
         $this->modelClass->setScenario("update");
         $specific = isset($attributes["_specific"]) ? $attributes["_specific"] : false;
+        $this->modelClass->fill($attributes);
         $valid = $this->modelClass->self_validate($this->modelClass->getScenario(), $specific);
         if ($valid['success']) {
-            $this->modelClass->fill($attributes);
             $this->modelClass->save();
             $result = ["success" => true, "model" => $this->modelClass->jsonSerialize()];
         } else {
