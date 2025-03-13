@@ -295,7 +295,7 @@ class BaseService
         return $result;
     }
 
-    public function save(array $attributes, $scenario = 'create'): array
+    public function save(array $attributes, $scenario = 'create',$validate=false): array
     {
         $parent = null;
         if (isset($attributes[$this->modelClass->getPrimaryKey()]) && $scenario != 'create') {
@@ -306,9 +306,9 @@ class BaseService
                 return ["success" => false, "message" => 'Not Found elemnt with this primary Key'];
             }
         }
-        $validate_all = $this->validate_all($attributes, $this->modelClass->getScenario());
-        if (!$validate_all['success'])
-            return $validate_all;
+        $valid = $validate?$this->validate_all($attributes, $this->modelClass->getScenario()):['success'=>true];
+        if (!$valid['success'])
+            return $valid;
         if (count($this->modelClass::PARENT) > 0) {
             $parent = $this->save_parents($this->modelClass, $attributes, $this->modelClass->getScenario());
         }
@@ -337,7 +337,7 @@ class BaseService
         return $result;
     }
 
-    public function save_array(array $attributes, $scenario = 'create'): array
+    public function save_array(array $attributes, $scenario = 'create',$validate=false): array
     {
         $result = [];
         $result['success'] = true;
@@ -351,13 +351,13 @@ class BaseService
         return $result;
     }
 
-    public function update(array $attributes, $id): array
+    public function update(array $attributes, $id,$validate=false): array
     {
         $this->modelClass = $this->modelClass->query()->findOrFail($id);
         $this->modelClass->setScenario("update");
         $specific = isset($attributes["_specific"]) ? $attributes["_specific"] : false;
         $this->modelClass->fill($attributes);
-        $valid = $this->modelClass->self_validate($this->modelClass->getScenario(), $specific);
+        $valid = $validate?$this->modelClass->self_validate($this->modelClass->getScenario(), $specific):["success"=>true];
         if ($valid['success']) {
             $this->modelClass->save();
             $result = ["success" => true, "model" => $this->modelClass->jsonSerialize()];
@@ -367,13 +367,13 @@ class BaseService
         return $result;
     }
 
-    public function update_multiple(array $params): array
+    public function update_multiple(array $params,$validate=false): array
     {
         $result = [];
         $result['success'] = true;
         foreach ($params as $index => $item) {
             $id = $item[$this->modelClass->getPrimaryKey()];
-            $res = $this->update($item, $id);
+            $res = $this->update($item, $id,$validate);
             $result["models"][] = $res;
             if (!$res['success'])
                 $result['success'] = false;
@@ -445,7 +445,3 @@ class BaseService
 
     }
 }
-
-
-
-
