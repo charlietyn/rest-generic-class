@@ -326,8 +326,8 @@ class BaseService
      */
     public function create(array $params): array
     {
-        if (isset($params[$this->modelClass::MODEL]) || array_key_exists(0, $params)) {
-            $params = $params[$this->modelClass::MODEL] ?? $params;
+        if (isset($params[strtolower($this->modelClass::MODEL)]) || array_key_exists(0, $params)) {
+            $params = $params[strtolower($this->modelClass::MODEL)] ?? $params;
             if (!$params)
                 throw new \HttpException(400, 'Bad Request:Params must be an array or object value');
             $result = $this->save_array($params);
@@ -346,6 +346,8 @@ class BaseService
             if (!$save['success']) {
                 $result['success'] = false;
                 $result['error'][] = [$save['errors'], $save['model']];
+            }else{
+                $result[]=$save;
             }
         }
         return $result;
