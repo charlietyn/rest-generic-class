@@ -1,11 +1,9 @@
 <?php
-/**Generate by ASGENS
+/** Generate by ASGENS
  * @author Charlietyn
  */
 
-
 namespace Ronu\RestGenericClass\Core\Services;
-
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -16,41 +14,65 @@ use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
- * @property Model $modelClass
+ * Class BaseService
  *
- * */
+ * This class provides a generic service layer for handling CRUD operations,
+ * pagination, filtering, and exporting data for Eloquent models.
+ *
+ * @package Ronu\RestGenericClass\Core\Services
+ */
 class BaseService
 {
-
-    /** @var BaseModel|string $modelClass */
+    /**
+     * The Eloquent model class associated with this service.
+     *
+     * @var BaseModel|string $modelClass
+     */
     public $modelClass = '';
 
     /**
-     * Services constructor.
-     * @param Model|String $modelClass
+     * BaseService constructor.
+     *
+     * Initializes the service with the given model class.
+     *
+     * @param Model|string $modelClass The model class to be used by the service.
      */
     public function __construct($modelClass)
     {
         $this->modelClass = new $modelClass;
     }
 
-
-    private function pagination($query, $pagination): LengthAwarePaginator
+    /**
+     * Handles pagination for a query.
+     *
+     * @param Builder $query The query to paginate.
+     * @param mixed $pagination Pagination configuration (can be a string or array).
+     * @return LengthAwarePaginator The paginated results.
+     */
+    private function pagination(Builder $query, mixed $pagination): LengthAwarePaginator
     {
         if (is_string($pagination))
             $pagination = json_decode($pagination, true);
         $currentPage = isset($pagination["page"]) ? $pagination["page"] : 1;
-        $pageSize=isset($pagination["pageSize"]) ? $pagination["pageSize"] :  (isset($pagination["pagesize"])?$pagination["pagesize"]:null);
+        $pageSize = isset($pagination["pageSize"]) ? $pagination["pageSize"] : (isset($pagination["pagesize"]) ? $pagination["pagesize"] : null);
         Paginator::currentPageResolver(function () use ($currentPage) {
             return $currentPage;
         });
         return $query->paginate($pageSize);
     }
 
-    private function relations($query, $params, $oper=[]): Builder
+    /**
+     * Adds relations to a query.
+     *
+     * @param Builder $query The query to add relations to.
+     * @param mixed $params The relations to load (can be 'all' or an array of relations).
+     * @param array $oper Additional operations for nested relations.
+     * @return Builder The query with relations.
+     */
+    private function relations(Builder $query, mixed $params, array $oper = []): Builder
     {
-        $flatt_array = $oper?$this->flatten_array($oper):[];
-        /**@var Builder $query * */
+        $flatt_array = $oper ? $this->flatten_array($oper) : [];
+        /** @var Builder $query */
         if ($params == 'all' || array_search("all", $params) !== false)
             $query = $query->with($this->modelClass::RELATIONS);
         else {
@@ -66,13 +88,27 @@ class BaseService
         return $query;
     }
 
-    private function flatten_array(array $array)
+    /**
+     * Flattens a multi-dimensional array.
+     *
+     * @param array $array The array to flatten.
+     * @return array The flattened array.
+     */
+    private function flatten_array(array $array): array
     {
         return iterator_to_array(
-            new \RecursiveIteratorIterator(new \RecursiveArrayIterator($array)));
+            new \RecursiveIteratorIterator(new \RecursiveArrayIterator($array))
+        );
     }
 
-    private function eq_attr($query, $params): Builder
+    /**
+     * Adds equality conditions to a query.
+     *
+     * @param Builder $query The query to add conditions to.
+     * @param mixed $params The conditions to apply (can be a string or array).
+     * @return Builder The query with conditions.
+     */
+    private function eq_attr(Builder $query, mixed $params): Builder
     {
         if (is_string($params)) {
             $params = json_decode($params);
@@ -86,7 +122,14 @@ class BaseService
         return $query;
     }
 
-    private function order_by($query, $params): Builder
+    /**
+     * Adds ordering to a query.
+     *
+     * @param Builder $query The query to add ordering to.
+     * @param mixed $params The ordering configuration (can be a string or array).
+     * @return Builder The query with ordering.
+     */
+    private function order_by(Builder $query, mixed $params): Builder
     {
         foreach ($params as $elements) {
             if (is_string($elements)) {
@@ -99,8 +142,17 @@ class BaseService
         return $query;
     }
 
-    private function oper($query, $params, $condition = "and"): Builder
+    /**
+     * Adds complex conditions to a query.
+     *
+     * @param Builder $query The query to add conditions to.
+     * @param mixed $params The conditions to apply (can be a string or array).
+     * @param string $condition The logical condition ('and' or 'or').
+     * @return Builder The query with conditions.
+     */
+    private function oper(Builder $query, mixed $params, string $condition = "and"): Builder
     {
+
         if (is_string($params))
             $params = json_decode($params, true);
         foreach ($params as $index => $parameter) {
@@ -165,19 +217,32 @@ class BaseService
         return $query;
     }
 
-    public function process_oper($value): array|false
+    /**
+     * Processes an operation string into an array.
+     *
+     * @param string $value The operation string (e.g., "field|operator|value").
+     * @return array|false The processed operation array or false on failure.
+     */
+    public function process_oper(string $value): array|false
     {
         return explode("|", $value);
     }
 
-    public function process_query($params, $query): Builder
+    /**
+     * Processes a query with the given parameters.
+     *
+     * @param array $params The parameters to process (e.g., relations, filters, pagination).
+     * @param Builder $query The query to process.
+     * @return Builder The processed query.
+     */
+    public function process_query(array $params, Builder $query): Builder
     {
-        $nested=isset($params['_nested'])?$params['_nested']:false;
+        $nested = isset($params['_nested']) ? $params['_nested'] : false;
         if (isset($params["attr"])) {
             $query->av = $this->eq_attr($query, $params['attr']);
         }
         if (isset($params['relations'])) {
-            $query = $this->relations($query, $params['relations'], $nested?$params["oper"]:null);
+            $query = $this->relations($query, $params['relations'], $nested ? $params["oper"] : null);
         }
         if (isset($params['select'])) {
             $query = $query->select($params['select']);
@@ -193,7 +258,14 @@ class BaseService
         return $query;
     }
 
-    public function list_all($params, $toJson = true): mixed
+    /**
+     * Retrieves a list of all records with optional pagination.
+     *
+     * @param array $params The parameters for filtering, sorting, and pagination.
+     * @param bool $toJson Whether to return the result as JSON.
+     * @return mixed The list of records.
+     */
+    public function list_all(array $params, bool $toJson = true): mixed
     {
         $query = $this->modelClass->query();
         $query = $this->process_query($params, $query);
@@ -203,7 +275,14 @@ class BaseService
         return $toJson ? ['data' => $value->jsonSerialize()] : $value->toArray();
     }
 
-    public function get_one($params, $toJson = true): mixed
+    /**
+     * Retrieves a single record by ID.
+     *
+     * @param array $params The parameters for filtering and relations.
+     * @param bool $toJson Whether to return the result as JSON.
+     * @return mixed The single record.
+     */
+    public function get_one(array $params, bool $toJson = true): mixed
     {
         $query = $this->modelClass->query();
         $query = $this->process_query($params, $query);
@@ -212,7 +291,16 @@ class BaseService
         return $toJson ? ['data' => $value->jsonSerialize()[0]] : $value->toArray()[0];
     }
 
-    public function get_parents($modelClass, $attributes = null, $scenario = 'create', $specific = false): array
+    /**
+     * Retrieves the parent records for a hierarchical model.
+     *
+     * @param Model|mixed $modelClass The model class.
+     * @param array|null $attributes The attributes to validate.
+     * @param string $scenario The validation scenario.
+     * @param bool $specific Whether to validate specific attributes.
+     * @return array The parent records.
+     */
+    public function get_parents(mixed $modelClass, array $attributes = null, string $scenario = 'create', bool $specific = false): array
     {
         $parent_array = [];
         if ($modelClass->hasHierarchy()) {
@@ -228,8 +316,16 @@ class BaseService
         return $parent_array;
     }
 
-
-    public function save_parents($modelClass, $attributes = null, $scenario = 'create', $specific = false): array
+    /**
+     * Saves the parent records for a hierarchical model.
+     *
+     * @param Model|mixed $modelClass The model class.
+     * @param array|null $attributes The attributes to save.
+     * @param string $scenario The save scenario.
+     * @param bool $specific Whether to save specific attributes.
+     * @return array The saved parent records.
+     */
+    public function save_parents(mixed $modelClass, array $attributes = null, string $scenario = 'create', bool $specific = false): array
     {
         $parent = null;
         if ($modelClass->hasHierarchy()) {
@@ -248,7 +344,15 @@ class BaseService
         return $parent;
     }
 
-    private function parents_validate($attributes, $scenario = null, $specific = false): array
+    /**
+     * Validates the parent records for a hierarchical model.
+     *
+     * @param array $attributes The attributes to validate.
+     * @param string|null $scenario The validation scenario.
+     * @param bool $specific Whether to validate specific attributes.
+     * @return array The validation results.
+     */
+    private function parents_validate(array $attributes, string $scenario = null, bool $specific = false): array
     {
         $result = null;
         $parents = $this->get_parents($this->modelClass, $attributes, $scenario, $specific);
@@ -262,7 +366,15 @@ class BaseService
         return $result;
     }
 
-    public function validate_all(array $attributes, $scenario = 'create', $specific = false): array
+    /**
+     * Validates all attributes for the model and its parents.
+     *
+     * @param array $attributes The attributes to validate.
+     * @param string $scenario The validation scenario.
+     * @param bool $specific Whether to validate specific attributes.
+     * @return array The validation results.
+     */
+    public function validate_all(array $attributes, string $scenario = 'create', bool $specific = false): array
     {
         $validate = [];
         if (isset($attributes[$this->modelClass->getPrimaryKey()]) && $scenario != 'create')
@@ -295,7 +407,15 @@ class BaseService
         return $result;
     }
 
-    public function save(array $attributes, $scenario = 'create',$validate=false): array
+    /**
+     * Saves a model with the given attributes.
+     *
+     * @param array $attributes The attributes to save.
+     * @param string $scenario The save scenario.
+     * @param bool $validate Whether to validate before saving.
+     * @return array The save results.
+     */
+    public function save(array $attributes, string $scenario = 'create', bool $validate = false): array
     {
         $parent = null;
         if (isset($attributes[$this->modelClass->getPrimaryKey()]) && $scenario != 'create') {
@@ -306,7 +426,7 @@ class BaseService
                 return ["success" => false, "message" => 'Not Found elemnt with this primary Key'];
             }
         }
-        $valid = $validate?$this->validate_all($attributes, $this->modelClass->getScenario()):['success'=>true];
+        $valid = $validate ? $this->validate_all($attributes, $this->modelClass->getScenario()) : ['success' => true];
         if (!$valid['success'])
             return $valid;
         if (count($this->modelClass::PARENT) > 0) {
@@ -322,14 +442,18 @@ class BaseService
     }
 
     /**
-     * @throws \HttpException
+     * Creates a new record or multiple records.
+     *
+     * @param array $params The parameters for creating the record(s).
+     * @return array The creation results.
+     * @throws HttpException If the parameters are invalid.
      */
     public function create(array $params): array
     {
         if (isset($params[strtolower($this->modelClass::MODEL)]) || array_key_exists(0, $params)) {
             $params = $params[strtolower($this->modelClass::MODEL)] ?? $params;
             if (!$params)
-                throw new \HttpException(400, 'Bad Request:Params must be an array or object value');
+                throw new HttpException(400, 'Bad Request:Params must be an array or object value');
             $result = $this->save_array($params);
         } else {
             $result = $this->save($params);
@@ -337,7 +461,15 @@ class BaseService
         return $result;
     }
 
-    public function save_array(array $attributes, $scenario = 'create',$validate=false): array
+    /**
+     * Saves multiple records.
+     *
+     * @param array $attributes The attributes for the records.
+     * @param string $scenario The save scenario.
+     * @param bool $validate Whether to validate before saving.
+     * @return array The save results.
+     */
+    public function save_array(array $attributes, string $scenario = 'create', bool $validate = false): array
     {
         $result = [];
         $result['success'] = true;
@@ -346,20 +478,28 @@ class BaseService
             if (!$save['success']) {
                 $result['success'] = false;
                 $result['error'][] = [$save['errors'], $save['model']];
-            }else{
-                $result[]=$save;
+            } else {
+                $result[] = $save;
             }
         }
         return $result;
     }
 
-    public function update(array $attributes, $id,$validate=false): array
+    /**
+     * Updates a record by ID.
+     *
+     * @param array $attributes The attributes to update.
+     * @param int $id The ID of the record to update.
+     * @param bool $validate Whether to validate before updating.
+     * @return array The update results.
+     */
+    public function update(array $attributes, int $id, bool $validate = false): array
     {
         $this->modelClass = $this->modelClass->query()->findOrFail($id);
         $this->modelClass->setScenario("update");
         $specific = isset($attributes["_specific"]) ? $attributes["_specific"] : false;
         $this->modelClass->fill($attributes);
-        $valid = $validate?$this->modelClass->self_validate($this->modelClass->getScenario(), $specific):["success"=>true];
+        $valid = $validate ? $this->modelClass->self_validate($this->modelClass->getScenario(), $specific) : ["success" => true];
         if ($valid['success']) {
             $this->modelClass->save();
             $result = ["success" => true, "model" => $this->modelClass->jsonSerialize()];
@@ -369,13 +509,20 @@ class BaseService
         return $result;
     }
 
-    public function update_multiple(array $params,$validate=false): array
+    /**
+     * Updates multiple records.
+     *
+     * @param array $params The parameters for updating the records.
+     * @param bool $validate Whether to validate before updating.
+     * @return array The update results.
+     */
+    public function update_multiple(array $params, bool $validate = false): array
     {
         $result = [];
         $result['success'] = true;
         foreach ($params as $index => $item) {
             $id = $item[$this->modelClass->getPrimaryKey()];
-            $res = $this->update($item, $id,$validate);
+            $res = $this->update($item, $id, $validate);
             $result["models"][] = $res;
             if (!$res['success'])
                 $result['success'] = false;
@@ -383,12 +530,19 @@ class BaseService
         return $result;
     }
 
-    public function show($params, $id): mixed
+    /**
+     * Retrieves a single record by ID with optional relations.
+     *
+     * @param array $params The parameters for filtering and relations.
+     * @param mixed $id The ID of the record to retrieve.
+     * @return mixed The retrieved record.
+     */
+    public function show(array $params, mixed $id): mixed
     {
-        $nested=isset($params['_nested'])?$params['_nested']:false;
+        $nested = isset($params['_nested']) ? $params['_nested'] : false;
         $query = $this->modelClass->query();
         if (isset($params['relations'])) {
-            $query = $this->relations($query, $params['relations'],$nested?$params["oper"]:null);
+            $query = $this->relations($query, $params['relations'], $nested ? $params["oper"] : null);
         }
         if (isset($params['select'])) {
             $query = $query->select($params['select']);
@@ -396,7 +550,13 @@ class BaseService
         return $query->findOrFail($id);
     }
 
-    public function destroy($id): array
+    /**
+     * Deletes a record by ID.
+     *
+     * @param mixed $id The ID of the record to delete.
+     * @return array The deletion results.
+     */
+    public function destroy(mixed $id): array
     {
         $this->modelClass = $this->modelClass->query()->findOrFail($id);
         $result = [];
@@ -407,30 +567,58 @@ class BaseService
         return $result;
     }
 
-    public function destroybyid($id): array
+    /**
+     * Deletes records by their IDs.
+     *
+     * @param array $id The IDs of the records to delete.
+     * @return array The deletion results.
+     */
+    public function destroy_by_id(array $id): array
     {
         $response = $this->modelClass::destroy($id);
         $result['success'] = $response > 0;
         return $result;
     }
 
-    public function exportExcel($params)
+    /**
+     * Exports data to an Excel file.
+     *
+     * @param array $params The parameters for filtering and selecting data.
+     * @return mixed The Excel file download response.
+     */
+    public function exportExcel(array $params): mixed
     {
         $result = $this->list_all($params);
         $columns = $params['select'] == "*" ? $this->modelClass->getFillable() : $params['select'];
         return Excel::download(new ModelExport($result['data'], $columns), 'excel.xlsx');
     }
 
-    public function exportPdf($params)
+    /**
+     * Exports data to a PDF file.
+     *
+     * @param array $params The parameters for filtering and selecting data.
+     * @return mixed The PDF file download response.
+     */
+    public function exportPdf(array $params): mixed
     {
         $result = $this->list_all($params);
         $columns = $params['select'] == "*" ? $this->modelClass->getFillable() : $params['select'];
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf', []);
-        // download PDF file with download method
         return $pdf->download('pdf_file.pdf');
     }
 
-    public static function sendEmail($view, $variables, $from, $name, $email, $subject): array
+    /**
+     * Sends an email.
+     *
+     * @param string $view The email view.
+     * @param array $variables The variables to pass to the view.
+     * @param string|mixed $from The sender's email address.
+     * @param string $name The sender's name.
+     * @param string $email The recipient's email address.
+     * @param string $subject The email subject.
+     * @return array The email sending results.
+     */
+    public static function sendEmail(string $view, array $variables, mixed $from, string $name, string $email, string $subject): array
     {
         $result = [];
         try {
@@ -444,6 +632,5 @@ class BaseService
             $result = ['success' => false, 'error' => $e->getMessage()];
         }
         return $result;
-
     }
 }

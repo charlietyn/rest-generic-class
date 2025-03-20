@@ -1,6 +1,6 @@
 <?php
 /**Generate by ASGENS
- *@author Charlietyn
+ * @author Charlietyn
  */
 
 namespace Ronu\RestGenericClass\Core\Controllers;
@@ -26,6 +26,13 @@ class RestController extends BaseController
     /** @var Services $service */
     protected $service = "";
 
+    /**
+     * Logs the action being called if logging is enabled.
+     *
+     * @param string $method
+     * @param array $parameters
+     * @return mixed
+     */
     public function callAction($method, $parameters)
     {
         $log = env('LOG_QUERY', false);
@@ -38,13 +45,15 @@ class RestController extends BaseController
     }
 
     /**
-     * Display a listing of the resource.
-     * @return []
+     * Processes the incoming request and extracts query parameters.
+     *
+     * @param Request $request
+     * @return array
      */
-    public function process_request(Request $request):array
+    public function process_request(Request $request): array
     {
         $parameters = [];
-        $payloads=array_merge($request->query(),$request->request->all());
+        $payloads = array_merge($request->query(), $request->request->all());
         array_key_exists('relations', $payloads) ? $parameters['relations'] = $request['relations'] : $parameters['relations'] = null;
         array_key_exists('_nested', $payloads) ? $parameters['_nested'] = $request['_nested'] : $parameters['_nested'] = false;
         array_key_exists('soft_delete', $payloads) ? $parameters['soft_delete'] = $request['soft_delete'] : $parameters['soft_delete'] = null;
@@ -57,32 +66,52 @@ class RestController extends BaseController
         return $parameters;
     }
 
-    public function index(Request $request):LengthAwarePaginator|array
+    /**
+     * Retrieves a paginated list of resources.
+     *
+     * @param Request $request
+     * @return LengthAwarePaginator|array
+     */
+    public function index(Request $request): LengthAwarePaginator|array
     {
         $params = $this->process_request($request);
         return $this->service->list_all($params);
     }
 
-    public function getOne(Request $request):array
+    /**
+     * Retrieves a single resource based on parameters.
+     *
+     * @param Request $request
+     * @return array
+     */
+    public function getOne(Request $request): array
     {
         $params = $this->process_request($request);
         return $this->service->get_one($params);
     }
 
     /**
-     * Display a listing of the resource.
-     * @return array
+     * Validates a request and returns success response.
+     *
+     * @param BaseFormRequest $request
+     * @return JsonResponse
      */
-    public function actionValidate(BaseFormRequest $request):JsonResponse
+    public function actionValidate(BaseFormRequest $request): JsonResponse
     {
-        return response()->json(['success'=>true], 200);;
+        return response()->json(['success' => true], 200);;
     }
 
-    public function store(BaseFormRequest $request):array
+    /**
+     * Stores a new resource.
+     *
+     * @param BaseFormRequest $request
+     * @return array
+     */
+    public function store(BaseFormRequest $request): array
     {
         DB::beginTransaction();
         try {
-            $params = count($request->all())!=0?$request->all():json_decode($request->getContent(),true)??[];
+            $params = count($request->all()) != 0 ? $request->all() : json_decode($request->getContent(), true) ?? [];
             $result = $this->service->create($params);
             if ($result['success'])
                 DB::commit();
@@ -93,11 +122,18 @@ class RestController extends BaseController
         return $result;
     }
 
-    public function update(Request $request, $id):mixed
+    /**
+     * Updates an existing resource.
+     *
+     * @param Request $request
+     * @param int $id
+     * @return mixed
+     */
+    public function update(Request $request, $id): mixed
     {
         DB::beginTransaction();
         try {
-            $params = count($request->all())!=0?$request->all():json_decode($request->getContent(),true);
+            $params = count($request->all()) != 0 ? $request->all() : json_decode($request->getContent(), true);
             $result = $this->service->update($params, $id);
             DB::commit();
         } catch (\Throwable $e) {
@@ -107,11 +143,17 @@ class RestController extends BaseController
         return $result;
     }
 
-    public function updateMultiple(Request $request):mixed
+    /**
+     * Bulk update on resources at once.
+     *
+     * @param Request $request
+     * @return mixed
+     */
+    public function updateMultiple(Request $request): mixed
     {
         DB::beginTransaction();
         try {
-            $entity=strtolower($this->modelClass::MODEL);
+            $entity = strtolower($this->modelClass::MODEL);
             $params = $request->all()[$entity];
             $result = $this->service->update_multiple($params);
             if ($result['success'])
@@ -123,13 +165,26 @@ class RestController extends BaseController
         return $result;
     }
 
-    public function show(Request $request, $id):mixed
+    /**
+     * Retrieves a single resource by ID.
+     *
+     * @param Request $request
+     * @param int $id
+     * @return mixed
+     */
+    public function show(Request $request, $id): mixed
     {
         $params = $this->process_request($request);
         return $this->service->show($params, $id);
     }
 
-    public function destroy($id):array
+    /**
+     * Deletes a resource by ID.
+     *
+     * @param int $id
+     * @return array
+     */
+    public function destroy($id): array
     {
         DB::beginTransaction();
         try {
@@ -142,12 +197,18 @@ class RestController extends BaseController
         return $result;
     }
 
-    public function deleteById(Request $request):array
+    /**
+     * Deletes multiple resources by IDs.
+     *
+     * @param Request $request
+     * @return array
+     */
+    public function deleteById(Request $request): array
     {
-        $params = count($request->all())!=0?$request->all():json_decode($request->getContent(),true);
+        $params = count($request->all()) != 0 ? $request->all() : json_decode($request->getContent(), true);
         DB::beginTransaction();
         try {
-            $result = $this->service->destroybyid($params);
+            $result = $this->service->destroy_by_id($params);
             DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -156,12 +217,25 @@ class RestController extends BaseController
         return $result;
     }
 
+
+    /**
+     * Exports data to an Excel file.
+     *
+     * @param Request $request
+     * @return mixed
+     */
     public function export_excel(Request $request)
     {
         $params = $this->process_request($request);
         return $this->service->exportExcel($params);
     }
 
+    /**
+     * Exports data to a PDF file.
+     *
+     * @param Request $request
+     * @return mixed
+     */
     public function export_pdf(Request $request)
     {
         $params = $this->process_request($request);

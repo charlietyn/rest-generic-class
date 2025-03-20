@@ -22,33 +22,40 @@ class BaseModel extends Model
     use ValidatesRequests, HasFactory, Notifiable;
 
     /**
-     * @param array $parameters
-     * @return mixed
+     * Current operation scenario (create/update)
+     * @var string
      */
-    protected $scenario = "create";
+    protected string $scenario = "create";
 
     /**
-     * /**
      * The name of the model name parameters
      *
      * @var string
      */
     const MODEL = '';
 
-    const columns=[];
     /**
-     * /**
+     * Default columns for the model
+     * @var array
+     */
+    const columns=[];
+
+    /**
      * Relations of entity
      *
      * @var array
      */
     const RELATIONS = [];
 
-
+    /**
+     * Parent class information for hierarchy
+     * @var array
+     */
     const PARENT = [];
 
     /**
-     * @return string
+     * Get the primary key for the model
+     * @return string The primary key name
      */
     public function getPrimaryKey(): string
     {
@@ -56,7 +63,8 @@ class BaseModel extends Model
     }
 
     /**
-     * @return mixed
+     * Get the current scenario (create/update)
+     * @return string The current scenario
      */
     public function getScenario()
     {
@@ -64,29 +72,41 @@ class BaseModel extends Model
     }
 
     /**
-     * @param mixed $scenario
+     * Set the scenario for the model operations
+     * @param string $scenario The scenario to set (create/update)
      */
     public function setScenario($scenario): void
     {
         $this->scenario = $scenario;
     }
 
+    /**
+     * Check if the model has a hierarchy (parent classes)
+     * @return bool True if model has parent classes, false otherwise
+     */
     public function hasHierarchy()
     {
         return count(get_called_class()::PARENT) > 0;
     }
 
+    /**
+     * Define validation rules for the model
+     * @param string $scenario The scenario to get rules for
+     * @return array The validation rules
+     */
     protected function rules($scenario)
     {
         return [];
     }
 
     /**
-     * @param array $parameters
-     * @return mixed
+     * Validate the current model instance
+     * @param string $scenario The validation scenario
+     * @param bool $specific Whether to validate only set attributes
+     * @param bool $validate_pk Whether to validate the primary key
+     * @return array Validation result with success flag and errors
      */
-
-    public function self_validate($scenario = 'create', $specific = false, $validate_pk = true)
+    public function self_validate(string $scenario = 'create', bool $specific = false, bool $validate_pk = true)
     {
         $attrKeys=array_keys($this->attributes);
         $originalsRules=$this->rules($scenario);
@@ -103,7 +123,13 @@ class BaseModel extends Model
         return ["success" => !$valid->fails(), "errors" => $valid->errors()->getMessages(), 'model' => get_called_class()];
     }
 
-    public function save_model(array $attributes = [], $scenario = 'create')
+    /**
+     * Save the model with validation
+     * @param array $attributes Attributes to save
+     * @param string $scenario The operation scenario (create/update)
+     * @return array Result with success flag and model data
+     */
+    public function save_model(array $attributes = [], string $scenario = 'create'): array
     {
         $parent = null;
         $this->setScenario($scenario);
@@ -126,7 +152,14 @@ class BaseModel extends Model
         return $result;
     }
 
-    public function save_parents($attributes = null, $scenario = 'create', $specific = false)
+    /**
+     * Save parent models in a hierarchy
+     * @param mixed|null $attributes Model attributes to save
+     * @param string $scenario The operation scenario
+     * @param bool $specific Whether to validate only set attributes
+     * @return mixed The saved parent model or null
+     */
+    public function save_parents(mixed $attributes = null, string $scenario = 'create', bool $specific = false): mixed
     {
         $parent = null;
         if ($this->hasHierarchy()) {
@@ -145,7 +178,14 @@ class BaseModel extends Model
         return $parent;
     }
 
-    public function validate_all(array $attributes, $scenario = 'create', $specific = false)
+    /**
+     * Validate model and all its parent models
+     * @param array $attributes Attributes to validate
+     * @param string $scenario The validation scenario
+     * @param bool $specific Whether to validate only set attributes
+     * @return array Result with success flag and errors
+     */
+    public function validate_all(array $attributes, string $scenario = 'create', bool $specific = false): array
     {
         $validate = [];
         if (isset($attributes[$this->getPrimaryKey()]) && $scenario == 'create')
@@ -178,7 +218,14 @@ class BaseModel extends Model
         return $result;
     }
 
-    private function parents_validate($attributes, $scenario = null, $specific = false)
+    /**
+     * Validate all parent models
+     * @param array $attributes Attributes to validate
+     * @param string|null $scenario The validation scenario
+     * @param bool $specific Whether to validate only set attributes
+     * @return array|null Validation errors or null if validation passes
+     */
+    private function parents_validate(array $attributes, string $scenario = null, bool $specific = false): ?array
     {
         $result = null;
         $parents = $this->get_parents($attributes, $scenario, $specific);
@@ -192,7 +239,14 @@ class BaseModel extends Model
         return $result;
     }
 
-    public function get_parents($attributes = null, $scenario = 'create', $specific = false)
+    /**
+     * Get all parent models with validation results
+     * @param array|null $attributes Attributes to validate
+     * @param string $scenario The validation scenario
+     * @param bool $specific Whether to validate only set attributes
+     * @return array Array of parent validation results
+     */
+    public function get_parents(array $attributes = null, string $scenario = 'create', bool $specific = false): array
     {
         $parent_array = [];
         if ($this->hasHierarchy()) {
@@ -208,7 +262,12 @@ class BaseModel extends Model
         return $parent_array;
     }
 
-    static public function create_model(array $params)
+    /**
+     * Create a new model or multiple models
+     * @param array $params Parameters for model creation
+     * @return array Result with success flag and created models
+     */
+    static public function create_model(array $params): array
     {
         if (isset($params[self::MODEL]) || array_key_exists(0, $params)) {
             $result = self::save_array($params[self::MODEL]);
@@ -220,7 +279,13 @@ class BaseModel extends Model
         return $result;
     }
 
-    static public function save_array(array $attributes, $scenario = 'create')
+    /**
+     * Save an array of models
+     * @param array $attributes Array of model attributes
+     * @param string $scenario The operation scenario
+     * @return array Result with success flag and saved models
+     */
+    static public function save_array(array $attributes, $scenario = 'create'): array
     {
         $result = [];
         $result['success'] = true;
@@ -236,7 +301,12 @@ class BaseModel extends Model
         return $result;
     }
 
-    static public function update_multiple(array $params)
+    /**
+     * Update multiple model instances
+     * @param array $params Array of model attributes with primary keys
+     * @return array Result with success flag and updated models
+     */
+    static public function update_multiple(array $params): array
     {
         $result = [];
         $result['success'] = true;
@@ -255,7 +325,13 @@ class BaseModel extends Model
         return $result;
     }
 
-    public function show($params, $id)
+    /**
+     * Show a model with optional relations and selected attributes
+     * @param array $params Query parameters (relations, select)
+     * @param mixed $id The primary key of the model to show
+     * @return mixed The found model instance
+     */
+    public function show(array $params, mixed $id): mixed
     {
         $query = $this->query();
         if (isset($params['relations'])) {
@@ -267,7 +343,12 @@ class BaseModel extends Model
         return $query->findOrFail($id);
     }
 
-    static public function destroy_model($id)
+    /**
+     * Delete a model by its primary key
+     * @param mixed $id The primary key of the model to delete
+     * @return array Result with success flag and deleted model
+     */
+    static public function destroy_model(mixed $id): array
     {
         $model = self::query()->findOrFail($id);
         $result = [];
@@ -278,7 +359,15 @@ class BaseModel extends Model
         return $result;
     }
 
-    public function belongsToMongo($related, $foreignKey = null, $ownerKey = null, $relation = null)
+    /**
+     * Create a belongs-to relationship with MongoDB
+     * @param string $related Related model class name
+     * @param string|null $foreignKey Foreign key name
+     * @param string|null $ownerKey Owner key name
+     * @param string|null $relation Relation name
+     * @return MongoBelongTo The relationship instance
+     */
+    public function belongsToMongo(string $related, string $foreignKey = null, string $ownerKey = null, string $relation = null): MongoBelongTo
     {
         if (is_null($relation)) {
             $relation = $this->guessBelongsToRelation();
@@ -293,7 +382,14 @@ class BaseModel extends Model
         );
     }
 
-    public function hasManyMongo($related, $foreignKey = null, $localKey = null)
+    /**
+     * Create a has-many relationship with MongoDB
+     * @param string $related Related model class name
+     * @param string|null $foreignKey Foreign key name
+     * @param string|null $localKey Local key name
+     * @return MongoHasMany The relationship instance
+     */
+    public function hasManyMongo(string $related, string $foreignKey = null, string $localKey = null): MongoHasMany
     {
         $instance = $this->newRelatedInstance($related);
 
@@ -301,12 +397,19 @@ class BaseModel extends Model
 
         $localKey = $localKey ?: $this->getKeyName();
 
-        return new  MongoHasMany(
+        return new MongoHasMany(
             $instance->newQuery(), $this, $foreignKey, $localKey
         );
     }
 
-    public function hasOneMongo($related, $foreignKey = null, $localKey = null)
+    /**
+     * Create a has-one relationship with MongoDB
+     * @param string $related Related model class name
+     * @param string|null $foreignKey Foreign key name
+     * @param string|null $localKey Local key name
+     * @return HasOneOrMany The relationship instance
+     */
+    public function hasOneMongo(string $related, string $foreignKey = null, string $localKey = null): HasOneOrMany
     {
         $instance = $this->newRelatedInstance($related);
 
@@ -317,10 +420,3 @@ class BaseModel extends Model
         return $this->newHasOne($instance->newQuery(), $this, $instance->getTable() . '.' . $foreignKey, $localKey);
     }
 }
-
-
-
-
-
-
-
