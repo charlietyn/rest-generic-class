@@ -1,9 +1,11 @@
 <?php
-/** Generate by ASGENS
+/**Generate by ASGENS
  * @author Charlietyn
  */
 
+
 namespace Ronu\RestGenericClass\Core\Services;
+
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -11,45 +13,31 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Mail;
 use Maatwebsite\Excel\Facades\Excel;
+use Ronu\RestGenericClass\Core\Traits\HasDynamicFilters;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
- * Class BaseService
+ * @property Model $modelClass
  *
- * This class provides a generic service layer for handling CRUD operations,
- * pagination, filtering, and exporting data for Eloquent models.
- *
- * @package Ronu\RestGenericClass\Core\Services
- */
+ * */
 class BaseService
 {
-    /**
-     * The Eloquent model class associated with this service.
-     *
-     * @var BaseModel|string $modelClass
-     */
+    use HasDynamicFilters;
+
+    /** @var BaseModel|string $modelClass */
     public $modelClass = '';
 
     /**
-     * BaseService constructor.
-     *
-     * Initializes the service with the given model class.
-     *
-     * @param Model|string $modelClass The model class to be used by the service.
+     * Services constructor.
+     * @param Model|String $modelClass
      */
     public function __construct($modelClass)
     {
         $this->modelClass = new $modelClass;
     }
 
-    /**
-     * Handles pagination for a query.
-     *
-     * @param Builder $query The query to paginate.
-     * @param mixed $pagination Pagination configuration (can be a string or array).
-     * @return LengthAwarePaginator The paginated results.
-     */
-    private function pagination(Builder $query, mixed $pagination): LengthAwarePaginator
+
+    private function pagination($query, $pagination): LengthAwarePaginator
     {
         if (is_string($pagination))
             $pagination = json_decode($pagination, true);
@@ -61,18 +49,10 @@ class BaseService
         return $query->paginate($pageSize);
     }
 
-    /**
-     * Adds relations to a query.
-     *
-     * @param Builder $query The query to add relations to.
-     * @param mixed $params The relations to load (can be 'all' or an array of relations).
-     * @param array $oper Additional operations for nested relations.
-     * @return Builder The query with relations.
-     */
-    private function relations(Builder $query, mixed $params, array $oper = []): Builder
+    private function relations($query, $params, $oper = []): Builder
     {
         $flatt_array = $oper ? $this->flatten_array($oper) : [];
-        /** @var Builder $query */
+        /**@var Builder $query * */
         if ($params == 'all' || array_search("all", $params) !== false)
             $query = $query->with($this->modelClass::RELATIONS);
         else {
@@ -88,27 +68,25 @@ class BaseService
         return $query;
     }
 
-    /**
-     * Flattens a multi-dimensional array.
-     *
-     * @param array $array The array to flatten.
-     * @return array The flattened array.
-     */
-    private function flatten_array(array $array): array
+    private function flatten_array(array $array)
     {
         return iterator_to_array(
-            new \RecursiveIteratorIterator(new \RecursiveArrayIterator($array))
-        );
+            new \RecursiveIteratorIterator(new \RecursiveArrayIterator($array)));
     }
 
     /**
-     * Adds equality conditions to a query.
+     * Add equality conditions to the query.
      *
-     * @param Builder $query The query to add conditions to.
-     * @param mixed $params The conditions to apply (can be a string or array).
-     * @return Builder The query with conditions.
+     * If the parameter is a string, it will be json decoded.
+     *
+     * If the value of the parameter is an array, it will be added as a whereIn condition.
+     * Otherwise, it will be added as a where condition.
+     *
+     * @param Builder $query
+     * @param array|string $params
+     * @return Builder
      */
-    private function eq_attr(Builder $query, mixed $params): Builder
+    private function eq_attr($query, $params): Builder
     {
         if (is_string($params)) {
             $params = json_decode($params);
@@ -122,14 +100,20 @@ class BaseService
         return $query;
     }
 
+
     /**
-     * Adds ordering to a query.
+     * Apply ordering to the query based on given parameters.
      *
-     * @param Builder $query The query to add ordering to.
-     * @param mixed $params The ordering configuration (can be a string or array).
-     * @return Builder The query with ordering.
+     * The method accepts an array of elements where each element can be a JSON string
+     * or an array that contains column and direction pairs. The query will be ordered
+     * according to the specified columns and directions.
+     *
+     * @param Builder $query The query builder instance to apply the ordering on.
+     * @param array|string $params The parameters for ordering, can be a JSON string
+     *                             or an array of column-direction pairs.
+     * @return Builder The query builder instance with applied ordering.
      */
-    private function order_by(Builder $query, mixed $params): Builder
+    private function order_by($query, $params): Builder
     {
         foreach ($params as $elements) {
             if (is_string($elements)) {
@@ -143,99 +127,62 @@ class BaseService
     }
 
     /**
-     * Adds complex conditions to a query.
+     * Process the value of the 'oper' parameter.
      *
-     * @param Builder $query The query to add conditions to.
-     * @param mixed $params The conditions to apply (can be a string or array).
-     * @param string $condition The logical condition ('and' or 'or').
-     * @return Builder The query with conditions.
-     */
-    private function oper(Builder $query, mixed $params, string $condition = "and"): Builder
-    {
-
-        if (is_string($params))
-            $params = json_decode($params, true);
-        foreach ($params as $index => $parameter) {
-            if ($index === "or" || $index === "and")
-                $condition = $index;
-            $where = $condition == "and" ? "where" : "orWhere";
-            if ((!is_numeric($index) && ($index != "or" && $index != "and")) && (is_array($parameter) && (array_key_exists("or", $parameter) || array_key_exists("and", $parameter))) || ($index === "or" || $index === "and")) {
-                if (array_key_exists("or", $parameter))
-                    $query = $this->oper($query, $parameter['or'], "or");
-                elseif (array_key_exists("and", $parameter))
-                    $query = $this->oper($query, $parameter['and'], "and");
-                elseif ($index === "or" || "and")
-                    $query = $this->oper($query, $parameter, $index);
-            } else {
-                if (is_array($parameter) || str_contains($parameter, '|')) {
-                    if (is_array($parameter)) {
-                        $index = array_key_first($parameter);
-                        $parameter = array_pop($parameter);
-                    }
-                    $oper = $this->process_oper($parameter);
-                    if (array_search(strtolower("notbetween"), array_map('strtolower', $oper))) {
-                        $where = $where . "NotBetween";
-                    } elseif (array_search(strtolower("between"), array_map('strtolower', $oper))) {
-                        $where = $where . "Between";
-                    } elseif (array_search(strtolower("notin"), array_map('strtolower', $oper))) {
-                        $where = $where . "NotIn";
-                    } elseif (array_search(strtolower("in"), array_map('strtolower', $oper))) {
-                        $where = $where . "In";
-                    } elseif (array_search(strtolower("notnull"), array_map('strtolower', $oper))) {
-                        $where = $where . "NotNull";
-                    } elseif (array_search(strtolower("null"), array_map('strtolower', $oper))) {
-                        $where = $where . "Null";
-                    }
-                    if (strpos($where, "etween") || strpos(strtolower($where), "in")) {
-                        $oper[2] = [...$oper];
-                        if (strpos(strtolower($where), "in")) {
-                            unset($oper[2][0]);
-                            unset($oper[2][1]);
-                        }
-                        if (strpos(strtolower($where), "etween")) {
-                            unset($oper[2][0]);
-                            unset($oper[2][1]);
-                        }
-                        unset($oper[3]);
-                        unset($oper[1]);
-                    }
-                    if (strpos(strtolower($where), "null")) {
-                        $oper = [$oper[0]];
-                    }
-
-                    $nestedWhere = $where . "Has";
-                    if (is_numeric($index))
-                        $query = $query->$where(...$oper);
-                    else {
-                        $query = $query->$nestedWhere($index, function ($query) use ($oper, $where) {
-                            $query->where(...$oper);
-                        });
-                    }
-                }
-            }
-        }
-        return $query;
-    }
-
-    /**
-     * Processes an operation string into an array.
+     * The parameter value is expected to be a string with values separated by
+     * the '|' character. The method splits the string into an array and returns
+     * it. If the parameter value is not a string, the method returns false.
      *
-     * @param string $value The operation string (e.g., "field|operator|value").
-     * @return array|false The processed operation array or false on failure.
+     * @param string $value The value of the 'oper' parameter.
+     * @return array|false The processed value, or false if the value is not a string.
      */
-    public function process_oper(string $value): array|false
+    public function process_oper($value): array|false
     {
         return explode("|", $value);
     }
 
     /**
-     * Processes a query with the given parameters.
+     * Build a query with a given array of conditions.
      *
-     * @param array $params The parameters to process (e.g., relations, filters, pagination).
-     * @param Builder $query The query to process.
-     * @return Builder The processed query.
+     * The first key of the array is a logical operator, either 'and' or 'or'.
+     * The value associated with this key is an array of conditions.  Each condition
+     * is a string in the format of `column_name operator value`.  For example,
+     * `name = John Smith`.  The operator can be any of the following:
+     *
+     *  - `=`
+     *  - `!=`
+     *  - `<`
+     *  - `>`
+     *  - `<=`
+     *  - `>=`
+     *  - `like`
+     *  - `not like`
+     *  - `ilike`
+     *  - `not ilike`
+     *  - `in`
+     *  - `not in`
+     *  - `between`
+     *  - `not between`
+     *  - `null`
+     *  - `not null`
+     *  - `exists`
+     *  - `not exists`
+     *  - `regexp`
+     *  - `not regexp`
+     *
+     * The value can be a single value, or an array of values.
+     *
+     * @param Builder $query
+     * @param array $params
+     * @param string $condition
+     * @return Builder
      */
-    public function process_query(array $params, Builder $query): Builder
+    private function oper($query, $params, $condition = "and"): Builder
+    {
+        return $this->applyFilters($query,$params,$condition);
+    }
+
+    public function process_query($params, $query): Builder
     {
         $nested = isset($params['_nested']) ? $params['_nested'] : false;
         if (isset($params["attr"])) {
@@ -258,14 +205,7 @@ class BaseService
         return $query;
     }
 
-    /**
-     * Retrieves a list of all records with optional pagination.
-     *
-     * @param array $params The parameters for filtering, sorting, and pagination.
-     * @param bool $toJson Whether to return the result as JSON.
-     * @return mixed The list of records.
-     */
-    public function list_all(array $params, bool $toJson = true): mixed
+    public function list_all($params, $toJson = true): mixed
     {
         $query = $this->modelClass->query();
         $query = $this->process_query($params, $query);
@@ -275,14 +215,7 @@ class BaseService
         return $toJson ? ['data' => $value->jsonSerialize()] : $value->toArray();
     }
 
-    /**
-     * Retrieves a single record by ID.
-     *
-     * @param array $params The parameters for filtering and relations.
-     * @param bool $toJson Whether to return the result as JSON.
-     * @return mixed The single record.
-     */
-    public function get_one(array $params, bool $toJson = true): mixed
+    public function get_one($params, $toJson = true): mixed
     {
         $query = $this->modelClass->query();
         $query = $this->process_query($params, $query);
@@ -291,16 +224,7 @@ class BaseService
         return $toJson ? ['data' => $value->jsonSerialize()[0]] : $value->toArray()[0];
     }
 
-    /**
-     * Retrieves the parent records for a hierarchical model.
-     *
-     * @param Model|mixed $modelClass The model class.
-     * @param array|null $attributes The attributes to validate.
-     * @param string $scenario The validation scenario.
-     * @param bool $specific Whether to validate specific attributes.
-     * @return array The parent records.
-     */
-    public function get_parents(mixed $modelClass, array $attributes = null, string $scenario = 'create', bool $specific = false): array
+    public function get_parents($modelClass, $attributes = null, $scenario = 'create', $specific = false): array
     {
         $parent_array = [];
         if ($modelClass->hasHierarchy()) {
@@ -316,16 +240,8 @@ class BaseService
         return $parent_array;
     }
 
-    /**
-     * Saves the parent records for a hierarchical model.
-     *
-     * @param Model|mixed $modelClass The model class.
-     * @param array|null $attributes The attributes to save.
-     * @param string $scenario The save scenario.
-     * @param bool $specific Whether to save specific attributes.
-     * @return array The saved parent records.
-     */
-    public function save_parents(mixed $modelClass, array $attributes = null, string $scenario = 'create', bool $specific = false): array
+
+    public function save_parents($modelClass, $attributes = null, $scenario = 'create', $specific = false): array
     {
         $parent = null;
         if ($modelClass->hasHierarchy()) {
@@ -344,15 +260,7 @@ class BaseService
         return $parent;
     }
 
-    /**
-     * Validates the parent records for a hierarchical model.
-     *
-     * @param array $attributes The attributes to validate.
-     * @param string|null $scenario The validation scenario.
-     * @param bool $specific Whether to validate specific attributes.
-     * @return array The validation results.
-     */
-    private function parents_validate(array $attributes, string $scenario = null, bool $specific = false): array
+    private function parents_validate($attributes, $scenario = null, $specific = false): array
     {
         $result = null;
         $parents = $this->get_parents($this->modelClass, $attributes, $scenario, $specific);
@@ -366,15 +274,7 @@ class BaseService
         return $result;
     }
 
-    /**
-     * Validates all attributes for the model and its parents.
-     *
-     * @param array $attributes The attributes to validate.
-     * @param string $scenario The validation scenario.
-     * @param bool $specific Whether to validate specific attributes.
-     * @return array The validation results.
-     */
-    public function validate_all(array $attributes, string $scenario = 'create', bool $specific = false): array
+    public function validate_all(array $attributes, $scenario = 'create', $specific = false): array
     {
         $validate = [];
         if (isset($attributes[$this->modelClass->getPrimaryKey()]) && $scenario != 'create')
@@ -407,15 +307,7 @@ class BaseService
         return $result;
     }
 
-    /**
-     * Saves a model with the given attributes.
-     *
-     * @param array $attributes The attributes to save.
-     * @param string $scenario The save scenario.
-     * @param bool $validate Whether to validate before saving.
-     * @return array The save results.
-     */
-    public function save(array $attributes, string $scenario = 'create', bool $validate = false): array
+    public function save(array $attributes, $scenario = 'create', $validate = false): array
     {
         $parent = null;
         if (isset($attributes[$this->modelClass->getPrimaryKey()]) && $scenario != 'create') {
@@ -442,11 +334,7 @@ class BaseService
     }
 
     /**
-     * Creates a new record or multiple records.
-     *
-     * @param array $params The parameters for creating the record(s).
-     * @return array The creation results.
-     * @throws HttpException If the parameters are invalid.
+     * @throws HttpException
      */
     public function create(array $params): array
     {
@@ -461,15 +349,7 @@ class BaseService
         return $result;
     }
 
-    /**
-     * Saves multiple records.
-     *
-     * @param array $attributes The attributes for the records.
-     * @param string $scenario The save scenario.
-     * @param bool $validate Whether to validate before saving.
-     * @return array The save results.
-     */
-    public function save_array(array $attributes, string $scenario = 'create', bool $validate = false): array
+    public function save_array(array $attributes, $scenario = 'create', $validate = false): array
     {
         $result = [];
         $result['success'] = true;
@@ -485,15 +365,7 @@ class BaseService
         return $result;
     }
 
-    /**
-     * Updates a record by ID.
-     *
-     * @param array $attributes The attributes to update.
-     * @param int $id The ID of the record to update.
-     * @param bool $validate Whether to validate before updating.
-     * @return array The update results.
-     */
-    public function update(array $attributes, int $id, bool $validate = false): array
+    public function update(array $attributes, $id, $validate = false): array
     {
         $this->modelClass = $this->modelClass->query()->findOrFail($id);
         $this->modelClass->setScenario("update");
@@ -509,14 +381,7 @@ class BaseService
         return $result;
     }
 
-    /**
-     * Updates multiple records.
-     *
-     * @param array $params The parameters for updating the records.
-     * @param bool $validate Whether to validate before updating.
-     * @return array The update results.
-     */
-    public function update_multiple(array $params, bool $validate = false): array
+    public function update_multiple(array $params, $validate = false): array
     {
         $result = [];
         $result['success'] = true;
@@ -530,14 +395,7 @@ class BaseService
         return $result;
     }
 
-    /**
-     * Retrieves a single record by ID with optional relations.
-     *
-     * @param array $params The parameters for filtering and relations.
-     * @param mixed $id The ID of the record to retrieve.
-     * @return mixed The retrieved record.
-     */
-    public function show(array $params, mixed $id): mixed
+    public function show($params, $id): mixed
     {
         $nested = isset($params['_nested']) ? $params['_nested'] : false;
         $query = $this->modelClass->query();
@@ -550,13 +408,7 @@ class BaseService
         return $query->findOrFail($id);
     }
 
-    /**
-     * Deletes a record by ID.
-     *
-     * @param mixed $id The ID of the record to delete.
-     * @return array The deletion results.
-     */
-    public function destroy(mixed $id): array
+    public function destroy($id): array
     {
         $this->modelClass = $this->modelClass->query()->findOrFail($id);
         $result = [];
@@ -567,58 +419,30 @@ class BaseService
         return $result;
     }
 
-    /**
-     * Deletes records by their IDs.
-     *
-     * @param array $id The IDs of the records to delete.
-     * @return array The deletion results.
-     */
-    public function destroy_by_id(array $id): array
+    public function destroybyid($id): array
     {
         $response = $this->modelClass::destroy($id);
         $result['success'] = $response > 0;
         return $result;
     }
 
-    /**
-     * Exports data to an Excel file.
-     *
-     * @param array $params The parameters for filtering and selecting data.
-     * @return mixed The Excel file download response.
-     */
-    public function exportExcel(array $params): mixed
+    public function exportExcel($params)
     {
         $result = $this->list_all($params);
         $columns = $params['select'] == "*" ? $this->modelClass->getFillable() : $params['select'];
         return Excel::download(new ModelExport($result['data'], $columns), 'excel.xlsx');
     }
 
-    /**
-     * Exports data to a PDF file.
-     *
-     * @param array $params The parameters for filtering and selecting data.
-     * @return mixed The PDF file download response.
-     */
-    public function exportPdf(array $params): mixed
+    public function exportPdf($params)
     {
         $result = $this->list_all($params);
         $columns = $params['select'] == "*" ? $this->modelClass->getFillable() : $params['select'];
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf', []);
+        // download PDF file with download method
         return $pdf->download('pdf_file.pdf');
     }
 
-    /**
-     * Sends an email.
-     *
-     * @param string $view The email view.
-     * @param array $variables The variables to pass to the view.
-     * @param string|mixed $from The sender's email address.
-     * @param string $name The sender's name.
-     * @param string $email The recipient's email address.
-     * @param string $subject The email subject.
-     * @return array The email sending results.
-     */
-    public static function sendEmail(string $view, array $variables, mixed $from, string $name, string $email, string $subject): array
+    public static function sendEmail($view, $variables, $from, $name, $email, $subject): array
     {
         $result = [];
         try {
@@ -632,5 +456,6 @@ class BaseService
             $result = ['success' => false, 'error' => $e->getMessage()];
         }
         return $result;
+
     }
 }
