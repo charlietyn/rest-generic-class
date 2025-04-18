@@ -13,7 +13,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Mail;
 use Maatwebsite\Excel\Facades\Excel;
-use Ronu\RestGenericClass\Core\Traits\HasDynamicFilters;
+use Ronu\RestGenericClass\Core\Traits\HasDynamicFilter;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
@@ -22,7 +22,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  * */
 class BaseService
 {
-    use HasDynamicFilters;
+    use HasDynamicFilter;
 
     /** @var BaseModel|string $modelClass */
     public $modelClass = '';

@@ -10,7 +10,7 @@ namespace Ronu\RestGenericClass\Core\Traits;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Illuminate\Database\Eloquent\Builder;
 
-trait HasDynamicFilters
+trait HasDynamicFilter
 {
     /**
      * Apply dynamic filters to a query builder instance using a structured array.
