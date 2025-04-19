@@ -48,6 +48,9 @@ trait HasDynamicFilter
      *  - `not in`
      *  - `between`
      *  - `not between`
+     *  - `date`
+     *  - `not date`
+     *  - `notdate`
      *  - `null`
      *  - `not null`
      *  - `exists`
@@ -67,21 +70,21 @@ trait HasDynamicFilter
         if (is_string($params))
             $params = json_decode($params, true);
         if (!($query instanceof Builder)) {
-            throw new HttpException(501,'The $query must be an instance of Builder or EloquentBuilder.');
+            throw new HttpException(501, 'The $query must be an instance of Builder or EloquentBuilder.');
         }
 
         foreach ($params as $logic => $conditions) {
             if (!in_array($logic, ['and', 'or'])) {
-                throw new HttpException(400,"Unsupported logical key '$logic'. Only 'and' and 'or' are allowed.");
+                throw new HttpException(400, "Unsupported logical key '$logic'. Only 'and' and 'or' are allowed.");
             }
             $query->{$condition === 'or' ? 'orWhere' : 'where'}(function ($subQuery) use ($conditions, $logic) {
-                $laravelOperators = ['=', '!=', '<>', '<', '>', '<=', '>=', 'like', 'not like','not like', 'ilike', 'not ilike', 'in', 'not in','notin', 'between', 'not between','notbetween', 'null', 'not null','notnull', 'exists', 'not exists','notexists', 'regexp', 'not regexp'];
+                $laravelOperators = ['=', '!=', '<>', '<', '>', '<=', '>=', 'like', 'not like', 'not like', 'ilike', 'not ilike', 'in', 'not in', 'notin', 'between', 'date', 'not date', 'notdate', 'not between', 'notbetween', 'null', 'not null', 'notnull', 'exists', 'not exists', 'notexists', 'regexp', 'not regexp'];
                 if (is_array($conditions)) {
                     if (array_is_list($conditions)) {
                         foreach ($conditions as $conditionString) {
                             [$field, $operator, $value] = $this->parseConditionString($conditionString);
                             if (!in_array($operator, $laravelOperators))
-                                throw new HttpException(400,"The $operator value is not a valid operator.");
+                                throw new HttpException(400, "The $operator value is not a valid operator.");
                             $value = $this->decodeValue($value);
                             $method = $logic === 'or' ? 'orWhere' : 'where';
                             match (strtolower($operator)) {
@@ -97,6 +100,9 @@ trait HasDynamicFilter
                                 'between' => $subQuery->{$method . 'Between'}($field, $this->toBetweenArray($value)),
                                 'not between' => $subQuery->{$method . 'NotBetween'}($field, $this->toBetweenArray($value)),
                                 'notbetween' => $subQuery->{$method . 'NotBetween'}($field, $this->toBetweenArray($value)),
+                                'date' => $subQuery->{$method . 'Date'}($field,$value),
+                                'not date' => $subQuery->{$method . 'Date'}($field,'!=',$value),
+                                'notdate' => $subQuery->{$method . 'Date'}($field,'!=',$value),
                                 default => $subQuery->{$method}($field, $operator, $value),
                             };
                         }
@@ -126,7 +132,7 @@ trait HasDynamicFilter
         $parts = explode('|', $condition, 3);
 
         if (count($parts) !== 3) {
-            throw new HttpException(400,"Invalid condition: '$condition'. Expected format 'field|operator|value'.");
+            throw new HttpException(400, "Invalid condition: '$condition'. Expected format 'field|operator|value'.");
         }
 
         return $parts;
@@ -164,7 +170,7 @@ trait HasDynamicFilter
     protected function toBetweenArray($val)
     {
         if (!is_array($val) || count($val) !== 2) {
-            throw new HttpException(400,"The 'between' operator requires exactly two values.");
+            throw new HttpException(400, "The 'between' operator requires exactly two values.");
         }
 
         return $val;

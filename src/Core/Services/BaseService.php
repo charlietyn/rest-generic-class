@@ -163,6 +163,9 @@ class BaseService
      *  - `not in`
      *  - `between`
      *  - `not between`
+     *  - `date`
+     *  - `not date`
+     *  - `notdate`
      *  - `null`
      *  - `not null`
      *  - `exists`
@@ -179,7 +182,7 @@ class BaseService
      */
     private function oper($query, $params, $condition = "and"): Builder
     {
-        return $this->applyFilters($query,$params,$condition);
+        return $this->applyFilters($query, $params, $condition);
     }
 
     public function process_query($params, $query): Builder
