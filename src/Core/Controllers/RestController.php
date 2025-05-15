@@ -14,17 +14,20 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Ronu\RestGenericClass\Core\Models\BaseModel;
 use Ronu\RestGenericClass\Core\Requests\BaseFormRequest;
+use Ronu\RestGenericClass\Core\Services\BaseService;
 
 class RestController extends BaseController
 {
     use AuthorizesRequests, DispatchesJobs, ValidatesRequests;
 
-    protected $modelClass = "";
+    /** @var BaseModel|string $service */
+    protected BaseModel |string $modelClass = "";
 
 
-    /** @var Services $service */
-    protected $service = "";
+    /** @var BaseService|string $service */
+    protected BaseService|string $service = "";
 
     /**
      * Logs the action being called if logging is enabled.
@@ -208,7 +211,7 @@ class RestController extends BaseController
         $params = count($request->all()) != 0 ? $request->all() : json_decode($request->getContent(), true);
         DB::beginTransaction();
         try {
-            $result = $this->service->destroy_by_id($params);
+            $result = $this->service->destroybyid($params);
             DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
