@@ -34,6 +34,9 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
         $scenario = $this->getScenario();
         $rules = include($path);
         $rules['query'] = $this->query_rules();
+        if (!array_key_exists($scenario, $rules)) {
+            throw new \Exception("Scenario '$scenario' not found in validation rules.");
+        }
         return $rules[$scenario];
     }
 
