@@ -8,6 +8,7 @@ namespace Ronu\RestGenericClass\Core\Models;
 use App\Scopes\NonDeletedScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOneOrMany;
 use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -389,7 +390,7 @@ class BaseModel extends Model
      * @param string|null $localKey Local key name
      * @return MongoHasMany The relationship instance
      */
-    public function hasManyMongo(string $related, string $foreignKey = null, string $localKey = null): MongoHasMany
+    public function hasManyMongo(string $related, string $foreignKey = null, string $localKey = null): MongoHasMany| HasMany
     {
         $instance = $this->newRelatedInstance($related);
 
