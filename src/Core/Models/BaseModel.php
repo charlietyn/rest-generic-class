@@ -112,7 +112,7 @@ class BaseModel extends Model
         $attrKeys=array_keys($this->attributes);
         $originalsRules=$this->rules($scenario);
         $rules=array_filter($originalsRules, function($v,$k) use ($attrKeys) {
-            return in_array($k, $attrKeys) || str_contains($v,'required');
+            return in_array($k, $attrKeys) || is_array($v)?array_search('required',$v):str_contains($v,'required');
         }, ARRAY_FILTER_USE_BOTH);
         if (!$validate_pk) {
             unset($rules[$this->getPrimaryKey()]);
