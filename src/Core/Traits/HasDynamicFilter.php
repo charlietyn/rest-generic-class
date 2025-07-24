@@ -103,7 +103,7 @@ trait HasDynamicFilter
                                 'date' => $subQuery->{$method . 'Date'}($field,$value),
                                 'not date' => $subQuery->{$method . 'Date'}($field,'!=',$value),
                                 'notdate' => $subQuery->{$method . 'Date'}($field,'!=',$value),
-                                'ilikeu' => $subQuery->whereRaw("unaccent($field) ILIKE unaccent(?)", ["%$value%"]),
+                                'ilikeu' => $logic=='or'?$subQuery->orWhereRaw("unaccent($field) ILIKE unaccent(?)", ["%$value%"]):$subQuery->whereRaw("unaccent($field) ILIKE unaccent(?)", ["%$value%"]),
                                 default => $subQuery->{$method}($field, $operator, $value),
                             };
                         }
