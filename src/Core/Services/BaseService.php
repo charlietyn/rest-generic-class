@@ -182,6 +182,10 @@ class BaseService
      */
     private function oper($query, $params, $condition = "and"): Builder
     {
+        $allNumericKeys = array_keys($params) === array_filter(array_keys($params), 'is_int');
+        if ($allNumericKeys) {
+            $params = ['and' => $params];
+        }
         return $this->applyFilters($query, $params, $condition);
     }
 
