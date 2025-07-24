@@ -1,7 +1,7 @@
 {
     "name": "ronu/rest-generic-class",
     "description": "Base Class for generic restfull api in laravel",
-    "version": "1.3.8",
+    "version": "1.3.9",
     "type": "vcs",
     "license": "MIT",
     "autoload": {

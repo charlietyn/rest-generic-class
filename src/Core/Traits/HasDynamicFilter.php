@@ -72,13 +72,13 @@ trait HasDynamicFilter
         if (!($query instanceof Builder)) {
             throw new HttpException(501, 'The $query must be an instance of Builder or EloquentBuilder.');
         }
-
+        $postgresDriver = $query->getConnection()->getDriverName() === 'pgsql';
         foreach ($params as $logic => $conditions) {
             if (!in_array($logic, ['and', 'or'])) {
                 throw new HttpException(400, "Unsupported logical key '$logic'. Only 'and' and 'or' are allowed.");
             }
             $query->{$condition === 'or' ? 'orWhere' : 'where'}(function ($subQuery) use ($conditions, $logic) {
-                $laravelOperators = ['=', '!=', '<>', '<', '>', '<=', '>=', 'like', 'not like', 'not like', 'ilike', 'not ilike', 'in', 'not in', 'notin', 'between', 'date', 'not date', 'notdate', 'not between', 'notbetween', 'null', 'not null', 'notnull', 'exists', 'not exists', 'notexists', 'regexp', 'not regexp'];
+                $laravelOperators = ['=', '!=', '<>', '<', '>', '<=', '>=', 'like', 'not like', 'not like', 'ilike', 'ilikeu', 'not ilike', 'in', 'not in', 'notin', 'between', 'date', 'not date', 'notdate', 'not between', 'notbetween', 'null', 'not null', 'notnull', 'exists', 'not exists', 'notexists', 'regexp', 'not regexp'];
                 if (is_array($conditions)) {
                     if (array_is_list($conditions)) {
                         foreach ($conditions as $conditionString) {
@@ -103,6 +103,7 @@ trait HasDynamicFilter
                                 'date' => $subQuery->{$method . 'Date'}($field,$value),
                                 'not date' => $subQuery->{$method . 'Date'}($field,'!=',$value),
                                 'notdate' => $subQuery->{$method . 'Date'}($field,'!=',$value),
+                                'ilikeu' => $subQuery->whereRaw("unaccent($field) ILIKE unaccent(?)", ["%$value%"]),
                                 default => $subQuery->{$method}($field, $operator, $value),
                             };
                         }
