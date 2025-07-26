@@ -216,8 +216,19 @@ class BaseService
     {
         $query = $this->modelClass->query();
         $query = $this->process_query($params, $query);
-        if (isset($params['pagination']))
-            return $this->pagination($query, $params['pagination']);
+        $pagination_lower=array_change_key_case($params['pagination']);
+        if (isset($params['pagination']) && array_key_exists('pagesize',$pagination_lower))
+            if (!isset($params['pagination']['infinity']) || $params['pagination']['infinity'] !== true)
+                return $this->pagination($query, $params['pagination']);
+            else {
+                $cursor= isset($params['pagination']['cursor']) ? $params['pagination']['cursor'] : null;
+                $items=$query->cursorPaginate($pagination_lower['pagesize'],['*'],'cursor', $cursor);
+                return [
+                    'data' => $items->items(),
+                    'next_cursor' => $items->nextCursor()?->encode(),
+                    'has_more' => $items->hasMorePages(),
+                ];
+            }
         $value = $query->get();
         return $toJson ? ['data' => $value->jsonSerialize()] : $value->toArray();
     }
