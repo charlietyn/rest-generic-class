@@ -387,7 +387,9 @@ class BaseService
 
     public function update(array $attributes, $id, $validate = false): array
     {
-        $this->modelClass = $this->modelClass->query()->findOrFail($id);
+        $query = $this->modelClass->query();
+        $fieldKeyUpdate = $this->modelClass->getFieldKeyUpdate()??$this->modelClass->getPrimaryKey();
+        $this->modelClass = $this->modelClass->getFieldKeyUpdate()? $query->where([$fieldKeyUpdate=>$id])->firstOrFail():$query->findOrFail($id);
         $this->modelClass->setScenario("update");
         $specific = isset($attributes["_specific"]) ? $attributes["_specific"] : false;
         $this->modelClass->fill($attributes);

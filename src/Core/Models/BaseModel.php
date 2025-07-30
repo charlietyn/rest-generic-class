@@ -22,6 +22,7 @@ class BaseModel extends Model
 {
     use ValidatesRequests, HasFactory, Notifiable;
 
+
     /**
      * Current operation scenario (create/update)
      * @var string
@@ -41,6 +42,11 @@ class BaseModel extends Model
      */
     const columns=[];
 
+    /**
+     * Reference columns for update the model
+     * @var string|integer|null
+     */
+    protected string|int|null $fieldKeyUpdate;
     /**
      * Relations of entity
      *
@@ -63,6 +69,15 @@ class BaseModel extends Model
         return $this->primaryKey;
     }
 
+    /**
+     * Get the reference column for update model
+     * @return string The field name
+     */
+
+    public function getFieldKeyUpdate(): string|int|null
+    {
+        return $this->fieldKeyUpdate;
+    }
     /**
      * Get the current scenario (create/update)
      * @return string The current scenario
