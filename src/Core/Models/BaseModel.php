@@ -46,7 +46,7 @@ class BaseModel extends Model
      * Reference columns for update the model
      * @var string|integer|null
      */
-    protected string|int|null $fieldKeyUpdate;
+    protected string|int|null $fieldKeyUpdate=null;
     /**
      * Relations of entity
      *
