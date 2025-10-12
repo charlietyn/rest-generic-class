@@ -76,7 +76,7 @@ trait HasReadableUserPermissions
      */
     public function effectivePermissions(?string $guard = null): Collection
     {
-        $direct = $this->getDirectPermissions();
+        $direct = $this->enabled_permissions()->get();
         $via = $this->getEnabledPermissionsViaRoles();
 
         $all = $direct->concat($via);
