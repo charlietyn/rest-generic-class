@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Illuminate\Support\Collection;
+use MongoDB\Laravel\Eloquent\Model;
 use Nwidart\Modules\Facades\Module;
 use Symfony\Component\Translation\Exception\NotFoundResourceException;
 
@@ -142,8 +143,6 @@ trait HasPermissionsService
             'per_role' => $perRole,
         ];
     }
-
-
 
     /**
      *
@@ -289,8 +288,157 @@ trait HasPermissionsService
         ];
     }
 
-    // ----------------- Helpers (private) -----------------
 
+    /**
+     * Retrieves permissions for a list of roles based on their identifiers.
+     *
+     * @param array $roleIdsOrNames An array of role identifiers (IDs or names).
+     * @param string $by The type of identifier to use for filtering roles ('id' or 'name').
+     *                   Defaults to 'id'.
+     * @param string|null $guard The guard name to filter permissions (optional).
+     * @param array|null $modules A list of module names to filter permissions (optional).
+     * @param array|null $entities A list of entities or module.entity pairs to filter permissions (optional).
+     *
+     * @return array An array containing role information and their associated permissions.
+     *               Each entry includes:
+     *               - 'role': The name of the role.
+     *               - 'guard': The guard name.
+     *               - 'count': The number of permissions.
+     *               - 'permissions': A list of permissions, each containing:
+     *                   - 'id': The permission ID.
+     *                   - 'name': The permission name.
+     *                   - 'module': The module name.
+     *                   - 'guard': The guard name.
+     */
+    public function getPermissionsByRoles(array $roleIdsOrNames, string $by = 'id', ?string $guard = null, ?array $modules = null, ?array $entities = null): array
+    {
+        $roleModelClass = app(config('permission.models.role'));
+        $permissionClass = app(config('permission.models.permission'));
+        $roleHasPermissionClass = app(config('permission.pivot_models.role_has_permissions'));
+        /** @var Model $roleModelClass */
+        $query = $roleModelClass::query()
+            ->with(['permissions' => function ($q) use ($guard, $roleHasPermissionClass) {
+                if (!empty($guard)) {
+                    $q->where('guard_name', $guard);
+                }
+                $roleHasPermissionClass::applyActiveToRelation($q, now());
+            }]);
+        /** @var \Illuminate\Database\Eloquent\Collection $globalPerms */
+        $globalPerms = $permissionClass::query()
+            ->notRestricted()
+            ->when($guard, fn($q) => $q->where('guard_name', $guard))
+            ->get();
+        $by === 'name'
+            ? $query->whereIn('name', $roleIdsOrNames)
+            : $query->whereIn('id', $roleIdsOrNames);
+
+        $roles = $query->get();
+        foreach ($roles as $role) {
+            $merged = $role->permissions
+                ->concat($globalPerms)
+                ->unique('id')
+                ->values();
+
+            // Sobrescribimos la relación en memoria para que aguas abajo vean el conjunto efectivo
+            $role->setRelation('permissions', $merged);
+        }
+        $result = [];
+        foreach ($roles as $role) {
+            $perms = $guard || $modules || $entities
+                ? $role->permissionsFiltered($guard, $modules, $entities)
+                : $role->permissions;
+
+            $result[] = [
+                'role' => $role->name,
+                'guard' => $guard,
+                'count' => $perms->count(),
+                'permissions' => $perms->map(fn($p) => [
+                    'id' => $p->id,
+                    'name' => $p->name,
+                    'module' => $p->module,
+                    'guard' => $p->guard_name,
+                ])->values()->all(),
+            ];
+        }
+        return $result;
+    }
+
+    /**
+     * Retrieves permissions for a list of users based on their identifiers.
+     *
+     * @param array $userSearchValues An array of user identifiers (IDs, emails, or names).
+     * @param string $by The type of identifier to use for filtering users ('id', 'email', or 'name').
+     *                   Defaults to 'id'.
+     * @param string|null $guard The guard name to filter permissions (optional).
+     * @param array|null $modules A list of module names to filter permissions (optional).
+     * @param array|null $entities A list of entities or module.entity pairs to filter permissions (optional).
+     *
+     * @return array An array containing user information and their associated permissions.
+     *               Each entry includes:
+     *               - 'user': An array with 'id', 'email', and 'name' of the user.
+     *               - 'guard': The guard name.
+     *               - 'count': The number of permissions.
+     *               - 'permissions': A list of permissions, each containing:
+     *                   - 'id': The permission ID.
+     *                   - 'name': The permission name.
+     *                   - 'module': The module name.
+     *                   - 'guard': The guard name.
+     */
+    public function getPermissionsByUsers(array $userSearchValues, $userModelClass, string $by = 'id', ?string $guard = null, ?array $modules = null, ?array $entities = null): array
+    {
+        /** @var Model $userModelClass */
+        $modelHasPermissionClass = app(config('permission.pivot_models.model_has_permissions'));
+        $permissionTable = config('permission.table_names.permissions');
+        $query = $userModelClass::query()->with(['permissions' => function ($q) use ($guard, $modelHasPermissionClass) {
+            if (!empty($guard)) {
+                $q->where('guard_name', $guard);
+            }
+            $modelHasPermissionClass::applyActiveToRelation($q, now());
+        }]);
+        $query->whereIn($by, $userSearchValues);
+        $users = $query->get();
+        $result = [];
+        foreach ($users as $user) {
+            $perms = $user->permissionsFiltered($guard, $modules, $entities);
+            $result[] = [
+                'user' => [
+                    'id' => $user->getKey(),
+                    'email' => $user->email,
+                    'name' => $user->name,
+                ],
+                'guard' => $guard,
+                'count' => $perms->count(),
+                'permissions' => $perms->map(fn($p) => [
+                    'id' => $p->id,
+                    'name' => $p->name,
+                    'module' => $p->module,
+                    'guard' => $p->guard_name,
+                ])->values()->all(),
+            ];
+        }
+        return $result;
+    }
+
+    /**
+     * Aggregates a list of permissions by performing either a union or intersection operation.
+     *
+     * @param array $lists An array of lists, where each list contains permissions to aggregate.
+     * @param string $mode The aggregation mode, either 'union' (default) or 'intersection'.
+     *                     - 'union': Combines all permissions into a unique set.
+     *                     - 'intersection': Finds common permissions across all lists.
+     *
+     * @return \Illuminate\Support\Collection A collection of aggregated permission names.
+     */
+    public function aggregate(array $lists, string $mode = 'union'): Collection
+    {
+        $sets = collect($lists)->map(fn($row) => collect($row['permissions'])->pluck('name')->unique());
+        if ($mode === 'intersection') {
+            return $sets->reduce(fn($carry, $set) => $carry ? $carry->intersect($set) : $set, null) ?? collect();
+        }
+        return $sets->flatten()->unique()->values();
+    }
+
+    // ----------------- Helpers (private) -----------------
 
     /**
      * NEW: Resolver roles por 'name' o por 'id' (guard-aware).
@@ -298,7 +446,7 @@ trait HasPermissionsService
      */
     private function resolveRoles(array $roleInputs, string $by, string $guard): Collection
     {
-        $roleClass= app(config('permission.models.role'));
+        $roleClass = app(config('permission.models.role'));
         $list = collect($roleInputs)
             ->flatMap(fn($r) => Str::of((string)$r)->explode(','))
             ->map(fn($r) => trim((string)$r))
@@ -317,8 +465,13 @@ trait HasPermissionsService
                 }
             }
         } catch (\Throwable $e) {
-            $column = explode('"', $e->getMessage())[1] ?? 'unknown';
-            throw new \RuntimeException("Error querying roles by '{$by}' (column '{$column}' may not exist). ");
+            $message = $e->getMessage();
+            if (str_contains($e->getMessage(), 'column') && str_contains($e->getMessage(), 'does not exist')) {
+                $column = explode('"', $e->getMessage())[1] ?? 'unknown';
+                $message = "Error querying roles by '{$by}' (column '{$column}' may not exist). ";
+            }
+            $message = "Error querying roles by '{$by}' " . explode('ERROR', explode('(', $e->getMessage())[0])[1] ?? 'unknown';
+            throw new \RuntimeException($message);
         }
         return $roles->filter()->unique('id')->values();
     }
@@ -334,7 +487,7 @@ trait HasPermissionsService
     ): array
     {
         $names = collect();
-        $permissionClass= app(config('permission.models.permission'));
+        $permissionClass = app(config('permission.models.permission'));
         if (!empty($perms)) {
             $names = $names->merge($this->normalizeList($perms));
         }
@@ -352,12 +505,12 @@ trait HasPermissionsService
         }
 
         if (!empty($modules)) {
-            $byModule = $this->loadPermsByModule($guard, $this->normalizeList($modules),$permissionClass);
+            $byModule = $this->loadPermsByModule($guard, $this->normalizeList($modules), $permissionClass);
             $names = $names->merge($byModule->pluck('name'));
         }
 
         if (!empty($entities)) {
-            $byEntity = $this->loadPermsByEntity($guard, $this->normalizeList($entities),$permissionClass);
+            $byEntity = $this->loadPermsByEntity($guard, $this->normalizeList($entities), $permissionClass);
             $names = $names->merge($byEntity->pluck('name'));
         }
 
@@ -383,7 +536,7 @@ trait HasPermissionsService
         return [$resolved->unique('id')->values(), $createdNames, $usedDefaultAll];
     }
 
-    private function loadPermsByModule(string $guard, array $modules,$permissionClass): Collection
+    private function loadPermsByModule(string $guard, array $modules, $permissionClass): Collection
     {
         return $permissionClass::query()
             ->where('guard_name', $guard)
@@ -391,7 +544,7 @@ trait HasPermissionsService
             ->get();
     }
 
-    private function loadPermsByEntity(string $guard, array $entities,$permissionClass): Collection
+    private function loadPermsByEntity(string $guard, array $entities, $permissionClass): Collection
     {
         return $permissionClass::query()
             ->where('guard_name', $guard)
@@ -460,7 +613,7 @@ trait HasPermissionsService
         Artisan::call('cache:forget spatie.permission.cache');
         $exclude_actions = ['.create', '.edit'];
         $cfg = config('route-permissions', []);
-        $permissionClass= app(config('permission.models.permission'));
+        $permissionClass = app(config('permission.models.permission'));
         $routes = Route::getRoutes();
         $modules = Module::toCollection()->map->getName()->values()->all();
         $rows = [];

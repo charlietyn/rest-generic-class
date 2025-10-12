@@ -482,24 +482,4 @@ class BaseService
 
     }
 
-    /**
-     * Retrieve a collection of modules based on their enabled/disabled status.
-     *
-     * @param bool|null $type Determines the type of modules to retrieve:
-     *                        - `true`: Only enabled modules.
-     *                        - `false`: Only disabled modules.
-     *                        - `null`: All modules (default).
-     * @return array An array of modules filtered by the specified type.
-     */
-    public static function getModules($type = null): array
-    {
-        $result = Module::toCollection();
-        if ($type === true) {
-            $result = $result->filter->isEnabled();
-        }
-        if ($type === false) {
-            $result = $result->reject->isEnabled();
-        }
-        return $result->map->getName()->values()->all();
-    }
 }
