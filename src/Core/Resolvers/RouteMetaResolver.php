@@ -261,6 +261,7 @@ class RouteMetaResolver
         }
 
         $uri = $route->uri();
+        $version= preg_replace('/[^A-Za-z0-9]/', '', Str::of(Arr::get($route->getAction(), 'version'))->value());
         $name = $route->getName();
         $verbs = $route->methods();
         $actionArr = $route->getAction();
@@ -286,7 +287,7 @@ class RouteMetaResolver
         $module = $this->resolveModuleFromUri($uri, $guard, $modules) ?: $this->defaultModule;
 
         $canonical = $this->toCanonicalName($module, $model, $type);
-
+        $canonical=$version?$version.'.'.$canonical:$canonical;
         $controllerAction = $controllerClass
             ? class_basename($controllerClass) . '@' . ($methodName ?? '-')
             : '-';
