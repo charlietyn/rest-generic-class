@@ -9,6 +9,7 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Collection;
 use MongoDB\Laravel\Eloquent\Model;
 use Nwidart\Modules\Facades\Module;
+use Ronu\RestGenericClass\Core\Resolvers\RouteMetaResolver;
 use Symfony\Component\Translation\Exception\NotFoundResourceException;
 
 /**
@@ -617,81 +618,39 @@ trait HasPermissionsService
         $routes = Route::getRoutes();
         $modules = Module::toCollection()->map->getName()->values()->all();
         $rows = [];
-
+        /** @var RouteMetaResolver $resolver */
+        $resolver = app(RouteMetaResolver::class);
         foreach ($routes as $route) {
-            $prefix = $route->getPrefix();
-            if (!str_starts_with($prefix, $guard))
-                continue;
-            $uri = $route->uri();                // e.g. 'api/users/{user}'
-            $name = $route->getName();            // e.g. 'users.index'
-            $array_name = explode('.', $name);
-            $resource_action = "." . $array_name[count($array_name) - 1];
-            if ($name && in_array($resource_action, $exclude_actions))
-                continue;
-            $verbs = $route->methods();            // e.g. ['GET', 'HEAD']
-            $act = $route->getAction();          // array
-            $mw = $route->gatherMiddleware();   // array
-
-            if (!$this->passesFilters($uri, $name, $mw, $cfg)) {
+            $meta = $resolver->resolveFromRoute($route, $guard, $modules, $cfg);
+            if (!$meta) {
                 continue;
             }
-            $controller = $act['controller'] ?? null;
-            $methodName = null;
-            $controllerClass = null;
-
-            if ($controller && str_contains($controller, '@')) {
-                [$controllerClass, $methodName] = explode('@', $controller);
-            } elseif ($controller && class_exists($controller)) {
-                // Invokable
-                $controllerClass = $controller;
-                $methodName = '__invoke';
-            }
-            $model = $this->inferModel($controllerClass, $name, $uri, $cfg);
-            if (!$model) {
-                $model = $this->firstUriSegment($uri) ?: 'misc';
-            }
-            $type = $this->inferAction($methodName, $verbs, $name, $cfg);
-            if (!$type) {
-                $type = 'read';
-                continue;
-            }
-            $permissionName = Str::of($model)->snake()->replace('_', '-') . '.' . Str::of($type)->snake()->replace('_', '-');
-            $module_name = $this->generalModule;
-            if (str_starts_with($uri, $guard . '/')) {
-                $uri_explode = explode('/', $uri);
-                if (count($uri_explode) > 2 && in_array($uri_explode[1], $modules)) {
-                    $module_name = $uri_explode[1];
-                }
-            }
-            $permissionName = $module_name != $this->generalModule ? $module_name . '.' . (string)$permissionName : (string)$permissionName;
-            $controllerAction = $controllerClass ? class_basename($controllerClass) . '@' . $methodName : '-';
+            $permissionName = $meta->canonicalName;
 
             $rows[] = [
-                'permission' => (string)$permissionName,
-                'model' => $model,
-                'type' => $type,
-                'route' => $uri,
-                'methods' => implode('|', $verbs),
-                'controller' => $controllerAction
+                'permission' => $permissionName,
+                'model' => $meta->model,
+                'type' => $meta->action,
+                'route' => $meta->uri,
+                'methods' => implode('|', $meta->verbs),
+                'controller' => $meta->controllerAction,
             ];
-            if (!$dry) {
-                $permission_entity = $permissionClass::query()->where(['name' => $permissionName])->get()->first();
-                $attributes = [
-                    'name' => $permissionName,
-                    'guard_name' => $guard,
-                    'module' => $module_name,
-                    'route' => $uri,
-                    'type' => $type,
-                    'model' => $model,
-                    'restrict' => false,
-                    'action' => $controllerAction,
-                ];
-                if (!$permission_entity) {
-                    $permissionClass::create($attributes);
-                } else {
-                    $permission_entity->fill($attributes);
-                    $permission_entity->save();
-                }
+            if ($dry) continue;
+            $attributes = [
+                'name' => $permissionName,
+                'guard_name' => $guard,
+                'module' => $meta->module,
+                'route' => $meta->uri,
+                'type' => $meta->action,
+                'model' => $meta->model,
+                'restrict' => $meta->module !== $this->generalModule,
+                'action' => $meta->controllerAction,
+            ];
+            $permission_entity = $permissionClass::query()->where(['name' => $permissionName])->get()->first();
+            if (!$permission_entity) {
+                $permissionClass::create($attributes);
+            } else {
+                $permission_entity->fill($attributes)->save();
             }
         }
         return collect($rows)->unique('permission')->values()->all();
