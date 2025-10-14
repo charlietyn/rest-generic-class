@@ -1,8 +1,6 @@
 <?php
 declare(strict_types=1);
-
 namespace Ronu\RestGenericClass\Core\Middleware;
-
 
 use Closure;
 use Illuminate\Http\Request;
