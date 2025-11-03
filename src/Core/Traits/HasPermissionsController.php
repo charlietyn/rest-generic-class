@@ -62,7 +62,7 @@ trait HasPermissionsController
      *   "perms": ["users.read","users.create"],
      *   "prefix": "users.",
      *   "from": "permissions.json",
-     *   "modules": ["mod_security"],
+     *   "modules": ["{{security_module}}"],
      *   "entities": ["users","mod_sales.orders"]
      * }
      */
@@ -112,7 +112,7 @@ trait HasPermissionsController
      *   "perms": ["users.read","users.create"],
      *   "prefix": "users.",
      *   "from": "permissions.json",
-     *   "modules": ["mod_security"],
+     *   "modules": ["{{security_module}}"],
      *   "entities": ["users","mod_sales.orders"],
      *   "pivot": {"range":"global","team_id":42}
      * }

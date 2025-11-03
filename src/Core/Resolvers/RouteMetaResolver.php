@@ -12,15 +12,15 @@ use Illuminate\Support\Str;
 final class RouteMeta
 {
     public function __construct(
-        public readonly ?string $routeName,     // e.g. mod_security.role.index
-        public readonly string  $uri,           // e.g. api/mod_security/roles/{id}
+        public readonly ?string $routeName,     // e.g. {{security_module}}.role.index
+        public readonly string  $uri,           // e.g. api/{{security_module}}/roles/{id}
         public readonly array   $verbs,         // e.g. ['GET','HEAD']
         public readonly ?string $controller,    // e.g. Modules\...\RolesController
         public readonly ?string $method,        // e.g. index|store|update|destroy
-        public readonly string  $module,        // e.g. mod_security | --site--
+        public readonly string  $module,        // e.g. {{security_module}} | --site--
         public readonly string  $model,         // e.g. role
         public readonly string  $action,        // e.g. view|create|update|delete (o index/show si prefieres)
-        public readonly string  $canonicalName, // e.g. mod_security.role.view
+        public readonly string  $canonicalName, // e.g. {{security_module}}.role.view
         public readonly string  $controllerAction // e.g. RolesController@index
     )
     {
@@ -73,8 +73,8 @@ class RouteMetaResolver
             return null;
         }
 
-        $uri = $route->uri();                 // e.g. 'api/mod_security/roles/{role}'
-        $name = $route->getName();             // e.g. 'mod_security.role.index'
+        $uri = $route->uri();                 // e.g. 'api/{{security_module}}/roles/{role}'
+        $name = $route->getName();             // e.g. '{{security_module}}.role.index'
         $verbs = $route->methods();             // e.g. ['GET','HEAD']
         $actionArr = $route->getAction();           // array
         $mw = $route->gatherMiddleware();    // array
@@ -171,7 +171,7 @@ class RouteMetaResolver
             }
         }
 
-        // 2) From route name: mod_security.role.index => role
+        // 2) From route name: {{security_module}}.role.index => role
         if ($routeName) {
             $parts = explode('.', $routeName);
             if (count($parts) >= 2) {
@@ -215,7 +215,7 @@ class RouteMetaResolver
         return null;
     }
 
-    /** First meaningful segment after guard (e.g. api/mod_security/roles/... => roles) */
+    /** First meaningful segment after guard (e.g. api/{{security_module}}/roles/... => roles) */
     protected function firstUriSegment(string $uri): ?string
     {
         $parts = array_values(array_filter(explode('/', $uri)));
@@ -225,7 +225,7 @@ class RouteMetaResolver
     /** Determine module from uri after guard, matching known module list */
     protected function resolveModuleFromUri(string $uri, string $guard, array $modules): ?string
     {
-        $parts = array_values(array_filter(explode('/', $uri))); // ['api','mod_security','roles',...]
+        $parts = array_values(array_filter(explode('/', $uri))); // ['api','{{security_module}}','roles',...]
         if (count($parts) > 2 && ($parts[0] === $guard)) {
             $candidate = $parts[1];
             if (in_array($candidate, $modules, true)) {
