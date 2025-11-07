@@ -59,9 +59,9 @@ class Helper
     /**
      * Convert a JPG/PNG image to WEBP (best-effort).
      *
-     * @param string $filepath  Absolute path to image.
-     * @param int    $quantity  WEBP quality (0-100).
-     * @param string $ext       Original extension ('jpg' | 'png').
+     * @param string $filepath Absolute path to image.
+     * @param int $quantity WEBP quality (0-100).
+     * @param string $ext Original extension ('jpg' | 'png').
      * @return string           Resulting WEBP file path.
      */
     public function convert_to_webp($filepath, $quantity, $ext = 'jpg')
@@ -95,10 +95,10 @@ class Helper
      *
      * Metrics are returned to build a consolidated report in DatabaseSeeder.
      *
-     * @param  class-string<\Illuminate\Database\Eloquent\Model> $modelClass Eloquent model class.
-     * @param  string $jsonPath  Absolute/relative path to a JSON file with an array of rows (or a single object).
-     * @param  string $pk        Primary/unique key column (default 'id').
-     * @param  int    $chunkSize How many rows to process per chunk inside the transaction.
+     * @param class-string<\Illuminate\Database\Eloquent\Model> $modelClass Eloquent model class.
+     * @param string $jsonPath Absolute/relative path to a JSON file with an array of rows (or a single object).
+     * @param string $pk Primary/unique key column (default 'id').
+     * @param int $chunkSize How many rows to process per chunk inside the transaction.
      * @return array{
      *   model:string,table:string,file:string,
      *   inserted:int,updated:int,skipped:int,
@@ -109,43 +109,43 @@ class Helper
     public static function loadFromJson(string $modelClass, string $jsonPath, string $pk = 'id', int $chunkSize = 1000): array
     {
         $started = microtime(true);
-        $model   = new $modelClass;
-        $table   = $model->getTable();
-        $conn    = $model->getConnectionName();
+        $model = new $modelClass;
+        $table = $model->getTable();
+        $conn = $model->getConnectionName();
 
         $inserted = 0;
-        $updated  = 0;
-        $skipped  = 0;
-        $errors   = [];
+        $updated = 0;
+        $skipped = 0;
+        $errors = [];
 
         // Validate file presence
         if (!is_file($jsonPath)) {
             return [
                 'model' => $modelClass,
                 'table' => $table,
-                'file'  => $jsonPath,
+                'file' => $jsonPath,
                 'inserted' => 0,
-                'updated'  => 0,
-                'skipped'  => 0,
-                'errors'   => [['key' => null, 'message' => "File not found: {$jsonPath}"]],
-                'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+                'updated' => 0,
+                'skipped' => 0,
+                'errors' => [['key' => null, 'message' => "File not found: {$jsonPath}"]],
+                'duration_ms' => (int)round((microtime(true) - $started) * 1000),
             ];
         }
 
         // Read + decode JSON
-        $raw  = file_get_contents($jsonPath);
+        $raw = file_get_contents($jsonPath);
         $data = json_decode($raw, true);
 
         if (!is_array($data)) {
             return [
                 'model' => $modelClass,
                 'table' => $table,
-                'file'  => $jsonPath,
+                'file' => $jsonPath,
                 'inserted' => 0,
-                'updated'  => 0,
-                'skipped'  => 0,
-                'errors'   => [['key' => null, 'message' => "Invalid JSON in {$jsonPath}"]],
-                'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+                'updated' => 0,
+                'skipped' => 0,
+                'errors' => [['key' => null, 'message' => "Invalid JSON in {$jsonPath}"]],
+                'duration_ms' => (int)round((microtime(true) - $started) * 1000),
             ];
         }
 
@@ -167,6 +167,13 @@ class Helper
                 $errors[] = ['key' => null, 'message' => "Row {$idx} missing primary/unique key '{$pk}'."];
                 continue;
             }
+            foreach ($row as $key => $value) {
+                if (is_string($value) && $format = self::detectDateFormat($value)) {
+                    if (Carbon::hasFormat($value, $format)) {
+                        $row[$key] = Carbon::createFromFormat($format, $value)->format('Y-m-d H:i:s');
+                    }
+                }
+            }
             $rows[] = $row;
         }
 
@@ -174,12 +181,12 @@ class Helper
             return [
                 'model' => $modelClass,
                 'table' => $table,
-                'file'  => $jsonPath,
+                'file' => $jsonPath,
                 'inserted' => 0,
-                'updated'  => 0,
-                'skipped'  => $skipped,
-                'errors'   => $errors,
-                'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+                'updated' => 0,
+                'skipped' => $skipped,
+                'errors' => $errors,
+                'duration_ms' => (int)round((microtime(true) - $started) * 1000),
             ];
         }
 
@@ -191,14 +198,14 @@ class Helper
         $updateColumns = array_values(array_diff($allColumns, [$pk]));
 
         // Process inside a transaction, but keep per-row try/catch to continue on errors.
-        DB::connection($conn)->transaction(function () use (
-            $conn, $table, $rows, $pk, $updateColumns, $chunkSize, &$inserted, &$updated, &$errors
-        ) {
-            foreach (array_chunk($rows, $chunkSize) as $chunk) {
-                foreach ($chunk as $idx => $row) {
-                    $keyValue = $row[$pk];
+        try {
+            DB::connection($conn)->transaction(function () use (
+                $conn, $table, $rows, $pk, $updateColumns, $chunkSize, &$inserted, &$updated, &$errors
+            ) {
+                foreach (array_chunk($rows, $chunkSize) as $chunk) {
+                    foreach ($chunk as $idx => $row) {
+                        $keyValue = $row[$pk];
 
-                    try {
                         // 1) Check existence
                         $exists = DB::connection($conn)
                             ->table($table)
@@ -222,26 +229,25 @@ class Helper
                                 ->insert($row);
                             $inserted++;
                         }
-                    } catch (\Throwable $e) {
-                        // Keep going; record the error for the final report
-                        $errors[] = [
-                            'key'     => $keyValue,
-                            'message' => $e->getMessage(),
-                        ];
                     }
                 }
-            }
-        }, 3);
-
+            }, 3);
+        } catch (\Throwable $e) {
+            // Keep going; record the error for the final report
+            $errors[] = [
+                'key' => $table,
+                'message' => $e->getMessage(),
+            ];
+        }
         return [
             'model' => $modelClass,
             'table' => $table,
-            'file'  => $jsonPath,
+            'file' => $jsonPath,
             'inserted' => $inserted,
-            'updated'  => $updated,
-            'skipped'  => $skipped,
-            'errors'   => $errors,
-            'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+            'updated' => $updated,
+            'skipped' => $skipped,
+            'errors' => $errors,
+            'duration_ms' => (int)round((microtime(true) - $started) * 1000),
         ];
     }
 
@@ -300,7 +306,7 @@ class Helper
      * Remove duplicate rows from an array using a given field as the dedup key.
      * Keeps the last occurrence.
      *
-     * @param array  $rows
+     * @param array $rows
      * @param string $field Default 'id'
      * @return array
      */
