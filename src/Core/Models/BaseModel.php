@@ -1,6 +1,6 @@
 <?php
 /**Generate by ASGENS
- *@author Charlietyn
+ * @author Charlietyn
  */
 
 namespace Ronu\RestGenericClass\Core\Models;
@@ -40,13 +40,13 @@ class BaseModel extends Model
      * Default columns for the model
      * @var array
      */
-    const columns=[];
+    const columns = [];
 
     /**
      * Reference columns for update the model
      * @var string|integer|null
      */
-    protected string|int|null $fieldKeyUpdate=null;
+    protected string|int|null $fieldKeyUpdate = null;
     /**
      * Relations of entity
      *
@@ -76,8 +76,9 @@ class BaseModel extends Model
 
     public function getFieldKeyUpdate(): string|int|null
     {
-        return $this->fieldKeyUpdate;
+        return $this->fieldKeyUpdate ?? $this->getPrimaryKey();
     }
+
     /**
      * Get the current scenario (create/update)
      * @return string The current scenario
@@ -124,10 +125,10 @@ class BaseModel extends Model
      */
     public function self_validate(string $scenario = 'create', bool $specific = false, bool $validate_pk = true)
     {
-        $attrKeys=array_keys($this->attributes);
-        $originalsRules=$this->rules($scenario);
-        $rules=array_filter($originalsRules, function($v,$k) use ($attrKeys) {
-            return in_array($k, $attrKeys) || is_array($v)?array_search('required',$v):str_contains($v,'required');
+        $attrKeys = array_keys($this->attributes);
+        $originalsRules = $this->rules($scenario);
+        $rules = array_filter($originalsRules, function ($v, $k) use ($attrKeys) {
+            return in_array($k, $attrKeys) || is_array($v) ? array_search('required', $v) : str_contains($v, 'required');
         }, ARRAY_FILTER_USE_BOTH);
         if (!$validate_pk) {
             unset($rules[$this->getPrimaryKey()]);
@@ -151,7 +152,7 @@ class BaseModel extends Model
         $this->setScenario($scenario);
         if (count($attributes) === 0)
             $attributes = $this->attributes;
-        if (isset($attributes[$this->getPrimaryKey()]) && $scenario=='create') {
+        if (isset($attributes[$this->getPrimaryKey()]) && $scenario == 'create') {
             $this->setScenario('update');
         }
         $validate_all = $this->validate_all($attributes, $this->getScenario());
@@ -405,7 +406,7 @@ class BaseModel extends Model
      * @param string|null $localKey Local key name
      * @return MongoHasMany The relationship instance
      */
-    public function hasManyMongo(string $related, string $foreignKey = null, string $localKey = null): MongoHasMany| HasMany
+    public function hasManyMongo(string $related, string $foreignKey = null, string $localKey = null): MongoHasMany|HasMany
     {
         $instance = $this->newRelatedInstance($related);
 
