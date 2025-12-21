@@ -9,7 +9,7 @@ use Carbon\Carbon;
 
 /**
  * Helper for extracting and manipulating parameters from a Request body.
- * Supports JSON, form-data, multipart, and raw body.
+ * Supports JSON, form-data, multipart, raw body, and works with ANY HTTP method.
  *
  * @example RequestBody::get($request) // All parameters
  * @example RequestBody::get($request, 'user.email') // Single parameter with dot notation
@@ -19,6 +19,7 @@ final class RequestBody
 {
     /**
      * Extract parameters from body (without query params or route params).
+     * Works with GET, POST, PUT, PATCH, DELETE, and any HTTP method.
      *
      * @param Request $request
      * @param string|array|null $keys null=all, string=single, array=multiple
@@ -96,26 +97,54 @@ final class RequestBody
 
     /**
      * Extract the raw body from the request.
+     * Handles ALL scenarios: JSON, form-data, multipart, raw content.
+     * Works with ANY HTTP method including GET.
      */
     private static function extractRawBody(Request $request): array
     {
-        // 1. JSON Content-Type
+        // Strategy 1: Try raw content first (most reliable and flexible)
+        $rawContent = $request->getContent();
+
+        if (!empty($rawContent)) {
+            $parsed = self::parseRawContent($rawContent, $request);
+            if (!empty($parsed)) {
+                return $parsed;
+            }
+        }
+
+        // Strategy 2: Laravel's request ParameterBag (handles form-data and multipart)
+        // This is populated for POST/PUT/PATCH with form-urlencoded or multipart
+        $bodyParams = $request->request->all();
+        if (!empty($bodyParams)) {
+            return is_array($bodyParams) ? $bodyParams : [];
+        }
+
+        // Strategy 3: Try Laravel's JSON helper (should have been caught by Strategy 1)
         if (self::isJsonRequest($request)) {
-            return self::extractJsonBody($request);
+            $json = self::extractJsonBody($request);
+            if (!empty($json)) {
+                return $json;
+            }
         }
 
-        // 2. Form data (application/x-www-form-urlencoded or multipart/form-data)
-        $formData = $request->request->all();
-        if (!empty($formData)) {
-            return is_array($formData) ? $formData : [];
+        // Strategy 4: Check for input() data (Laravel merges sources)
+        // Only use this as last resort and exclude query params
+        $allInput = $request->input();
+        $queryParams = $request->query();
+
+        if (!empty($allInput) && is_array($allInput)) {
+            // Remove query params from the mix
+            $bodyOnly = array_diff_key($allInput, $queryParams);
+            if (!empty($bodyOnly)) {
+                return $bodyOnly;
+            }
         }
 
-        // 3. Fallback: try to parse raw content
-        return self::parseRawContent($request->getContent());
+        return [];
     }
 
     /**
-     * Determine if the request is JSON.
+     * Determine if the request is JSON based on Content-Type header.
      */
     private static function isJsonRequest(Request $request): bool
     {
@@ -123,53 +152,78 @@ final class RequestBody
             return true;
         }
 
-        $contentType = strtolower((string) $request->header('Content-Type', ''));
-        return str_contains($contentType, 'application/json') || str_contains($contentType, '+json');
+        $contentType = strtolower((string)$request->header('Content-Type', ''));
+        return str_contains($contentType, 'application/json')
+            || str_contains($contentType, '+json')
+            || str_contains($contentType, 'text/json');
     }
 
     /**
-     * Extract JSON body.
+     * Extract JSON body using Laravel's JSON helper (fallback method).
      */
     private static function extractJsonBody(Request $request): array
     {
-        $json = $request->json()->all();
-
-        // If empty, try to decode raw content
-        if (empty($json)) {
-            $raw = trim($request->getContent());
-            if ($raw !== '' && self::looksLikeJson($raw)) {
-                $decoded = json_decode($raw, true);
-                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                    return $decoded;
-                }
-            }
+        try {
+            $json = $request->json()->all();
+            return is_array($json) && !empty($json) ? $json : [];
+        } catch (\Throwable $e) {
+            return [];
         }
-
-        return is_array($json) ? $json : [];
     }
 
     /**
-     * Parse raw content (JSON or URL-encoded).
+     * Parse raw content - handles JSON, URL-encoded, and malformed content.
+     * This is the CORE parsing method that handles all edge cases.
      */
-    private static function parseRawContent(string $content): array
+    private static function parseRawContent(string $content, Request $request): array
     {
-        $content = trim($content);
+        // Clean the content (remove BOM, trim whitespace)
+        $content = self::cleanRawContent($content);
 
         if ($content === '') {
             return [];
         }
 
-        // Try JSON
+        // Attempt 1: Parse as JSON (most common for APIs)
         if (self::looksLikeJson($content)) {
-            $decoded = json_decode($content, true);
-            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            $decoded = self::parseJson($content);
+            if ($decoded !== null) {
                 return $decoded;
             }
         }
 
-        // Try URL-encoded
-        parse_str($content, $parsed);
-        return is_array($parsed) ? $parsed : [];
+        // Attempt 2: Parse as URL-encoded (form-data)
+        // Example: key1=value1&key2=value2
+        $urlEncoded = self::parseUrlEncoded($content);
+        if (!empty($urlEncoded)) {
+            return $urlEncoded;
+        }
+
+        // Attempt 3: Try to fix and parse malformed JSON
+        $fixedJson = self::fixMalformedJson($content);
+        if ($fixedJson !== null) {
+            return $fixedJson;
+        }
+
+        // Attempt 4: Check if it's a simple key=value format
+        $simpleKeyValue = self::parseSimpleKeyValue($content);
+        if (!empty($simpleKeyValue)) {
+            return $simpleKeyValue;
+        }
+
+        return [];
+    }
+
+    /**
+     * Clean raw content from BOM, extra whitespace, and invisible characters.
+     */
+    private static function cleanRawContent(string $content): string
+    {
+        // Remove UTF-8 BOM if present
+        $content = preg_replace('/^\xEF\xBB\xBF/', '', $content);
+
+        // Trim whitespace
+        return trim($content);
     }
 
     /**
@@ -182,21 +236,126 @@ final class RequestBody
     }
 
     /**
+     * Parse JSON with proper error handling.
+     * Handles whitespace, newlines, and tabs in JSON.
+     */
+    private static function parseJson(string $json): ?array
+    {
+        // First attempt: direct decode (handles most cases including \n and \t)
+        $decoded = json_decode($json, true);
+
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            return $decoded;
+        }
+
+        // Second attempt: normalize whitespace and try again
+        $normalized = preg_replace('/\s+/', ' ', $json);
+        $decoded = json_decode($normalized, true);
+
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            return $decoded;
+        }
+
+        return null;
+    }
+
+    /**
+     * Fix common malformed JSON issues and attempt to parse.
+     * Handles: missing quotes, trailing commas, unescaped characters, etc.
+     */
+    private static function fixMalformedJson(string $content): ?array
+    {
+        $original = $content;
+
+        // Remove literal \n and \t if they appear as text (not as actual newlines)
+        $content = str_replace(['\n', '\t', '\r'], ['', '', ''], $content);
+
+        // Try to fix unquoted keys/values
+        // Match patterns like: { key: value } and convert to: { "key": "value" }
+        $content = preg_replace_callback(
+            '/\{([^}]+)\}/',
+            function ($matches) {
+                $inner = $matches[1];
+
+                // Split by comma
+                $pairs = preg_split('/,\s*/', trim($inner));
+                $fixed = [];
+
+                foreach ($pairs as $pair) {
+                    // Match key: value or "key": value or key: "value"
+                    if (preg_match('/^\s*(["\']?)(\w+)\1\s*:\s*(["\']?)(.+?)\3\s*$/', $pair, $m)) {
+                        $key = $m[2];
+                        $value = $m[4];
+
+                        // Ensure both key and value are quoted
+                        $fixed[] = sprintf('"%s": "%s"', $key, $value);
+                    }
+                }
+
+                return '{' . implode(', ', $fixed) . '}';
+            },
+            $content
+        );
+
+        // Remove trailing commas
+        $content = preg_replace('/,\s*([}\]])/', '$1', $content);
+
+        // Try to decode
+        $decoded = json_decode($content, true);
+
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            return $decoded;
+        }
+
+        return null;
+    }
+
+    /**
+     * Parse URL-encoded content (application/x-www-form-urlencoded).
+     */
+    private static function parseUrlEncoded(string $content): array
+    {
+        // Check if it looks like URL-encoded data
+        if (!str_contains($content, '=')) {
+            return [];
+        }
+
+        $parsed = [];
+        parse_str($content, $parsed);
+
+        return is_array($parsed) && !empty($parsed) ? $parsed : [];
+    }
+
+    /**
+     * Parse simple key=value format (without &).
+     * Example: "api_key=123456" or "token=abc"
+     */
+    private static function parseSimpleKeyValue(string $content): array
+    {
+        // Match pattern: key=value (single pair, no &)
+        if (preg_match('/^(\w+)=(.+)$/', trim($content), $matches)) {
+            return [$matches[1] => $matches[2]];
+        }
+
+        return [];
+    }
+
+    /**
      * Merge options with defaults.
      */
     private static function mergeOptions(array $options): array
     {
         return array_merge([
-            'default'        => null,
-            'only'           => null,
-            'except'         => [],
-            'trim_strings'   => true,
-            'empty_to_null'  => false,
-            'include_files'  => false,
-            'files_key'      => '__files',
-            'drop_internal'  => true,
-            'casts'          => [],
-            'strict'         => false, // If true, throws exception on missing keys
+            'default' => null,
+            'only' => null,
+            'except' => [],
+            'trim_strings' => true,
+            'empty_to_null' => false,
+            'include_files' => false,
+            'files_key' => '__files',
+            'drop_internal' => true,
+            'casts' => [],
+            'strict' => false,
         ], $options);
     }
 
@@ -367,10 +526,10 @@ final class RequestBody
             // Extract format if exists (date:Y-m-d)
             if (str_contains($caster, ':')) {
                 $format = explode(':', $caster, 2)[1];
-                return Carbon::createFromFormat($format, (string) $value);
+                return Carbon::createFromFormat($format, (string)$value);
             }
 
-            return Carbon::parse((string) $value);
+            return Carbon::parse((string)$value);
         } catch (\Throwable $e) {
             // On error, return original value
             return $value;
@@ -382,12 +541,12 @@ final class RequestBody
      */
     private static function toInt(mixed $value): ?int
     {
-        return ($value === null || $value === '') ? null : (int) $value;
+        return ($value === null || $value === '') ? null : (int)$value;
     }
 
     private static function toFloat(mixed $value): ?float
     {
-        return ($value === null || $value === '') ? null : (float) $value;
+        return ($value === null || $value === '') ? null : (float)$value;
     }
 
     private static function toBool(mixed $value): ?bool
@@ -400,7 +559,7 @@ final class RequestBody
 
     private static function toString(mixed $value): ?string
     {
-        return $value === null ? null : (string) $value;
+        return $value === null ? null : (string)$value;
     }
 
     private static function toArray(mixed $value): array
@@ -408,7 +567,7 @@ final class RequestBody
         if (is_array($value)) {
             return $value;
         }
-        return $value === null ? [] : (array) $value;
+        return $value === null ? [] : (array)$value;
     }
 
     private static function toJson(mixed $value): mixed
