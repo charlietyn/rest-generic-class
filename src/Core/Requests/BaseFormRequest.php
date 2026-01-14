@@ -23,6 +23,9 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
      */
     protected string $entity_name = "";
 
+    protected bool $has_escenario = true;
+
+
     /**
      * Parses validation rules based on the current scenario.
      *
@@ -31,13 +34,17 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
      */
     public function parseRules(string $path): array
     {
-        $scenario = $this->getScenario();
-        $rules = include($path);
-        $rules['query'] = $this->query_rules();
-        if (!array_key_exists($scenario, $rules)) {
-            throw new \Exception("Scenario '$scenario' not found in validation rules.");
+        $rules = [];
+        if ($this->has_escenario) {
+            $scenario = $this->getScenario();
+            $rules = include($path);
+            $rules['query'] = $this->query_rules();
+            if (!array_key_exists($scenario, $rules)) {
+                throw new \Exception("Scenario '$scenario' not found in validation rules.");
+            }
+            return $rules[$scenario];
         }
-        return $rules[$scenario];
+        return $rules;
     }
 
     /**
@@ -50,10 +57,13 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
      */
     public function getScenario(): ?string
     {
-        $scenario = array_key_exists('_scenario', $this->all()) ? $this->all()['_scenario'] : null;
-        if (!$scenario)
-            $scenario = $this->conditionalScenario($this->method());
-        return $scenario;
+        if ($this->has_escenario) {
+            $scenario = array_key_exists('_scenario', $this->all()) ? $this->all()['_scenario'] : null;
+            if (!$scenario)
+                $scenario = $this->conditionalScenario($this->method());
+            return $scenario;
+        }
+        return null;
     }
 
     /**
@@ -76,24 +86,27 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
      */
     public function conditionalScenario(string $method): string
     {
-        $scenario = $method;
-        $conditional = [
-            'POST' => "create",
-            'GET' => "query",
-            'DELETE' => "query",
-            'PUT' => "update",
-            'PATCH' => "update",
-            'DEFAULT' => "create",
-            'BULK_CREATE' => "bulk_create",
-            'BULK_UPDATE' => "bulk_update",
-        ];
-        $content = (array)json_decode(request()->getContent());
-        if ($method == 'POST' && count($content) == 1 && array_key_first($content) === $this->entity_name && substr_count(request()->getPathInfo(), '/') == 2)
-            $scenario = 'BULK_CREATE';
-        elseif (str_ends_with(request()->decodedPath(), '/update_multiple')) {
-            $scenario = 'BULK_UPDATE';
+        if ($this->has_escenario) {
+            $scenario = $method;
+            $conditional = [
+                'POST' => "create",
+                'GET' => "query",
+                'DELETE' => "query",
+                'PUT' => "update",
+                'PATCH' => "update",
+                'DEFAULT' => "create",
+                'BULK_CREATE' => "bulk_create",
+                'BULK_UPDATE' => "bulk_update",
+            ];
+            $content = (array)json_decode(request()->getContent());
+            if ($method == 'POST' && count($content) == 1 && array_key_first($content) === $this->entity_name && substr_count(request()->getPathInfo(), '/') == 2)
+                $scenario = 'BULK_CREATE';
+            elseif (str_ends_with(request()->decodedPath(), '/update_multiple')) {
+                $scenario = 'BULK_UPDATE';
+            }
+            return $conditional[$scenario];
         }
-        return $conditional[$scenario];
+        return "";
     }
 
     /**
@@ -122,5 +135,47 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
         $attributes = $this->all();
         $rules = $specific ? array_intersect_key($this->rules(), $attributes) : $this->rules();
         $this->validate($this, $rules, $this->messages(), $attributes);
+    }
+
+    /**
+     * Get rules for specific scenario (used by OpenAPI generator)
+     *
+     * @param string $scenario Scenario name
+     * @return array Validation rules
+     */
+    public function getRulesForScenario(string $scenario): array
+    {
+        $rules = $this->getAllRules();
+        $scenario = $scenario == 'validate' ? 'create' : $scenario;
+        return $this->has_escenario && isset($rules[$scenario])?$rules[$scenario] : [];
+    }
+
+    /**
+     * Get all available scenarios
+     *
+     * @return array Scenario names
+     */
+    public function getAvailableScenarios(): array
+    {
+        return $this->has_escenario ? array_keys($this->getAllRules()) : true;
+    }
+
+    /**
+     * Get all rules
+     *
+     * @return array of rules
+     */
+    public function getAllRules(): array
+    {
+        return include($this->pathRules());
+    }
+
+    /**
+     * Get the path to the rules file.
+     * @return string
+     */
+    public function pathRules(): string
+    {
+        return "";
     }
 }

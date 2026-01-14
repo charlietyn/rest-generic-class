@@ -56,6 +56,7 @@ class RestController extends BaseController
     public function process_request(Request $request): array
     {
         $parameters = [];
+
         $payloads = array_merge($request->query(), $request->request->all());
         array_key_exists('relations', $payloads) ? $parameters['relations'] = $request['relations'] : $parameters['relations'] = null;
         array_key_exists('_nested', $payloads) ? $parameters['_nested'] = $request['_nested'] : $parameters['_nested'] = false;
