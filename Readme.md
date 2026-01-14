@@ -105,3 +105,5 @@ path, or level. You can also override the channel directly in `config/logging.ph
 
 ## License
 This library is open-sourced software licensed under the MIT license.
+##Authors
+- Charlietyn
