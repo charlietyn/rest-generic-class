@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Ronu\RestGenericClass\Core\Models\BaseModel;
 use Ronu\RestGenericClass\Core\Requests\BaseFormRequest;
 use Ronu\RestGenericClass\Core\Services\BaseService;
@@ -128,6 +129,11 @@ class RestController extends BaseController
                 DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
+            Log::channel('rest-generic-class')->error('Store failed', [
+                'controller' => static::class,
+                'method' => __FUNCTION__,
+                'exception' => $e,
+            ]);
             throw $e;
         }
         return $result;
@@ -149,6 +155,12 @@ class RestController extends BaseController
             DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
+            Log::channel('rest-generic-class')->error('Update failed', [
+                'controller' => static::class,
+                'method' => __FUNCTION__,
+                'id' => $id,
+                'exception' => $e,
+            ]);
             throw $e;
         }
         return $result;
@@ -171,6 +183,11 @@ class RestController extends BaseController
                 DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
+            Log::channel('rest-generic-class')->error('Update multiple failed', [
+                'controller' => static::class,
+                'method' => __FUNCTION__,
+                'exception' => $e,
+            ]);
             throw $e;
         }
         return $result;
@@ -203,6 +220,12 @@ class RestController extends BaseController
             DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
+            Log::channel('rest-generic-class')->error('Destroy failed', [
+                'controller' => static::class,
+                'method' => __FUNCTION__,
+                'id' => $id,
+                'exception' => $e,
+            ]);
             throw $e;
         }
         return $result;
@@ -223,6 +246,11 @@ class RestController extends BaseController
             DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
+            Log::channel('rest-generic-class')->error('Delete by id failed', [
+                'controller' => static::class,
+                'method' => __FUNCTION__,
+                'exception' => $e,
+            ]);
             throw $e;
         }
         return $result;
