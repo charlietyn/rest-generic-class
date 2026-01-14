@@ -196,6 +196,9 @@ class BaseService
         if (isset($params["attr"])) {
             $query->av = $this->eq_attr($query, $params['attr']);
         }
+        if (isset($params["eq"])) {
+            $query->av = $this->eq_attr($query, $params['eq']);
+        }
         if (isset($params['relations'])) {
             $query = $this->relations($query, $params['relations'], $nested ? $params["oper"] : null);
         }
@@ -241,8 +244,8 @@ class BaseService
         $query = $this->modelClass->query();
         $query = $this->process_query($params, $query);
         unset($params['pagination']);
-        $value = $query->get();
-        return $toJson ? ['data' => $value->jsonSerialize()[0]] : $value->toArray()[0];
+        $value = $query->first();
+        return $toJson ? ['data' => $value?->jsonSerialize()] : ($value?->toArray() ?? []);
     }
 
     public function get_parents($modelClass, $attributes = null, $scenario = 'create', $specific = false): array

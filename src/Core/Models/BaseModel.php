@@ -284,14 +284,14 @@ class BaseModel extends Model
      * @param array $params Parameters for model creation
      * @return array Result with success flag and created models
      */
-    static public function create_model(array $params): array
+    public static function create_model(array $params): array
     {
-        if (isset($params[self::MODEL]) || array_key_exists(0, $params)) {
-            $result = self::save_array($params[self::MODEL]);
+        if (isset($params[static::MODEL]) || array_key_exists(0, $params)) {
+            $result = static::save_array($params[static::MODEL] ?? $params);
         } else {
-            $class_model = new self();
+            $class_model = new static();
             $class_model->fill($params);
-            $result = $class_model->save($params);
+            $result = $class_model->save_model($params);
         }
         return $result;
     }
@@ -302,14 +302,13 @@ class BaseModel extends Model
      * @param string $scenario The operation scenario
      * @return array Result with success flag and saved models
      */
-    static public function save_array(array $attributes, $scenario = 'create'): array
+    public static function save_array(array $attributes, $scenario = 'create'): array
     {
         $result = [];
         $result['success'] = true;
         foreach ($attributes as $index => $model) {
-            $class_model = new self();
-            $class_model->fill($model);
-            $save = $class_model->save();
+            $class_model = new static();
+            $save = $class_model->save_model($model, $scenario);
             if (!$save['success']) {
                 $result['success'] = false;
             }
@@ -323,18 +322,18 @@ class BaseModel extends Model
      * @param array $params Array of model attributes with primary keys
      * @return array Result with success flag and updated models
      */
-    static public function update_multiple(array $params): array
+    public static function update_multiple(array $params): array
     {
         $result = [];
         $result['success'] = true;
-        $model = new self();
+        $model = new static();
         foreach ($params as $index => $item) {
             $id = $item[$model->getPrimaryKey()];
-            $model = self::find($id);
+            $model = static::find($id);
             if (!$model)
                 continue;
             $model->fill($item);
-            $res = $model->save();
+            $res = $model->save_model($item, 'update');
             $result["models"][] = $res;
             if (!$res['success'])
                 $result['success'] = false;
@@ -365,9 +364,9 @@ class BaseModel extends Model
      * @param mixed $id The primary key of the model to delete
      * @return array Result with success flag and deleted model
      */
-    static public function destroy_model(mixed $id): array
+    public static function destroy_model(mixed $id): array
     {
-        $model = self::query()->findOrFail($id);
+        $model = static::query()->findOrFail($id);
         $result = [];
         $result['success'] = true;
         $result['model'] = $model;

@@ -61,7 +61,7 @@ class RestController extends BaseController
         array_key_exists('_nested', $payloads) ? $parameters['_nested'] = $request['_nested'] : $parameters['_nested'] = false;
         array_key_exists('soft_delete', $payloads) ? $parameters['soft_delete'] = $request['soft_delete'] : $parameters['soft_delete'] = null;
         array_key_exists('attr', $payloads) ? $parameters['attr'] = $request['attr'] : $parameters['attr'] = null;
-        array_key_exists('eq', $payloads) ? $parameters['attr'] = $request['eq'] : false;
+        array_key_exists('eq', $payloads) ? $parameters['eq'] = $request['eq'] : $parameters['eq'] = null;
         array_key_exists('select', $payloads) ? $parameters['select'] = $request['select'] : $parameters['select'] = "*";
         array_key_exists('pagination', $payloads) ? $parameters['pagination'] = $request['pagination'] : $parameters['pagination'] = null;
         array_key_exists('orderby', $payloads) ? $parameters['orderby'] = $request['orderby'] : $parameters['orderby'] = null;
@@ -245,7 +245,6 @@ class RestController extends BaseController
         return $this->service->exportPdf($params);
     }
 }
-
 
 
 
