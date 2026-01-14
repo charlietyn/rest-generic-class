@@ -1,7 +1,7 @@
 {
     "name": "ronu/rest-generic-class",
     "description": "Base Class for generic restfull api in laravel",
-    "version": "1.6.7",
+    "version": "1.6.8",
     "type": "vcs",
     "license": "MIT",
     "autoload": {
@@ -18,12 +18,12 @@
     "minimum-stability": "stable",
     "require": {
         "php": "^8.0",
-        "illuminate/database": "^9.0|^10.0|^11.0",
-        "illuminate/http": "^9.0|^10.0|^11.0",
-        "illuminate/pagination": "^9.0|^10.0|^11.0",
-        "illuminate/mail": "^9.0|^10.0|^11.0",
-        "illuminate/support": "^9.0|^10.0|^11.0",
-        "illuminate/validation": "^9.0|^10.0|^11.0"
+        "illuminate/database": "^12.0",
+        "illuminate/http": "^12.0",
+        "illuminate/pagination": "^12.0",
+        "illuminate/mail": "^12.0",
+        "illuminate/support": "^12.0",
+        "illuminate/validation": "^12.0"
     },
     "suggest": {
         "maatwebsite/excel": "Required for exportExcel()",
