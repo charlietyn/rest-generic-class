@@ -52,21 +52,65 @@ class BaseService
 
     private function relations($query, $params, $oper = []): Builder
     {
-        $flatt_array = $oper ? $this->flatten_array($oper) : [];
         /**@var Builder $query * */
-        if ($params == 'all' || array_search("all", $params) !== false)
-            $query = $query->with($this->modelClass::RELATIONS);
-        else {
-            $query = $query->with($params);
-//            foreach ($params as $p)
-//                $query = $query->with($p, function ($query) use ($flatt_array,$p) {
-//                    if(array_key_exists($p,$flatt_array)) {
-//                        $array_values = array_values($this->process_oper($flatt_array[$p]));
-//                        $query->where(...$array_values);
-//                    }
-//                });
+        $relations = $this->normalizeRelations($params);
+        if (in_array('all', $relations, true)) {
+            $relations = $this->modelClass::RELATIONS;
         }
-        return $query;
+
+        $relationFilters = $this->extractRelationFilters($oper);
+        $with = [];
+
+        foreach ($relations as $relation) {
+            if (array_key_exists($relation, $relationFilters)) {
+                $filters = $relationFilters[$relation];
+                $with[$relation] = function ($relationQuery) use ($filters) {
+                    $this->applyFilters($relationQuery, $filters);
+                };
+            } else {
+                $with[] = $relation;
+            }
+        }
+
+        foreach ($relationFilters as $relation => $filters) {
+            if (!in_array($relation, $relations, true)) {
+                $with[$relation] = function ($relationQuery) use ($filters) {
+                    $this->applyFilters($relationQuery, $filters);
+                };
+            }
+        }
+
+        return $query->with($with);
+    }
+
+    private function normalizeRelations($relations): array
+    {
+        if (!$relations) {
+            return [];
+        }
+        if (is_string($relations)) {
+            $decoded = json_decode($relations, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $relations = $decoded;
+            } elseif ($relations !== 'all') {
+                $relations = [$relations];
+            }
+        }
+        return is_array($relations) ? array_values($relations) : [];
+    }
+
+    private function extractRelationFilters($oper): array
+    {
+        if (!$oper || !is_array($oper)) {
+            return [];
+        }
+        $filters = [];
+        foreach ($oper as $key => $value) {
+            if (is_string($key) && !in_array($key, ['and', 'or'], true)) {
+                $filters[$key] = $value;
+            }
+        }
+        return $filters;
     }
 
     private function flatten_array(array $array)
@@ -196,8 +240,16 @@ class BaseService
         if (isset($params["attr"])) {
             $query->av = $this->eq_attr($query, $params['attr']);
         }
+        $oper = $params['oper'] ?? null;
+        if (is_string($oper)) {
+            $decodedOper = json_decode($oper, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $oper = $decodedOper;
+            }
+        }
+        $baseOper = $this->stripRelationFilters($oper);
         if (isset($params['relations'])) {
-            $query = $this->relations($query, $params['relations'], $nested ? $params["oper"] : null);
+            $query = $this->relations($query, $params['relations'], $nested ? $oper : null);
         }
         if (isset($params['select'])) {
             $query = $query->select($params['select']);
@@ -207,10 +259,23 @@ class BaseService
         if (isset($params['orderby'])) {
             $query = $this->order_by($query, $params['orderby']);
         }
-        if (isset($params['oper'])) {
-            $query = $this->oper($query, $params['oper']);
+        if (!empty($baseOper)) {
+            $query = $this->oper($query, $baseOper);
         }
         return $query;
+    }
+
+    private function stripRelationFilters($oper): mixed
+    {
+        if (!is_array($oper)) {
+            return $oper;
+        }
+        foreach (array_keys($oper) as $key) {
+            if (is_string($key) && !in_array($key, ['and', 'or'], true)) {
+                unset($oper[$key]);
+            }
+        }
+        return $oper;
     }
 
     public function list_all($params, $toJson = true): mixed
