@@ -27,7 +27,7 @@ class TransformData
         $method = $request->method();
         //verify validate conditions
         //$checking = str_ends_with($request->getPathInfo(), '/update_multiple') || str_ends_with($request->getPathInfo(), '/validate') || ($method == 'POST' && substr_count($request->getPathInfo(), '/') == 2) || (($method == 'PUT' || $method == 'PATCH') && substr_count($request->getPathInfo(), '/') == 3);
-        $checking = $method == 'PUT' || 'PATCH' || 'POST';
+        $checking = in_array($method, ['PUT', 'PATCH', 'POST'], true);
         if ($checking) {
             $class = array_slice(func_get_args(), 2)[0];
             $parameters=$request->route()->parameters;
@@ -41,5 +41,4 @@ class TransformData
         return $next($request);
     }
 }
-
 
