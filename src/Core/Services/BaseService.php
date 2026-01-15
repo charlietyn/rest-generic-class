@@ -66,7 +66,7 @@ class BaseService
      *
      * @return array The relations defined in the model class.
      */
-    private function getRelations(): array
+    private function getModelRelations(): array
     {
         $staticClass = $this->getStaticClass();
         return $staticClass::RELATIONS;
@@ -292,8 +292,9 @@ class BaseService
         if (!is_array($oper)) {
             return $oper;
         }
+        $relations= $this->getRelations();
         foreach (array_keys($oper) as $key) {
-            if (is_string($key) && !in_array($key, ['and', 'or'], true)) {
+            if (is_string($key) && !in_array($key, ['and', 'or'], true) && !in_array($key, $relations, true)) {
                 unset($oper[$key]);
             }
         }
