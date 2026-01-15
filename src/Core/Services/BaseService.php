@@ -49,6 +49,28 @@ class BaseService
         });
         return $query->paginate($pageSize);
     }
+    /***
+     * Get the static class name of the model.
+     *
+     * @return string The static class name of the model.
+     */
+    private function getStaticClass(): string
+    {
+        $instance = $this->modelClass;
+        $class = $instance::class;
+        return get_class($instance);
+    }
+
+    /***
+     * Get the relations defined in the model class.
+     *
+     * @return array The relations defined in the model class.
+     */
+    private function getRelations(): array
+    {
+        $staticClass = $this->getStaticClass();
+        return $staticClass::RELATIONS;
+    }
 
     private function relations($query, $params, $oper = []): Builder
     {
