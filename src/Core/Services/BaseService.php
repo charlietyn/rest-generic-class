@@ -292,7 +292,7 @@ class BaseService
         if (!is_array($oper)) {
             return $oper;
         }
-        $relations= $this->getRelations();
+        $relations= $this->getModelRelations();
         foreach (array_keys($oper) as $key) {
             if (is_string($key) && !in_array($key, ['and', 'or'], true) && !in_array($key, $relations, true)) {
                 unset($oper[$key]);
