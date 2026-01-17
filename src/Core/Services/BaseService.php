@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Maatwebsite\Excel\Facades\Excel;
 use Nwidart\Modules\Facades\Module;
@@ -26,13 +27,23 @@ class BaseService
     use HasDynamicFilter;
 
     /** @var BaseModel|string $modelClass */
-    public $modelClass = '';
+    public string|BaseModel|Model $modelClass = '';
+
+    /**
+     * @var int Depth counter for recursive nested queries
+     */
+    private int $currentDepth = 0;
+
+    /**
+     * @var int Total condition counter across all levels
+     */
+    private int $conditionCount = 0;
 
     /**
      * Services constructor.
-     * @param Model|String $modelClass
+     * @param String|Model $modelClass
      */
-    public function __construct($modelClass)
+    public function __construct(Model|string $modelClass)
     {
         $this->modelClass = new $modelClass;
     }
@@ -49,6 +60,7 @@ class BaseService
         });
         return $query->paginate($pageSize);
     }
+
     /***
      * Get the static class name of the model.
      *
@@ -72,44 +84,101 @@ class BaseService
         return $staticClass::RELATIONS;
     }
 
+    /**
+     * Apply eager loading with optional field selection and filters.
+     *
+     * @param Builder $query
+     * @param mixed $params Relations parameter (can include field selection)
+     * @param mixed|array $oper Filters to apply to eager loaded relations (if _nested=true)
+     * @return Builder
+     */
     private function relations($query, $params, $oper = []): Builder
     {
         /**@var Builder $query * */
-        $relations = $this->normalizeRelations($params);
-        if (in_array('all', $relations, true)) {
-            $relations = $this->modelClass::RELATIONS;
+        $normalizedRelations = $this->normalizeRelations($params);
+
+        if (empty($normalizedRelations)) {
+            return $query;
         }
 
-        $relationFilters = $this->extractRelationFilters($oper);
-        $with = [];
+        // Process nested relations with fields
+        $processed = $this->processNestedRelationsWithFields($normalizedRelations);
 
-        foreach ($relations as $relation) {
-            if (array_key_exists($relation, $relationFilters)) {
-                $filters = $relationFilters[$relation];
-                $with[$relation] = function ($relationQuery) use ($filters) {
-                    $this->applyFilters($relationQuery, $filters);
-                };
-            } else {
-                $with[] = $relation;
+        // Validate all requested relations
+        $allowedRelations = $this->getRelationsForModel($this->modelClass);
+        foreach ($processed as $parsed) {
+            $baseRelation = $parsed['base'];
+
+            if (!in_array($baseRelation, $allowedRelations, true)) {
+                throw new HttpException(
+                    400,
+                    "Relation '{$baseRelation}' is not allowed. Allowed: " . implode(', ', $allowedRelations)
+                );
             }
         }
 
-        foreach ($relationFilters as $relation => $filters) {
-            if (!in_array($relation, $relations, true)) {
-                $with[$relation] = function ($relationQuery) use ($filters) {
-                    $this->applyFilters($relationQuery, $filters);
+        // Extract relation-specific filters
+        $normalized = $this->normalizeOperNode($oper);
+        $relationFilters = !empty($normalized)
+            ? $this->extractRelationFiltersForModel($normalized, $this->modelClass)
+            : [];
+
+        $with = [];
+
+        foreach ($processed as $parsed) {
+            $relation = $parsed['relation'];
+            $fields = $parsed['fields'];
+            $baseRelation = $parsed['base'];
+
+            // For nested relations with fields, use the pre-computed key
+            $withKey = isset($parsed['key']) ? $parsed['key'] : $relation;
+
+            // If simple relation with fields
+            if (!isset($parsed['key']) && $fields) {
+                $fieldsWithKeys = $this->ensureForeignKeysInFields(
+                    $this->modelClass,
+                    $baseRelation,
+                    $fields
+                );
+                $withKey = $relation . ':' . implode(',', $fieldsWithKeys);
+            }
+
+            // Check if there are filters for this relation
+            $hasFilters = array_key_exists($relation, $relationFilters) ||
+                array_key_exists($baseRelation, $relationFilters);
+
+            if ($hasFilters) {
+                $filters = $relationFilters[$relation] ?? $relationFilters[$baseRelation];
+                $relatedModel = $this->getRelatedModel($this->modelClass, $baseRelation);
+
+                $with[$withKey] = function ($relationQuery) use ($filters, $relatedModel) {
+                    $this->applyOperTree($relationQuery, $filters, 'and', $relatedModel);
                 };
+            } else {
+                $with[] = $withKey;
             }
         }
 
         return $query->with($with);
     }
 
-    private function normalizeRelations($relations): array
+    /**
+     * Normalize relations parameter and extract field selections.
+     *
+     * @param mixed $relations
+     * @return array [
+     *   ['relation' => 'user', 'fields' => ['id','name']],
+     *   ['relation' => 'roles', 'fields' => null],
+     *   ...
+     * ]
+     */
+    private function normalizeRelations(mixed $relations): array
     {
         if (!$relations) {
             return [];
         }
+
+        // Parse JSON string
         if (is_string($relations)) {
             $decoded = json_decode($relations, true);
             if (json_last_error() === JSON_ERROR_NONE) {
@@ -118,9 +187,36 @@ class BaseService
                 $relations = [$relations];
             }
         }
-        return is_array($relations) ? array_values($relations) : [];
+
+        if (!is_array($relations)) {
+            return [];
+        }
+
+        // Handle "all" shortcut
+        if (in_array('all', $relations, true)) {
+            $allowedRelations = $this->getRelationsForModel($this->modelClass);
+            $relations = $allowedRelations;
+        }
+
+        $normalized = [];
+
+        foreach ($relations as $relationString) {
+            if (!is_string($relationString)) {
+                continue;
+            }
+
+            $parsed = $this->parseRelationWithFields($relationString);
+            $normalized[] = $parsed;
+        }
+
+        return $normalized;
     }
 
+    /**
+     * Extract relation-specific filters from oper node.
+     * @param $oper
+     * @return array
+     */
     private function extractRelationFilters($oper): array
     {
         if (!$oper || !is_array($oper)) {
@@ -135,11 +231,6 @@ class BaseService
         return $filters;
     }
 
-    private function flatten_array(array $array)
-    {
-        return iterator_to_array(
-            new \RecursiveIteratorIterator(new \RecursiveArrayIterator($array)));
-    }
 
     /**
      * Add equality conditions to the query.
@@ -153,7 +244,7 @@ class BaseService
      * @param array|string $params
      * @return Builder
      */
-    private function eq_attr($query, $params): Builder
+    private function eq_attr(Builder $query, array|string $params): Builder
     {
         if (is_string($params)) {
             $params = json_decode($params);
@@ -180,7 +271,7 @@ class BaseService
      *                             or an array of column-direction pairs.
      * @return Builder The query builder instance with applied ordering.
      */
-    private function order_by($query, $params): Builder
+    private function order_by(Builder $query, array|string $params): Builder
     {
         foreach ($params as $elements) {
             if (is_string($elements)) {
@@ -193,20 +284,6 @@ class BaseService
         return $query;
     }
 
-    /**
-     * Process the value of the 'oper' parameter.
-     *
-     * The parameter value is expected to be a string with values separated by
-     * the '|' character. The method splits the string into an array and returns
-     * it. If the parameter value is not a string, the method returns false.
-     *
-     * @param string $value The value of the 'oper' parameter.
-     * @return array|false The processed value, or false if the value is not a string.
-     */
-    public function process_oper($value): array|false
-    {
-        return explode("|", $value);
-    }
 
     /**
      * Build a query with a given array of conditions.
@@ -247,7 +324,7 @@ class BaseService
      * @param string $condition
      * @return Builder
      */
-    private function oper($query, $params, $condition = "and"): Builder
+    private function oper(Builder $query, array $params, string $condition = "and"): Builder
     {
         $allNumericKeys = array_keys($params) === array_filter(array_keys($params), 'is_int');
         if ($allNumericKeys) {
@@ -256,34 +333,56 @@ class BaseService
         return $this->applyFilters($query, $params, $condition);
     }
 
+    /**
+     *   * Process the query with given parameters.
+     **/
     public function process_query($params, $query): Builder
     {
+        // Reset counters
+        $this->currentDepth = 0;
+        $this->conditionCount = 0;
+
         $nested = isset($params['_nested']) ? $params['_nested'] : false;
+
+        // 1. Apply equality filters (legacy attr/eq)
         if (isset($params["attr"])) {
-            $query->av = $this->eq_attr($query, $params['attr']);
+            $query = $this->eq_attr($query, $params['attr']);
         }
+
+        // 2. Parse oper
         $oper = $params['oper'] ?? null;
         if (is_string($oper)) {
-            $decodedOper = json_decode($oper, true);
+            $decoded = json_decode($oper, true);
             if (json_last_error() === JSON_ERROR_NONE) {
-                $oper = $decodedOper;
+                $oper = $decoded;
             }
         }
-        $baseOper = $this->stripRelationFilters($oper);
+
+        // 3. Apply oper tree (includes whereHas for relations)
+        // This filters the ROOT dataset based on related records
+        if (!empty($oper)) {
+            $query = $this->applyOperTree($query, $oper, 'and', $this->modelClass);
+        }
+
+        // 4. Eager load relations with field selection
+        // This loads the related records (optionally filtered if _nested=true)
+        // IMPORTANT: This respects the "relation:field1,field2" syntax
         if (isset($params['relations'])) {
             $query = $this->relations($query, $params['relations'], $nested ? $oper : null);
         }
+
+        // 5. Select clause for main model
         if (isset($params['select'])) {
             $query = $query->select($params['select']);
         } else {
             $query = $query->select($this->modelClass->getTable() . '.*');
         }
+
+        // 6. Order by
         if (isset($params['orderby'])) {
             $query = $this->order_by($query, $params['orderby']);
         }
-        if (!empty($baseOper)) {
-            $query = $this->oper($query, $baseOper);
-        }
+
         return $query;
     }
 
@@ -292,7 +391,7 @@ class BaseService
         if (!is_array($oper)) {
             return $oper;
         }
-        $relations= $this->getModelRelations();
+        $relations = $this->getModelRelations();
         foreach (array_keys($oper) as $key) {
             if (is_string($key) && !in_array($key, ['and', 'or'], true) && !in_array($key, $relations, true)) {
                 unset($oper[$key]);
@@ -307,7 +406,7 @@ class BaseService
         $query = $this->process_query($params, $query);
         if (isset($params['pagination'])) {
             $pagination_lower = array_change_key_case($params['pagination']);
-            $pagesize=array_key_exists('pagesize', $pagination_lower)?$pagination_lower['pagesize']:$this->modelClass->getPerPage();
+            $pagesize = array_key_exists('pagesize', $pagination_lower) ? $pagination_lower['pagesize'] : $this->modelClass->getPerPage();
             if (!isset($params['pagination']['infinity']) || $params['pagination']['infinity'] !== true)
                 return $this->pagination($query, $params['pagination']);
             else {
@@ -477,8 +576,8 @@ class BaseService
     public function update(array $attributes, $id, $validate = false): array
     {
         $query = $this->modelClass->query();
-        $fieldKeyUpdate = $this->modelClass->getFieldKeyUpdate()??$this->modelClass->getPrimaryKey();
-        $this->modelClass = $this->modelClass->getFieldKeyUpdate()? $query->where([$fieldKeyUpdate=>$id])->firstOrFail():$query->findOrFail($id);
+        $fieldKeyUpdate = $this->modelClass->getFieldKeyUpdate() ?? $this->modelClass->getPrimaryKey();
+        $this->modelClass = $this->modelClass->getFieldKeyUpdate() ? $query->where([$fieldKeyUpdate => $id])->firstOrFail() : $query->findOrFail($id);
         $this->modelClass->setScenario("update");
         $specific = isset($attributes["_specific"]) ? $attributes["_specific"] : false;
         $this->modelClass->fill($attributes);
@@ -567,7 +666,441 @@ class BaseService
             $result = ['success' => false, 'error' => $e->getMessage()];
         }
         return $result;
-
     }
 
+    /**
+     * Normalize oper node to standardized format: { "and"|"or": [...], relation: {...} }
+     *
+     * @param mixed $oper
+     * @return array Normalized structure
+     */
+    private function normalizeOperNode(mixed $oper): array
+    {
+        if (empty($oper)) {
+            return [];
+        }
+        if (is_string($oper)) {
+            $decoded = json_decode($oper, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $oper = $decoded;
+            }
+        }
+        if (!is_array($oper)) {
+            return [];
+        }
+        if (array_is_list($oper)) {
+            return ['and' => $oper];
+        }
+        $normalized = [];
+        foreach ($oper as $key => $value) {
+            if (in_array($key, ['and', 'or'], true)) {
+                if (!is_array($value)) {
+                    throw new HttpException(400, "Logical operator '{$key}' must have array value.");
+                }
+                $normalized[$key] = $value;
+            } else {
+                $normalized[$key] = $value;
+            }
+        }
+        return $normalized;
+    }
+
+    /**
+     * Get allowed relations for a given model class.
+     *
+     * @param object|string $modelClass
+     * @return array List of allowed relation names
+     * @throws HttpException if strict mode and no RELATIONS defined
+     */
+    private function getRelationsForModel(object|string $modelClass): array
+    {
+        if (is_object($modelClass)) {
+            $modelClass = get_class($modelClass);
+        }
+        $model = is_string($modelClass) ? new $modelClass : $modelClass;
+        if (defined("{$modelClass}::RELATIONS")) {
+            return $modelClass::RELATIONS;
+        }
+
+        $strict = config('rest-generic-class.filtering.strict_relations', true);
+
+        if ($strict) {
+            throw new HttpException(
+                500,
+                "Model {$modelClass} must define const RELATIONS for security. " .
+                "Set 'filtering.strict_relations' => false to auto-detect (not recommended)."
+            );
+        }
+        return $this->autoDetectRelations($model);
+    }
+
+    /**
+     * Auto-detect relations via reflection (fallback, not recommended for production).
+     */
+    private function autoDetectRelations($model): array
+    {
+        $relations = [];
+        $methods = get_class_methods($model);
+
+        foreach ($methods as $method) {
+            if (method_exists($model, $method) && !in_array($method, ['exists', 'increment', 'decrement'])) {
+                try {
+                    $reflection = new \ReflectionMethod($model, $method);
+
+                    // Skip protected/private, static, magic methods
+                    if (!$reflection->isPublic() || $reflection->isStatic() || str_starts_with($method, '_')) {
+                        continue;
+                    }
+
+                    // Check return type
+                    $returnType = $reflection->getReturnType();
+                    if ($returnType && !$returnType->isBuiltin()) {
+                        $typeName = $returnType->getName();
+                        if (is_subclass_of($typeName, \Illuminate\Database\Eloquent\Relations\Relation::class)) {
+                            $relations[] = $method;
+                        }
+                    }
+                } catch (\ReflectionException $e) {
+                    continue;
+                }
+            }
+        }
+
+        return $relations;
+    }
+
+    /**
+     * Extract relation filters from normalized oper node.
+     * Only returns keys that are valid relations for the model.
+     *
+     * @param array $normalized Normalized oper structure
+     * @param object|string $modelClass
+     * @return array [ 'relation' => subOper, ... ]
+     */
+    private function extractRelationFiltersForModel(array $normalized, object|string $modelClass): array
+    {
+        $allowedRelations = $this->getRelationsForModel($modelClass);
+        $relationFilters = [];
+
+        foreach ($normalized as $key => $value) {
+            // Skip logical operators
+            if (in_array($key, ['and', 'or'], true)) {
+                continue;
+            }
+            // Check if key is allowed relation
+            $isAllowed = false;
+            // Support dot notation: user.roles
+            if (str_contains($key, '.')) {
+                $firstSegment = explode('.', $key)[0];
+                $isAllowed = in_array($firstSegment, $allowedRelations, true);
+            } else {
+                $isAllowed = in_array($key, $allowedRelations, true);
+            }
+
+            if (!$isAllowed) {
+                throw new HttpException(
+                    400,
+                    "Relation '{$key}' is not allowed for filtering on model " .
+                    (is_object($modelClass) ? get_class($modelClass) : $modelClass) .
+                    ". Allowed relations: " . implode(', ', $allowedRelations)
+                );
+            }
+
+            $relationFilters[$key] = $value;
+        }
+
+        return $relationFilters;
+    }
+
+    /**
+     * Remove relation filters from oper, keeping only 'and'/'or' conditions.
+     *
+     * @param array $normalized Normalized oper structure
+     * @param object|string $modelClass
+     * @return array Cleaned oper with only base conditions
+     */
+    private function stripRelationFiltersForModel(array $normalized, object|string $modelClass): array
+    {
+        $cleaned = [];
+
+        foreach ($normalized as $key => $value) {
+            // Keep only 'and'/'or' keys
+            if (in_array($key, ['and', 'or'], true)) {
+                $cleaned[$key] = $value;
+            }
+            // Everything else is a relation (will be processed separately)
+        }
+
+        return $cleaned;
+    }
+
+    /**
+     * Apply complete oper tree: base conditions + nested whereHas.
+     *
+     * @param Builder $query
+     * @param mixed $oper Raw oper structure
+     * @param string $boolean 'and' | 'or' for top-level wrapping
+     * @param object|string|null $modelClass Current model (for relation validation)
+     * @return Builder
+     */
+    private function applyOperTree(Builder $query, mixed $oper, string $boolean = 'and', object|string $modelClass = null): Builder
+    {
+        // Check recursion limits
+        $this->currentDepth++;
+        $maxDepth = config('rest-generic-class.filtering.max_depth', 5);
+
+        if ($this->currentDepth > $maxDepth) {
+            throw new HttpException(400, "Maximum nesting depth ({$maxDepth}) exceeded.");
+        }
+
+        try {
+            // 1. Normalize structure
+            $normalized = $this->normalizeOperNode($oper);
+
+            if (empty($normalized)) {
+                return $query;
+            }
+
+            // Use current model if not specified
+            $modelClass = $modelClass ?? $this->modelClass;
+
+            // 2. Extract base conditions and relation filters
+            $baseOper = $this->stripRelationFiltersForModel($normalized, $modelClass);
+            $relationFilters = $this->extractRelationFiltersForModel($normalized, $modelClass);
+
+            // 3. Apply base conditions (and/or blocks)
+            if (!empty($baseOper)) {
+                // Count conditions
+                foreach ($baseOper as $conditions) {
+                    if (is_array($conditions)) {
+                        $this->conditionCount += count($conditions);
+                    }
+                }
+
+                $maxConditions = config('rest-generic-class.filtering.max_conditions', 100);
+                if ($this->conditionCount > $maxConditions) {
+                    throw new HttpException(400, "Maximum conditions ({$maxConditions}) exceeded.");
+                }
+
+                // Use existing applyFilters from trait
+                $query = $this->applyFilters($query, $baseOper, $boolean);
+            }
+
+            // 4. Apply nested whereHas for each relation
+            foreach ($relationFilters as $relationPath => $subOper) {
+                $query = $this->applyNestedWhereHas($query, $relationPath, $subOper, $boolean, $modelClass);
+            }
+
+            return $query;
+
+        } finally {
+            $this->currentDepth--;
+        }
+    }
+
+    /**
+     * Apply whereHas with nested relation path (supports dot notation).
+     *
+     * @param Builder $query
+     * @param string $relationPath e.g. 'user', 'user.roles'
+     * @param mixed $subOper Sub-oper to apply inside the whereHas
+     * @param string $boolean 'and' | 'or'
+     * @param object|string $currentModel Current model class
+     * @return Builder
+     */
+    private function applyNestedWhereHas(
+        Builder       $query,
+        string        $relationPath,
+        mixed         $subOper,
+        string        $boolean,
+        object|string $currentModel
+    ): Builder
+    {
+        $method = $boolean === 'or' ? 'orWhereHas' : 'whereHas';
+
+        // Handle dot notation: user.roles
+        if (str_contains($relationPath, '.')) {
+            $segments = explode('.', $relationPath);
+            $firstRelation = array_shift($segments);
+            $remainingPath = implode('.', $segments);
+
+            // Get related model for first segment
+            $relatedModel = $this->getRelatedModel($currentModel, $firstRelation);
+
+            return $query->{$method}($firstRelation, function ($relationQuery) use ($remainingPath, $subOper, $boolean, $relatedModel) {
+                // Recurse into nested relation
+                if ($remainingPath) {
+                    $this->applyNestedWhereHas($relationQuery, $remainingPath, $subOper, $boolean, $relatedModel);
+                } else {
+                    // Terminal node: apply subOper
+                    $this->applyOperTree($relationQuery, $subOper, $boolean, $relatedModel);
+                }
+            });
+        }
+
+        // Simple relation (no dots)
+        $relatedModel = $this->getRelatedModel($currentModel, $relationPath);
+
+        return $query->{$method}($relationPath, function ($relationQuery) use ($subOper, $boolean, $relatedModel) {
+            $this->applyOperTree($relationQuery, $subOper, $boolean, $relatedModel);
+        });
+    }
+
+    /**
+     * Get the related model class for a given relation name.
+     *
+     * @param string|object $modelClass
+     * @param string $relationName
+     * @return string Related model class name
+     * @throws HttpException if relation doesn't exist
+     */
+    private function getRelatedModel($modelClass, string $relationName): string
+    {
+        if (is_object($modelClass)) {
+            $model = $modelClass;
+            $modelClass = get_class($modelClass);
+        } else {
+            $model = new $modelClass;
+        }
+
+        if (!method_exists($model, $relationName)) {
+            throw new HttpException(400, "Relation '{$relationName}' does not exist on model {$modelClass}.");
+        }
+
+        try {
+            $relation = $model->{$relationName}();
+
+            if (!$relation instanceof \Illuminate\Database\Eloquent\Relations\Relation) {
+                throw new HttpException(400, "Method '{$relationName}' on {$modelClass} is not a valid Eloquent relation.");
+            }
+
+            return get_class($relation->getRelated());
+
+        } catch (\Throwable $e) {
+            throw new HttpException(400, "Failed to resolve related model for '{$relationName}': " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Parse relation string with optional field selection.
+     *
+     * Examples:
+     *   "user" → ['relation' => 'user', 'fields' => null]
+     *   "user:id,name,email" → ['relation' => 'user', 'fields' => ['id','name','email']]
+     *   "user.roles:id,name" → ['relation' => 'user.roles', 'fields' => ['id','name']]
+     *
+     * @param string $relationString
+     * @return array ['relation' => string, 'fields' => array|null, 'segments' => array]
+     */
+    private function parseRelationWithFields(string $relationString): array
+    {
+        $parts = explode(':', $relationString, 2);
+        $relation = trim($parts[0]);
+        $fields = isset($parts[1]) ? array_map('trim', explode(',', $parts[1])) : null;
+
+        // Parse segments for nested relations (e.g., "user.roles" → ["user", "roles"])
+        $segments = explode('.', $relation);
+
+        return [
+            'relation' => $relation,
+            'fields' => $fields,
+            'segments' => $segments,
+            'base' => $segments[0], // First segment (for validation)
+        ];
+    }
+
+    /**
+     * Ensure foreign keys are included in field selection for relations.
+     * Laravel requires foreign keys when selecting specific fields.
+     *
+     * @param object|string $parentModel Parent model instance or class
+     * @param string $relationName Relation method name
+     * @param array $fields User-specified fields
+     * @return array Fields with required foreign keys added
+     */
+    private function ensureForeignKeysInFields(object|string $parentModel, string $relationName, array $fields): array
+    {
+        if (empty($fields)) {
+            return $fields;
+        }
+
+        $model = is_string($parentModel) ? new $parentModel : $parentModel;
+
+        try {
+            $relation = $model->{$relationName}();
+
+            // Always include primary key of related model
+            $relatedKeyName = $relation->getRelated()->getKeyName();
+            if (!in_array($relatedKeyName, $fields, true)) {
+                array_unshift($fields, $relatedKeyName);
+            }
+
+            // Include foreign key based on relation type
+            if ($relation instanceof \Illuminate\Database\Eloquent\Relations\BelongsTo) {
+                // BelongsTo: need foreign key on parent
+                // No need to add to $fields (fields are for related model)
+            } elseif ($relation instanceof \Illuminate\Database\Eloquent\Relations\HasOneOrMany) {
+                // HasMany/HasOne: need foreign key on related model
+                $foreignKey = $relation->getForeignKeyName();
+                $foreignKeyName = last(explode('.', $foreignKey)); // Remove table prefix
+
+                if (!in_array($foreignKeyName, $fields, true)) {
+                    array_unshift($fields, $foreignKeyName);
+                }
+            } elseif ($relation instanceof \Illuminate\Database\Eloquent\Relations\BelongsToMany) {
+                // BelongsToMany: pivot keys are handled automatically by Laravel
+                // Just ensure we have the primary key (already done above)
+            }
+
+            return array_values(array_unique($fields));
+
+        } catch (\Throwable $e) {
+            // If we can't determine foreign keys, return fields as-is
+            Log::warning("Could not determine foreign keys for relation {$relationName}: " . $e->getMessage());
+            return $fields;
+        }
+    }
+
+    /**
+     * Handle nested relation with field selection (e.g., "user.roles:id,name")
+     *
+     * @param array $normalized Normalized relations array
+     * @return array Processed for Laravel's with() method
+     */
+    private function processNestedRelationsWithFields(array $normalized): array
+    {
+        $processed = [];
+
+        foreach ($normalized as $parsed) {
+            $relation = $parsed['relation'];
+            $fields = $parsed['fields'];
+
+            if (!str_contains($relation, '.')) {
+                // Simple relation, already handled
+                $processed[] = $parsed;
+                continue;
+            }
+
+            // Nested relation: user.roles
+            $segments = $parsed['segments'];
+
+            if ($fields) {
+                // Need to ensure foreign keys at each level
+                // This is complex - Laravel handles it when you use the string syntax
+                // "user.roles:id,name" works out of the box
+                $key = $relation . ':' . implode(',', $fields);
+                $processed[] = [
+                    'relation' => $relation,
+                    'key' => $key,
+                    'fields' => $fields,
+                    'segments' => $segments,
+                    'base' => $segments[0]
+                ];
+            } else {
+                $processed[] = $parsed;
+            }
+        }
+
+        return $processed;
+    }
 }
