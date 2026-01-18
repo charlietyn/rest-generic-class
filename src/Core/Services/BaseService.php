@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Maatwebsite\Excel\Facades\Excel;
 use Nwidart\Modules\Facades\Module;
+use Ronu\RestGenericClass\Core\Helpers\ColumnValidator;
 use Ronu\RestGenericClass\Core\Traits\HasDynamicFilter;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -40,12 +41,25 @@ class BaseService
     private int $conditionCount = 0;
 
     /**
+     * @var bool Validate columns against schema (can be disabled for performance)
+     */
+    private bool $validateColumns = true;
+
+    /**
+     * @var bool Throw exceptions on invalid columns (false = filter silently)
+     */
+    private bool $strictValidation = true;
+
+    /**
      * Services constructor.
      * @param String|Model $modelClass
      */
     public function __construct(Model|string $modelClass)
     {
         $this->modelClass = new $modelClass;
+        $this->validateColumns = config('rest-generic-class.filtering.validate_columns', true);
+        $this->strictValidation = config('rest-generic-class.filtering.strict_column_validation', true);
+
     }
 
 
@@ -346,7 +360,10 @@ class BaseService
 
         // 1. Apply equality filters (legacy attr/eq)
         if (isset($params["attr"])) {
-            $query = $this->eq_attr($query, $params['attr']);
+            $params["attr"] = $this->validateAndFilterAttributes($params["attr"]);
+            if (!empty($params["attr"])) {
+                $query = $this->eq_attr($query, $params['attr']);
+            }
         }
 
         // 2. Parse oper
@@ -361,6 +378,7 @@ class BaseService
         // 3. Apply oper tree (includes whereHas for relations)
         // This filters the ROOT dataset based on related records
         if (!empty($oper)) {
+            $oper = $this->validateOperColumns($oper, $this->modelClass);
             $query = $this->applyOperTree($query, $oper, 'and', $this->modelClass);
         }
 
@@ -368,19 +386,54 @@ class BaseService
         // This loads the related records (optionally filtered if _nested=true)
         // IMPORTANT: This respects the "relation:field1,field2" syntax
         if (isset($params['relations'])) {
-            $query = $this->relations($query, $params['relations'], $nested ? $oper : null);
+            $relations = $this->normalizeRelations($params['relations']);
+
+            // Extract relation names for validation
+            $relationNames = array_map(fn($r) => $r['relation'], $relations);
+            $validRelations = $this->validateModelRelations($relationNames, 'eager loading');
+
+            // Filter to only valid relations
+            $validRelationsSet = array_flip($validRelations);
+            $relations = array_filter($relations, fn($r) => isset($validRelationsSet[$r['relation']]));
+
+            if (!empty($relations)) {
+                // Convert back to format expected by relations()
+                $relationsParam = array_map(function ($r) {
+                    return $r['fields']
+                        ? $r['relation'] . ':' . implode(',', $r['fields'])
+                        : $r['relation'];
+                }, $relations);
+
+                $query = $this->relations($query, $relationsParam, $nested ? $oper : null);
+            }
         }
 
         // 5. Select clause for main model
         if (isset($params['select'])) {
-            $query = $query->select($params['select']);
+            $select = $params['select'];
+            if ($select !== '*') {
+                $columns = is_string($select) ? explode(',', $select) : $select;
+                $validColumns = $this->validateModelColumns($columns, 'select');
+
+                if (!empty($validColumns)) {
+                    $query = $query->select($validColumns);
+                } else {
+                    // Fallback to table.* if no valid columns
+                    $query = $query->select($this->modelClass->getTable() . '.*');
+                }
+            } else {
+                $query = $query->select($this->modelClass->getTable() . '.*');
+            }
         } else {
             $query = $query->select($this->modelClass->getTable() . '.*');
         }
 
         // 6. Order by
         if (isset($params['orderby'])) {
-            $query = $this->order_by($query, $params['orderby']);
+            $orderby = $this->validateOrderBy($params['orderby']);
+            if (!empty($orderby)) {
+                $query = $this->order_by($query, $orderby);
+            }
         }
 
         return $query;
@@ -910,11 +963,12 @@ class BaseService
      */
     private function applyNestedWhereHas(
         Builder $query,
-        string $relationPath,
-        mixed $subOper,
-        string $boolean,
+        string  $relationPath,
+        mixed   $subOper,
+        string  $boolean,
                 $currentModel
-    ): Builder {
+    ): Builder
+    {
         $method = $boolean === 'or' ? 'orWhereHas' : 'whereHas';
 
         // Handle dot notation: user.roles
@@ -1102,5 +1156,260 @@ class BaseService
         }
 
         return $processed;
+    }
+
+    /**
+     * Validate columns for the current model
+     */
+    private function validateModelColumns(array|string $columns, string $context = 'query'): array
+    {
+        if (!$this->validateColumns) {
+            return is_string($columns) ? [$columns] : $columns;
+        }
+
+        try {
+            return ColumnValidator::validateColumns(
+                $this->modelClass,
+                $columns,
+                $this->strictValidation
+            );
+        } catch (\InvalidArgumentException $e) {
+            Log::channel('rest-generic-class')->warning("Column validation failed in {$context}", [
+                'model' => get_class($this->modelClass),
+                'columns' => $columns,
+                'error' => $e->getMessage()
+            ]);
+
+            if ($this->strictValidation) {
+                throw new HttpException(400, "Invalid columns in {$context}: " . $e->getMessage());
+            }
+
+            // Non-strict mode: return empty to skip invalid columns
+            return [];
+        }
+    }
+
+    /**
+     * Validate relations for the current model
+     */
+    private function validateModelRelations(array|string $relations, string $context = 'relations'): array
+    {
+        if (!$this->validateColumns) {
+            return is_string($relations) ? [$relations] : $relations;
+        }
+
+        try {
+            return ColumnValidator::validateRelations(
+                $this->modelClass,
+                $relations,
+                $this->strictValidation
+            );
+        } catch (\InvalidArgumentException $e) {
+            Log::channel('rest-generic-class')->warning("Relation validation failed in {$context}", [
+                'model' => get_class($this->modelClass),
+                'relations' => $relations,
+                'error' => $e->getMessage()
+            ]);
+
+            if ($this->strictValidation) {
+                throw new HttpException(400, "Invalid relations in {$context}: " . $e->getMessage());
+            }
+
+            return [];
+        }
+    }
+
+    /**
+     * Validate and filter attributes for equality conditions
+     */
+    private function validateAndFilterAttributes(array|string $attributes): array
+    {
+        if (is_string($attributes)) {
+            $attributes = json_decode($attributes, true) ?? [];
+        }
+
+        $columns = array_keys($attributes);
+        $validColumns = $this->validateModelColumns($columns, 'attr/eq');
+
+        // Filter to only valid columns
+        return array_intersect_key($attributes, array_flip($validColumns));
+    }
+
+    /**
+     * Validate columns in oper tree recursively
+     */
+    private function validateOperColumns(mixed $oper, object|string $modelClass): mixed
+    {
+        if (!is_array($oper)) {
+            return $oper;
+        }
+
+        $model = is_object($modelClass) ? $modelClass : new $modelClass;
+        $validated = [];
+
+        foreach ($oper as $key => $value) {
+            // Logical operators - recurse
+            if (in_array($key, ['and', 'or'], true)) {
+                if (is_array($value)) {
+                    // Extract and validate columns from conditions
+                    $validatedConditions = [];
+
+                    foreach ($value as $condition) {
+                        if (is_string($condition)) {
+                            // Format: "column|operator|value"
+                            $parts = explode('|', $condition, 3);
+                            if (isset($parts[0])) {
+                                $column = trim($parts[0]);
+
+                                // Validate column
+                                try {
+                                    $valid = ColumnValidator::validateColumns(
+                                        $model,
+                                        $column,
+                                        $this->strictValidation
+                                    );
+
+                                    if (!empty($valid)) {
+                                        $validatedConditions[] = $condition;
+                                    }
+                                } catch (\InvalidArgumentException $e) {
+                                    Log::channel('rest-generic-class')->warning(
+                                        "Skipping invalid column in oper condition",
+                                        [
+                                            'model' => get_class($model),
+                                            'column' => $column,
+                                            'condition' => $condition,
+                                            'error' => $e->getMessage()
+                                        ]
+                                    );
+
+                                    if ($this->strictValidation) {
+                                        throw new HttpException(
+                                            400,
+                                            "Invalid column '{$column}' in oper condition for model " .
+                                            class_basename($model)
+                                        );
+                                    }
+                                }
+                            }
+                        } elseif (is_array($condition)) {
+                            // Nested structure
+                            $validatedConditions[] = $this->validateOperColumns($condition, $model);
+                        }
+                    }
+
+                    $validated[$key] = $validatedConditions;
+                }
+            } // Relation filters - validate against related model
+            elseif (is_string($key) && !in_array($key, ['and', 'or'], true)) {
+                // Check if it's a valid relation
+                try {
+                    $validRelations = ColumnValidator::validateRelations(
+                        $model,
+                        $key,
+                        $this->strictValidation
+                    );
+
+                    if (!empty($validRelations)) {
+                        // Get related model for nested validation
+                        try {
+                            $relatedModel = $this->getRelatedModel($modelClass, $key);
+                            $validated[$key] = $this->validateOperColumns($value, $relatedModel);
+                        } catch (\Throwable $e) {
+                            Log::channel('rest-generic-class')->warning(
+                                "Could not validate nested relation columns",
+                                [
+                                    'relation' => $key,
+                                    'error' => $e->getMessage()
+                                ]
+                            );
+
+                            if (!$this->strictValidation) {
+                                // In non-strict mode, skip this relation filter
+                                continue;
+                            }
+                            throw $e;
+                        }
+                    }
+                } catch (\InvalidArgumentException $e) {
+                    Log::channel('rest-generic-class')->warning(
+                        "Skipping invalid relation in oper",
+                        [
+                            'model' => get_class($model),
+                            'relation' => $key,
+                            'error' => $e->getMessage()
+                        ]
+                    );
+
+                    if ($this->strictValidation) {
+                        throw new HttpException(
+                            400,
+                            "Invalid relation '{$key}' in oper for model " . class_basename($model)
+                        );
+                    }
+                }
+            }
+        }
+
+        return $validated;
+    }
+
+    /**
+     * Validate orderBy parameters
+     */
+    private function validateOrderBy(array|string $orderby): array
+    {
+        if (is_string($orderby)) {
+            $orderby = json_decode($orderby, true) ?? [];
+        }
+
+        $validated = [];
+
+        foreach ($orderby as $elements) {
+            if (is_string($elements)) {
+                $elements = json_decode($elements, true) ?? [];
+            }
+
+            if (is_array($elements)) {
+                $validatedElements = [];
+
+                foreach ($elements as $column => $direction) {
+                    try {
+                        $valid = ColumnValidator::validateColumns(
+                            $this->modelClass,
+                            $column,
+                            $this->strictValidation
+                        );
+
+                        if (!empty($valid)) {
+                            $validatedElements[$column] = $direction;
+                        }
+                    } catch (\InvalidArgumentException $e) {
+                        Log::channel('rest-generic-class')->warning(
+                            "Skipping invalid column in orderby",
+                            [
+                                'model' => get_class($this->modelClass),
+                                'column' => $column,
+                                'error' => $e->getMessage()
+                            ]
+                        );
+
+                        if ($this->strictValidation) {
+                            throw new HttpException(
+                                400,
+                                "Invalid orderby column '{$column}' for model " .
+                                class_basename($this->modelClass)
+                            );
+                        }
+                    }
+                }
+
+                if (!empty($validatedElements)) {
+                    $validated[] = $validatedElements;
+                }
+            }
+        }
+
+        return $validated;
     }
 }

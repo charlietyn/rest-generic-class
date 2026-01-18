@@ -16,5 +16,8 @@ return [
             'ilike', 'not ilike', 'in', 'not in', 'between',
             'not between', 'null', 'not null', 'exists',
             'not exists', 'date', 'not date'],
+        'validate_columns' => env('REST_VALIDATE_COLUMNS', true),
+        'strict_column_validation' => env('REST_STRICT_COLUMNS', true),
+        'column_cache_ttl' => 3600, // Cache column lists for 1 hour
     ],
 ];
