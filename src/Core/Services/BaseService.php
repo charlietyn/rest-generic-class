@@ -840,10 +840,10 @@ class BaseService
      * @param Builder $query
      * @param mixed $oper Raw oper structure
      * @param string $boolean 'and' | 'or' for top-level wrapping
-     * @param object|string|null $modelClass Current model (for relation validation)
+     * @param string|object|null $modelClass Current model (for relation validation)
      * @return Builder
      */
-    private function applyOperTree(Builder $query, mixed $oper, string $boolean = 'and', object|string $modelClass = null): Builder
+    private function applyOperTree(Builder $query, mixed $oper, string $boolean = 'and', $modelClass = null): Builder
     {
         // Check recursion limits
         $this->currentDepth++;
@@ -882,8 +882,8 @@ class BaseService
                     throw new HttpException(400, "Maximum conditions ({$maxConditions}) exceeded.");
                 }
 
-                // Use existing applyFilters from trait
-                $query = $this->applyFilters($query, $baseOper, $boolean);
+                // ✅ PASS MODEL TO applyFilters for table prefixing
+                $query = $this->applyFilters($query, $baseOper, $boolean, $modelClass);
             }
 
             // 4. Apply nested whereHas for each relation
@@ -905,17 +905,16 @@ class BaseService
      * @param string $relationPath e.g. 'user', 'user.roles'
      * @param mixed $subOper Sub-oper to apply inside the whereHas
      * @param string $boolean 'and' | 'or'
-     * @param object|string $currentModel Current model class
+     * @param string|object $currentModel Current model class
      * @return Builder
      */
     private function applyNestedWhereHas(
-        Builder       $query,
-        string        $relationPath,
-        mixed         $subOper,
-        string        $boolean,
-        object|string $currentModel
-    ): Builder
-    {
+        Builder $query,
+        string $relationPath,
+        mixed $subOper,
+        string $boolean,
+                $currentModel
+    ): Builder {
         $method = $boolean === 'or' ? 'orWhereHas' : 'whereHas';
 
         // Handle dot notation: user.roles
@@ -932,7 +931,7 @@ class BaseService
                 if ($remainingPath) {
                     $this->applyNestedWhereHas($relationQuery, $remainingPath, $subOper, $boolean, $relatedModel);
                 } else {
-                    // Terminal node: apply subOper
+                    // Terminal node: apply subOper with correct model context
                     $this->applyOperTree($relationQuery, $subOper, $boolean, $relatedModel);
                 }
             });
@@ -942,6 +941,7 @@ class BaseService
         $relatedModel = $this->getRelatedModel($currentModel, $relationPath);
 
         return $query->{$method}($relationPath, function ($relationQuery) use ($subOper, $boolean, $relatedModel) {
+            // ✅ PASS RELATED MODEL to applyOperTree for correct table prefixing
             $this->applyOperTree($relationQuery, $subOper, $boolean, $relatedModel);
         });
     }
@@ -949,12 +949,12 @@ class BaseService
     /**
      * Get the related model class for a given relation name.
      *
-     * @param string|object $modelClass
+     * @param object|string $modelClass
      * @param string $relationName
      * @return string Related model class name
      * @throws HttpException if relation doesn't exist
      */
-    private function getRelatedModel($modelClass, string $relationName): string
+    private function getRelatedModel(object|string $modelClass, string $relationName): string
     {
         if (is_object($modelClass)) {
             $model = $modelClass;
@@ -1056,7 +1056,7 @@ class BaseService
 
         } catch (\Throwable $e) {
             // If we can't determine foreign keys, return fields as-is
-            Log::warning("Could not determine foreign keys for relation {$relationName}: " . $e->getMessage());
+            Log::channel('rest-generic-class')->warning("Could not determine foreign keys for relation {$relationName}: " . $e->getMessage());
             return $fields;
         }
     }

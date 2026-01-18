@@ -86,8 +86,18 @@ class RestController extends BaseController
      */
     public function index(Request $request): LengthAwarePaginator|array
     {
-        $params = $this->process_request($request);
-        return $this->service->list_all($params);
+        try {
+            $params = $this->process_request($request);
+            return $this->service->list_all($params);
+        }catch (\Exception $exception){
+            Log::channel('rest-generic-class')->error('Index failed', [
+                'controller' => static::class,
+                'method' => __FUNCTION__,
+                'exception' => $exception,
+            ]);
+            throw $exception;
+        }
+
     }
 
     /**
