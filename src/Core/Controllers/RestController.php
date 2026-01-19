@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Ronu\RestGenericClass\Core\Helpers\DatabaseErrorParser;
+use Ronu\RestGenericClass\Core\Helpers\DatabaseErrorParserException;
 use Ronu\RestGenericClass\Core\Models\BaseModel;
 use Ronu\RestGenericClass\Core\Requests\BaseFormRequest;
 use Ronu\RestGenericClass\Core\Services\BaseService;
@@ -53,7 +54,7 @@ class RestController extends BaseController
     /**
      * Handle database exceptions with user-friendly messages
      */
-    protected function handleDatabaseException(\Throwable $e): JsonResponse
+    protected function handleDatabaseException(\Throwable $e): DatabaseErrorParserException
     {
         // Parse the error
         $parsedError = DatabaseErrorParser::parse($e);
@@ -65,8 +66,8 @@ class RestController extends BaseController
             'trace' => $e->getTraceAsString(),
         ]);
 
-        // Return user-friendly JSON response
-        return DatabaseErrorParser::toJsonResponse($parsedError);
+        // Return user-friendly exception error
+        return DatabaseErrorParser::toExceptionError($parsedError);
     }
     /**
      * Processes the incoming request and extracts query parameters.
@@ -104,7 +105,7 @@ class RestController extends BaseController
      * @param Request $request
      * @return LengthAwarePaginator|array
      */
-    public function index(Request $request): LengthAwarePaginator|array|JsonResponse
+    public function index(Request $request): LengthAwarePaginator|array|DatabaseErrorParserException
     {
         try {
             $params = $this->process_request($request);
@@ -121,9 +122,9 @@ class RestController extends BaseController
      * Retrieves a single resource based on parameters.
      *
      * @param Request $request
-     * @return array
+     * @return array|DatabaseErrorParserException
      */
-    public function getOne(Request $request): array
+    public function getOne(Request $request): array|DatabaseErrorParserException
     {
         try {
             $params = $this->process_request($request);

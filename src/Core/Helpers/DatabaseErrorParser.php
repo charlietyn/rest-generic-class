@@ -3,6 +3,15 @@
 namespace Ronu\RestGenericClass\Core\Helpers;
 
 use Illuminate\Support\Str;
+use function PHPUnit\Framework\throwException;
+
+class DatabaseErrorParserException extends \Exception
+{
+    public function getDatabaseErrorParsed()
+    {
+        return json_decode($this->getMessage(),true);
+    }
+}
 
 /**
  * DatabaseErrorParser
@@ -951,10 +960,9 @@ class DatabaseErrorParser
     /**
      * Format response as HTTP JSON response
      */
-    public static function toJsonResponse(array $parsedError, int $statusCode = 400): \Illuminate\Http\JsonResponse
+    public static function toExceptionError(array $parsedError, int $statusCode = 400): \DatabaseErrorParserException
     {
         $response = [
-            'success' => false,
             'error' => [
                 'title' => $parsedError['title'],
                 'message' => $parsedError['description'],
@@ -970,13 +978,12 @@ class DatabaseErrorParser
         } else if ($parsedError['hint']) {
             $response['error']['hint'] = $parsedError['hint'];
         }
-        
+
         // Include details only in debug mode
         if (config('app.debug')) {
             $response['error']['details'] = $parsedError['details'];
         }
-
-        return response()->json($response, $statusCode);
+        throw new DatabaseErrorParserException(json_encode($response), $statusCode);
     }
 
     /**
