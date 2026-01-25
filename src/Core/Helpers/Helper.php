@@ -17,6 +17,7 @@ use Symfony\Component\Console\Input\ArgvInput;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Route;
 
 class Helper
 {
@@ -319,4 +320,34 @@ class Helper
             return $acc;
         }, []));
     }
+
+    /**
+     * Dynamically loads module route files and automatically applies their namespace.
+     *
+     * @param string $filePattern The glob pattern to find the route files (e.g., `modules/{*}/Routes/api.php`)
+     * @return void
+     */
+    public static function loadModuleRoutes(string $filePattern)
+    {
+        // Find all files matching the pattern
+        foreach (glob(base_path($filePattern)) as $filePath) {
+
+            // Extract the module directory name (e.g., 'audit' from '/modules/audit/Routes/api.php')
+            $moduleDir = basename(dirname(dirname($filePath)));
+
+            if ($moduleDir && $moduleDir !== 'modules') {
+                // Construct the fully qualified namespace (e.g., 'Modules\Audit\Http\Controllers')
+                // Using ucfirst() assumes module directory name matches the module's namespace casing
+                $moduleNamespace = 'Modules\\' . ucfirst($moduleDir) . '\\Http\\Controllers';
+
+                // Wrap the file requirement within a Route group that applies the namespace
+                Route::group([
+                    'namespace' => $moduleNamespace
+                ], function () use ($filePath) {
+                    require $filePath;
+                });
+            }
+        }
+    }
+
 }
