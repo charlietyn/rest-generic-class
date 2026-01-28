@@ -1397,6 +1397,59 @@ Content-Type: application/json
 }
 ```
 
+### Show con Jerarquía
+
+El endpoint `show` también soporta jerarquía con modos específicos:
+
+**Modos disponibles para show:**
+
+| Modo | Descripción |
+|------|-------------|
+| `node_only` | Solo el nodo con `children: []` |
+| `with_descendants` | El nodo + todos sus descendientes (default) |
+| `with_ancestors` | Cadena desde la raíz hasta el nodo |
+| `full_branch` | Ancestros + nodo + descendientes |
+
+**Ejemplo: Obtener nodo con descendientes**
+```http
+GET /api/roles/4?hierarchy=true
+```
+
+**Response:**
+```json
+{
+  "id": 4, "name": "editor_posts", "role_id": 3,
+  "children": [
+    {"id": 6, "name": "editor_drafts", "role_id": 4, "children": []}
+  ]
+}
+```
+
+**Ejemplo: Obtener cadena de ancestros**
+```http
+GET /api/roles/6?hierarchy={"mode":"with_ancestors"}
+```
+
+**Response:**
+```json
+{
+  "id": 3, "name": "editor", "role_id": null,
+  "children": [
+    {
+      "id": 4, "name": "editor_posts", "role_id": 3,
+      "children": [
+        {"id": 6, "name": "editor_drafts", "role_id": 4, "children": []}
+      ]
+    }
+  ]
+}
+```
+
+**Ejemplo: Rama completa**
+```http
+GET /api/roles/4?hierarchy={"mode":"full_branch","max_depth":2}
+```
+
 ### Paginación con Jerarquía
 
 Con `hierarchy`, se paginan los **nodos raíz**:

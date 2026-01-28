@@ -612,6 +612,11 @@ class BaseService
 
     public function show($params, $id): mixed
     {
+        // Check if hierarchy mode is requested
+        if (isset($params['hierarchy']) && $params['hierarchy']) {
+            return $this->showHierarchy($params, $id);
+        }
+
         $nested = isset($params['_nested']) ? $params['_nested'] : false;
         $query = $this->modelClass->query();
         if (isset($params['relations'])) {
@@ -621,6 +626,289 @@ class BaseService
             $query = $query->select($params['select']);
         }
         return $query->findOrFail($id);
+    }
+
+    /**
+     * Show a single record in hierarchical structure.
+     *
+     * @param array $params Query parameters including hierarchy config
+     * @param mixed $id The record ID to show
+     * @return array Hierarchical structure of the record
+     * @throws HttpException If model doesn't support hierarchy
+     */
+    public function showHierarchy(array $params, mixed $id): array
+    {
+        // Validate model supports hierarchy
+        if (!$this->modelClass->hasHierarchyField()) {
+            throw new HttpException(400,
+                "Model " . get_class($this->modelClass) . " does not support hierarchical show. " .
+                "Define const HIERARCHY_FIELD_ID to enable this feature."
+            );
+        }
+
+        // Normalize hierarchy parameters with show-specific defaults
+        $hierarchyConfig = $this->normalizeShowHierarchyParams($params['hierarchy']);
+
+        if ($hierarchyConfig === null) {
+            // Hierarchy disabled, fallback to normal show
+            unset($params['hierarchy']);
+            return $this->show($params, $id)->toArray();
+        }
+
+        $hierarchyFieldId = $this->modelClass->getHierarchyFieldId();
+        $primaryKey = $this->modelClass->getKeyName();
+        $childrenKey = $hierarchyConfig['children_key'];
+        $maxDepth = $hierarchyConfig['max_depth'];
+        $mode = $hierarchyConfig['mode'];
+        $includeEmptyChildren = $hierarchyConfig['include_empty_children'];
+
+        // Get the requested record
+        $nested = isset($params['_nested']) ? $params['_nested'] : false;
+        $query = $this->modelClass->query();
+        if (isset($params['relations'])) {
+            $query = $this->relations($query, $params['relations'], $nested ? $params["oper"] : null);
+        }
+        if (isset($params['select'])) {
+            $query = $query->select($params['select']);
+        }
+        $record = $query->findOrFail($id);
+
+        // Build the hierarchical response based on mode
+        $result = $this->buildShowHierarchy(
+            $record,
+            $mode,
+            $hierarchyFieldId,
+            $primaryKey,
+            $childrenKey,
+            $maxDepth,
+            $includeEmptyChildren,
+            $params
+        );
+
+        return $result;
+    }
+
+    /**
+     * Normalize hierarchy parameters for show endpoint.
+     *
+     * @param mixed $hierarchy Raw hierarchy parameter
+     * @return array|null Normalized config or null if disabled
+     */
+    private function normalizeShowHierarchyParams(mixed $hierarchy): ?array
+    {
+        $defaults = [
+            'children_key' => 'children',
+            'max_depth' => null,
+            'mode' => 'with_descendants',  // Default for show is with_descendants
+            'include_empty_children' => true,
+        ];
+
+        $validModes = ['node_only', 'with_descendants', 'with_ancestors', 'full_branch'];
+
+        if ($hierarchy === null || $hierarchy === false) {
+            return null;
+        }
+
+        // Simple boolean true - use defaults
+        if ($hierarchy === true || $hierarchy === 'true' || $hierarchy === '1') {
+            return $defaults;
+        }
+
+        // Parse JSON string if needed
+        if (is_string($hierarchy)) {
+            $decoded = json_decode($hierarchy, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $hierarchy = $decoded;
+            } else {
+                return null;
+            }
+        }
+
+        if (!is_array($hierarchy)) {
+            return null;
+        }
+
+        // Check for enabled flag
+        if (isset($hierarchy['enabled']) && !$hierarchy['enabled']) {
+            return null;
+        }
+
+        // Merge with defaults
+        $config = array_merge($defaults, $hierarchy);
+
+        // Validate mode
+        if (!in_array($config['mode'], $validModes, true)) {
+            throw new HttpException(400, "Invalid hierarchy mode '{$config['mode']}'. Valid modes for show: " . implode(', ', $validModes));
+        }
+
+        // Validate max_depth
+        if ($config['max_depth'] !== null && (!is_int($config['max_depth']) || $config['max_depth'] < 1)) {
+            throw new HttpException(400, "Hierarchy max_depth must be a positive integer or null.");
+        }
+
+        return $config;
+    }
+
+    /**
+     * Build hierarchical structure for show endpoint.
+     *
+     * @param Model $record The main record
+     * @param string $mode Hierarchy mode
+     * @param string $hierarchyFieldId FK field name
+     * @param string $primaryKey PK field name
+     * @param string $childrenKey Children array key
+     * @param int|null $maxDepth Maximum depth
+     * @param bool $includeEmptyChildren Include empty children arrays
+     * @param array $params Original query params (for relations/select)
+     * @return array Hierarchical structure
+     */
+    private function buildShowHierarchy(
+        $record,
+        string $mode,
+        string $hierarchyFieldId,
+        string $primaryKey,
+        string $childrenKey,
+        ?int $maxDepth,
+        bool $includeEmptyChildren,
+        array $params
+    ): array {
+        $recordId = $record->{$primaryKey};
+
+        switch ($mode) {
+            case 'node_only':
+                // Just the node with empty children
+                $result = $record->toArray();
+                if ($includeEmptyChildren) {
+                    $result[$childrenKey] = [];
+                }
+                return $result;
+
+            case 'with_descendants':
+                // Node + all descendants as tree
+                $allRecords = collect([$record]);
+                $allRecords = $this->addDescendantsToCollection($allRecords, $hierarchyFieldId, $primaryKey);
+
+                // Apply relations/select to descendants
+                if ($allRecords->count() > 1) {
+                    $descendantIds = $allRecords->pluck($primaryKey)->filter(fn($id) => $id != $recordId)->toArray();
+                    if (!empty($descendantIds)) {
+                        $query = $this->modelClass->query()->whereIn($primaryKey, $descendantIds);
+                        if (isset($params['relations'])) {
+                            $query = $this->relations($query, $params['relations'], null);
+                        }
+                        if (isset($params['select'])) {
+                            $query = $query->select($params['select']);
+                        }
+                        $descendants = $query->get();
+                        // Replace records with full data
+                        $allRecords = collect([$record])->merge($descendants);
+                    }
+                }
+
+                $tree = $this->buildHierarchyTree(
+                    $allRecords,
+                    $hierarchyFieldId,
+                    $primaryKey,
+                    $childrenKey,
+                    $maxDepth,
+                    $includeEmptyChildren
+                );
+
+                // Find and return only the requested node with its descendants
+                return $this->findNodeInTree($tree, $recordId, $primaryKey) ?? $record->toArray();
+
+            case 'with_ancestors':
+                // Build chain from root to this node
+                $allRecords = collect([$record]);
+                $allRecords = $this->addAncestorsToCollection($allRecords, $hierarchyFieldId, $primaryKey);
+
+                // Apply relations/select to ancestors
+                if ($allRecords->count() > 1) {
+                    $ancestorIds = $allRecords->pluck($primaryKey)->filter(fn($id) => $id != $recordId)->toArray();
+                    if (!empty($ancestorIds)) {
+                        $query = $this->modelClass->query()->whereIn($primaryKey, $ancestorIds);
+                        if (isset($params['relations'])) {
+                            $query = $this->relations($query, $params['relations'], null);
+                        }
+                        if (isset($params['select'])) {
+                            $query = $query->select($params['select']);
+                        }
+                        $ancestors = $query->get();
+                        $allRecords = collect([$record])->merge($ancestors);
+                    }
+                }
+
+                $tree = $this->buildHierarchyTree(
+                    $allRecords,
+                    $hierarchyFieldId,
+                    $primaryKey,
+                    $childrenKey,
+                    $maxDepth,
+                    $includeEmptyChildren
+                );
+
+                // Return the root (which contains the chain to our node)
+                return $tree[0] ?? $record->toArray();
+
+            case 'full_branch':
+                // Ancestors + node + descendants
+                $allRecords = collect([$record]);
+                $allRecords = $this->addAncestorsToCollection($allRecords, $hierarchyFieldId, $primaryKey);
+                $allRecords = $this->addDescendantsToCollection($allRecords, $hierarchyFieldId, $primaryKey);
+
+                // Apply relations/select to all extra records
+                $extraIds = $allRecords->pluck($primaryKey)->filter(fn($id) => $id != $recordId)->toArray();
+                if (!empty($extraIds)) {
+                    $query = $this->modelClass->query()->whereIn($primaryKey, $extraIds);
+                    if (isset($params['relations'])) {
+                        $query = $this->relations($query, $params['relations'], null);
+                    }
+                    if (isset($params['select'])) {
+                        $query = $query->select($params['select']);
+                    }
+                    $extras = $query->get();
+                    $allRecords = collect([$record])->merge($extras);
+                }
+
+                $tree = $this->buildHierarchyTree(
+                    $allRecords,
+                    $hierarchyFieldId,
+                    $primaryKey,
+                    $childrenKey,
+                    $maxDepth,
+                    $includeEmptyChildren
+                );
+
+                // Return the root of the branch
+                return $tree[0] ?? $record->toArray();
+
+            default:
+                return $record->toArray();
+        }
+    }
+
+    /**
+     * Find a node in a tree by its ID.
+     *
+     * @param array $tree Tree structure
+     * @param mixed $nodeId ID to find
+     * @param string $primaryKey Primary key name
+     * @return array|null The found node or null
+     */
+    private function findNodeInTree(array $tree, mixed $nodeId, string $primaryKey): ?array
+    {
+        foreach ($tree as $node) {
+            if (($node[$primaryKey] ?? null) == $nodeId) {
+                return $node;
+            }
+            if (isset($node['children']) && !empty($node['children'])) {
+                $found = $this->findNodeInTree($node['children'], $nodeId, $primaryKey);
+                if ($found !== null) {
+                    return $found;
+                }
+            }
+        }
+        return null;
     }
 
     public function destroy($id): array
