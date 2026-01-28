@@ -1760,9 +1760,105 @@ Content-Type: application/json
 }
 ```
 
-### 8.7 Pagination with Hierarchy
+### 8.7 Show with Hierarchy
 
-When using pagination with `hierarchy`, **root nodes** are paginated:
+The `show` endpoint (`GET /resource/{id}`) also supports hierarchy with specific modes:
+
+#### Available modes for show
+
+| Mode | Description |
+|------|-------------|
+| `node_only` | Only the requested node with `children: []` |
+| `with_descendants` | The node + all its descendants (default) |
+| `with_ancestors` | Hierarchical chain from root to the node |
+| `full_branch` | Ancestors + node + complete descendants |
+
+#### Example: Node with descendants (default)
+
+```http
+GET /api/roles/4?hierarchy=true
+```
+
+**Response:**
+```json
+{
+  "id": 4,
+  "name": "editor_posts",
+  "role_id": 3,
+  "children": [
+    {
+      "id": 6,
+      "name": "editor_drafts",
+      "role_id": 4,
+      "children": []
+    }
+  ]
+}
+```
+
+#### Example: Ancestor chain
+
+```http
+GET /api/roles/6?hierarchy={"mode":"with_ancestors"}
+```
+
+**Response:** (shows chain from root to node 6)
+```json
+{
+  "id": 3,
+  "name": "editor",
+  "role_id": null,
+  "children": [
+    {
+      "id": 4,
+      "name": "editor_posts",
+      "role_id": 3,
+      "children": [
+        {
+          "id": 6,
+          "name": "editor_drafts",
+          "role_id": 4,
+          "children": []
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Example: Full branch
+
+```http
+GET /api/roles/4?hierarchy={"mode":"full_branch","max_depth":3}
+```
+
+**Response:** (ancestors + node + descendants)
+```json
+{
+  "id": 3,
+  "name": "editor",
+  "role_id": null,
+  "children": [
+    {
+      "id": 4,
+      "name": "editor_posts",
+      "role_id": 3,
+      "children": [
+        {
+          "id": 6,
+          "name": "editor_drafts",
+          "role_id": 4,
+          "children": []
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 8.8 Pagination with Hierarchy (Listing)
+
+When using pagination with `hierarchy` in listing, **root nodes** are paginated:
 
 - `total`: Number of root nodes
 - `per_page`: Root nodes per page
@@ -1778,7 +1874,7 @@ GET /api/roles?hierarchy=true&pagination={"page":1,"pageSize":2}
 GET /api/roles?hierarchy=true&pagination={"infinity":true,"pageSize":2}
 ```
 
-### 8.8 Available Model Methods
+### 8.9 Available Model Methods
 
 When you define `HIERARCHY_FIELD_ID`, the following methods are available:
 
