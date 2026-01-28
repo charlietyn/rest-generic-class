@@ -13,11 +13,12 @@ Complete technical reference for Laravel developers.
 5. [Nested Queries](#5-nested-queries)
 6. [Field Selection](#6-field-selection)
 7. [Pagination & Sorting](#7-pagination--sorting)
-8. [Validation](#8-validation)
-9. [Spatie Permissions](#9-spatie-permissions)
-10. [Advanced Patterns](#10-advanced-patterns)
-11. [API Reference](#11-api-reference)
-12. [Troubleshooting](#12-troubleshooting)
+8. [Hierarchical Listing](#8-hierarchical-listing)
+9. [Validation](#9-validation)
+10. [Spatie Permissions](#10-spatie-permissions)
+11. [Advanced Patterns](#11-advanced-patterns)
+12. [API Reference](#12-api-reference)
+13. [Troubleshooting](#13-troubleshooting)
 
 ---
 
@@ -1543,9 +1544,279 @@ Order::select(['id', 'status', 'total', 'created_at'])
 
 ---
 
-## 8. Validation
+## 8. Hierarchical Listing
 
-### 8.1 Model-Based Validation
+Hierarchical listing allows you to retrieve data structured as a tree for self-referencing models (such as categories with subcategories, roles with parent roles, employees with managers, etc.).
+
+### 8.1 Model Configuration
+
+To enable hierarchical listing, define the `HIERARCHY_FIELD_ID` constant in your model:
+
+```php
+<?php
+// app/Models/Role.php
+
+namespace App\Models;
+
+use Ronu\RestGenericClass\Core\Models\BaseModel;
+
+class Role extends BaseModel
+{
+    protected $fillable = ['name', 'description', 'role_id'];
+
+    const MODEL = 'role';
+    const RELATIONS = ['hierarchyParent', 'hierarchyChildren', 'permissions'];
+
+    // FK field pointing to parent (same model)
+    const HIERARCHY_FIELD_ID = 'role_id';
+
+    public function permissions()
+    {
+        return $this->belongsToMany(Permission::class);
+    }
+}
+```
+
+**Note:** The `hierarchyParent()` and `hierarchyChildren()` methods are automatically available in any model that defines `HIERARCHY_FIELD_ID`.
+
+### 8.2 The `hierarchy` Parameter
+
+#### Simple Usage (default values)
+```http
+GET /api/roles?hierarchy=true
+```
+
+#### Full Configuration
+```http
+POST /api/roles
+Content-Type: application/json
+
+{
+  "hierarchy": {
+    "children_key": "children",
+    "max_depth": 3,
+    "filter_mode": "with_descendants",
+    "include_empty_children": true
+  }
+}
+```
+
+### 8.3 `hierarchy` Object Options
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `children_key` | `string` | `"children"` | Property name where children are nested |
+| `max_depth` | `int\|null` | `null` | Maximum tree depth (`null` = unlimited) |
+| `filter_mode` | `string` | `"match_only"` | Filter behavior mode |
+| `include_empty_children` | `boolean` | `true` | Whether to include `children: []` on leaf nodes |
+
+### 8.4 Filter Modes (`filter_mode`)
+
+| Mode | Description |
+|------|-------------|
+| `match_only` | Returns only nodes that match the filters, organized hierarchically |
+| `with_ancestors` | Matching nodes + all their ancestors up to the root |
+| `with_descendants` | Matching nodes + all their descendants |
+| `full_branch` | Matching nodes + ancestors + descendants (complete branch) |
+| `root_filter` | Filter only applies to root nodes, descendants are included unfiltered |
+
+### 8.5 Practical Example
+
+**Data in `roles` table:**
+
+| id | name | role_id |
+|----|------|---------|
+| 1 | admin | null |
+| 2 | admin_users | 1 |
+| 3 | editor | null |
+| 4 | editor_posts | 3 |
+| 5 | viewer | null |
+| 6 | editor_drafts | 4 |
+
+**Request without `hierarchy`:**
+```http
+GET /api/roles
+```
+
+**Response (flat array):**
+```json
+{
+  "data": [
+    {"id": 1, "name": "admin", "role_id": null},
+    {"id": 2, "name": "admin_users", "role_id": 1},
+    {"id": 3, "name": "editor", "role_id": null},
+    {"id": 4, "name": "editor_posts", "role_id": 3},
+    {"id": 5, "name": "viewer", "role_id": null},
+    {"id": 6, "name": "editor_drafts", "role_id": 4}
+  ]
+}
+```
+
+**Request with `hierarchy=true`:**
+```http
+GET /api/roles?hierarchy=true
+```
+
+**Response (tree structure):**
+```json
+{
+  "data": [
+    {
+      "id": 1,
+      "name": "admin",
+      "role_id": null,
+      "children": [
+        {
+          "id": 2,
+          "name": "admin_users",
+          "role_id": 1,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "editor",
+      "role_id": null,
+      "children": [
+        {
+          "id": 4,
+          "name": "editor_posts",
+          "role_id": 3,
+          "children": [
+            {
+              "id": 6,
+              "name": "editor_drafts",
+              "role_id": 4,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "viewer",
+      "role_id": null,
+      "children": []
+    }
+  ]
+}
+```
+
+### 8.6 Combining with Other Features
+
+Hierarchical listing is compatible with all existing features:
+
+```http
+POST /api/roles
+Content-Type: application/json
+
+{
+  "select": ["id", "name", "role_id", "active"],
+  "relations": ["permissions:id,name"],
+  "oper": {
+    "and": ["active|=|1"]
+  },
+  "orderby": [{"name": "asc"}],
+  "pagination": {
+    "page": 1,
+    "pageSize": 10
+  },
+  "hierarchy": {
+    "children_key": "sub_roles",
+    "max_depth": 2,
+    "filter_mode": "with_descendants"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "current_page": 1,
+  "data": [
+    {
+      "id": 1,
+      "name": "admin",
+      "role_id": null,
+      "active": 1,
+      "permissions": [{"id": 1, "name": "all"}],
+      "sub_roles": [
+        {
+          "id": 2,
+          "name": "admin_users",
+          "role_id": 1,
+          "active": 1,
+          "permissions": [{"id": 2, "name": "users.manage"}],
+          "sub_roles": []
+        }
+      ]
+    }
+  ],
+  "per_page": 10,
+  "total": 3,
+  "last_page": 1
+}
+```
+
+### 8.7 Pagination with Hierarchy
+
+When using pagination with `hierarchy`, **root nodes** are paginated:
+
+- `total`: Number of root nodes
+- `per_page`: Root nodes per page
+- Each root node includes all its descendants (respecting `max_depth`)
+
+**Standard pagination:**
+```http
+GET /api/roles?hierarchy=true&pagination={"page":1,"pageSize":2}
+```
+
+**Infinite scroll (cursor):**
+```http
+GET /api/roles?hierarchy=true&pagination={"infinity":true,"pageSize":2}
+```
+
+### 8.8 Available Model Methods
+
+When you define `HIERARCHY_FIELD_ID`, the following methods are available:
+
+| Method | Description |
+|--------|-------------|
+| `hasHierarchyField()` | Checks if model has hierarchy enabled |
+| `getHierarchyFieldId()` | Gets the FK field name |
+| `hierarchyParent()` | BelongsTo relation to parent |
+| `hierarchyChildren()` | HasMany relation to children |
+| `isHierarchyRoot()` | Checks if this is a root node (no parent) |
+| `getHierarchyAncestors()` | Gets all ancestors up to the root |
+| `getHierarchyDescendants($maxDepth)` | Gets all descendants |
+
+**Code usage example:**
+```php
+$role = Role::find(4); // editor_posts
+
+// Check if root
+$isRoot = $role->isHierarchyRoot(); // false
+
+// Get parent
+$parent = $role->hierarchyParent; // editor (id: 3)
+
+// Get direct children
+$children = $role->hierarchyChildren; // [editor_drafts]
+
+// Get all ancestors
+$ancestors = $role->getHierarchyAncestors(); // [editor]
+
+// Get all descendants
+$descendants = $role->getHierarchyDescendants(); // [editor_drafts]
+```
+
+---
+
+## 9. Validation
+
+### 9.1 Model-Based Validation
 
 **Define in Model:**
 ```php
@@ -1766,7 +2037,7 @@ public function update(Request $request, $id)
 
 ---
 
-## 9. Spatie Permissions
+## 10. Spatie Permissions
 
 ### 9.1 Setup
 
@@ -1874,7 +2145,7 @@ php artisan permission:refresh --guard=api
 
 ---
 
-## 10. Advanced Patterns
+## 11. Advanced Patterns
 
 ### 10.1 Custom Service Methods
 ```php
@@ -1983,7 +2254,7 @@ public function boot()
 
 ---
 
-## 11. API Reference
+## 12. API Reference
 
 ### 11.1 Query Parameters
 
@@ -2066,7 +2337,7 @@ public function boot()
 
 ---
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 ### 12.1 Common Issues
 

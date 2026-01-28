@@ -61,6 +61,14 @@ class BaseModel extends Model
     const PARENT = [];
 
     /**
+     * Field name for self-referencing hierarchy (e.g., 'parent_id', 'role_id').
+     * When defined, enables hierarchical listing with the `hierarchy` parameter.
+     * The field should be a foreign key pointing to the primary key of the same table.
+     * @var string|null
+     */
+    const HIERARCHY_FIELD_ID = null;
+
+    /**
      * Get the primary key for the model
      * @return string The primary key name
      */
@@ -104,6 +112,118 @@ class BaseModel extends Model
     public function hasHierarchy()
     {
         return count(get_called_class()::PARENT) > 0;
+    }
+
+    /**
+     * Check if the model has self-referencing hierarchy enabled
+     * @return bool True if HIERARCHY_FIELD_ID is defined and not null
+     */
+    public function hasHierarchyField(): bool
+    {
+        return defined(static::class . '::HIERARCHY_FIELD_ID')
+            && static::HIERARCHY_FIELD_ID !== null;
+    }
+
+    /**
+     * Get the hierarchy field name (foreign key to parent)
+     * @return string|null The hierarchy field name or null if not defined
+     */
+    public function getHierarchyFieldId(): ?string
+    {
+        return $this->hasHierarchyField() ? static::HIERARCHY_FIELD_ID : null;
+    }
+
+    /**
+     * Get the parent model in hierarchy (self-referencing)
+     * @return BelongsTo|null The parent relation or null if hierarchy not enabled
+     */
+    public function hierarchyParent(): ?BelongsTo
+    {
+        if (!$this->hasHierarchyField()) {
+            return null;
+        }
+
+        return $this->belongsTo(static::class, static::HIERARCHY_FIELD_ID);
+    }
+
+    /**
+     * Get the children models in hierarchy (self-referencing)
+     * @return HasMany The children relation
+     * @throws \RuntimeException If HIERARCHY_FIELD_ID is not defined
+     */
+    public function hierarchyChildren(): HasMany
+    {
+        if (!$this->hasHierarchyField()) {
+            throw new \RuntimeException(
+                'Cannot use hierarchyChildren() without defining HIERARCHY_FIELD_ID in ' . static::class
+            );
+        }
+
+        return $this->hasMany(static::class, static::HIERARCHY_FIELD_ID);
+    }
+
+    /**
+     * Check if this model is a root node (no parent) in the hierarchy
+     * @return bool True if this is a root node, false otherwise
+     */
+    public function isHierarchyRoot(): bool
+    {
+        if (!$this->hasHierarchyField()) {
+            return false;
+        }
+
+        $parentKey = static::HIERARCHY_FIELD_ID;
+        return $this->{$parentKey} === null;
+    }
+
+    /**
+     * Get all ancestors of this model up to the root
+     * @return \Illuminate\Support\Collection Collection of ancestor models
+     */
+    public function getHierarchyAncestors(): \Illuminate\Support\Collection
+    {
+        $ancestors = collect();
+
+        if (!$this->hasHierarchyField()) {
+            return $ancestors;
+        }
+
+        $parent = $this->hierarchyParent;
+        while ($parent !== null) {
+            $ancestors->push($parent);
+            $parent = $parent->hierarchyParent;
+        }
+
+        return $ancestors;
+    }
+
+    /**
+     * Get all descendants of this model recursively
+     * @param int|null $maxDepth Maximum depth to traverse (null = unlimited)
+     * @param int $currentDepth Current depth (used internally)
+     * @return \Illuminate\Support\Collection Collection of descendant models
+     */
+    public function getHierarchyDescendants(?int $maxDepth = null, int $currentDepth = 0): \Illuminate\Support\Collection
+    {
+        $descendants = collect();
+
+        if (!$this->hasHierarchyField()) {
+            return $descendants;
+        }
+
+        if ($maxDepth !== null && $currentDepth >= $maxDepth) {
+            return $descendants;
+        }
+
+        $children = $this->hierarchyChildren()->get();
+        foreach ($children as $child) {
+            $descendants->push($child);
+            $descendants = $descendants->merge(
+                $child->getHierarchyDescendants($maxDepth, $currentDepth + 1)
+            );
+        }
+
+        return $descendants;
     }
 
     /**

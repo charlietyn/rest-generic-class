@@ -13,11 +13,12 @@ Referencia técnica completa para desarrolladores Laravel.
 5. [Consultas Anidadas](#5-consultas-anidadas)
 6. [Selección de Campos](#6-selección-de-campos)
 7. [Paginación y Ordenamiento](#7-paginación-y-ordenamiento)
-8. [Validación](#8-validación)
-9. [Permisos Spatie](#9-permisos-spatie)
-10. [Patrones Avanzados](#10-patrones-avanzados)
-11. [Referencia API](#11-referencia-api)
-12. [Resolución de Problemas](#12-resolución-de-problemas)
+8. [Listado Jerárquico](#8-listado-jerárquico)
+9. [Validación](#9-validación)
+10. [Permisos Spatie](#10-permisos-spatie)
+11. [Patrones Avanzados](#11-patrones-avanzados)
+12. [Referencia API](#12-referencia-api)
+13. [Resolución de Problemas](#13-resolución-de-problemas)
 
 ---
 
@@ -1543,7 +1544,277 @@ Order::select(['id', 'status', 'total', 'created_at'])
 
 ---
 
-## 8. Validación
+## 8. Listado Jerárquico
+
+El listado jerárquico permite obtener datos estructurados en forma de árbol para modelos con auto-referencia (como categorías con subcategorías, roles con roles padres, empleados con managers, etc.).
+
+### 8.1 Configuración del Modelo
+
+Para habilitar el listado jerárquico, define la constante `HIERARCHY_FIELD_ID` en tu modelo:
+
+```php
+<?php
+// app/Models/Role.php
+
+namespace App\Models;
+
+use Ronu\RestGenericClass\Core\Models\BaseModel;
+
+class Role extends BaseModel
+{
+    protected $fillable = ['name', 'description', 'role_id'];
+
+    const MODEL = 'role';
+    const RELATIONS = ['hierarchyParent', 'hierarchyChildren', 'permissions'];
+
+    // Campo FK que apunta al padre (mismo modelo)
+    const HIERARCHY_FIELD_ID = 'role_id';
+
+    public function permissions()
+    {
+        return $this->belongsToMany(Permission::class);
+    }
+}
+```
+
+**Nota:** Los métodos `hierarchyParent()` y `hierarchyChildren()` están disponibles automáticamente en cualquier modelo que defina `HIERARCHY_FIELD_ID`.
+
+### 8.2 Parámetro `hierarchy`
+
+#### Uso Simple (valores por defecto)
+```http
+GET /api/roles?hierarchy=true
+```
+
+#### Uso con Configuración Completa
+```http
+POST /api/roles
+Content-Type: application/json
+
+{
+  "hierarchy": {
+    "children_key": "children",
+    "max_depth": 3,
+    "filter_mode": "with_descendants",
+    "include_empty_children": true
+  }
+}
+```
+
+### 8.3 Opciones del Objeto `hierarchy`
+
+| Propiedad | Tipo | Default | Descripción |
+|-----------|------|---------|-------------|
+| `children_key` | `string` | `"children"` | Nombre de la propiedad donde se anidan los hijos |
+| `max_depth` | `int\|null` | `null` | Profundidad máxima del árbol (`null` = sin límite) |
+| `filter_mode` | `string` | `"match_only"` | Modo de comportamiento de los filtros |
+| `include_empty_children` | `boolean` | `true` | Si incluir `children: []` en nodos sin hijos |
+
+### 8.4 Modos de Filtrado (`filter_mode`)
+
+| Modo | Descripción |
+|------|-------------|
+| `match_only` | Solo devuelve nodos que coinciden con los filtros, organizados jerárquicamente |
+| `with_ancestors` | Nodos coincidentes + todos sus ancestros hasta la raíz |
+| `with_descendants` | Nodos coincidentes + todos sus descendientes |
+| `full_branch` | Nodos coincidentes + ancestros + descendientes (rama completa) |
+| `root_filter` | El filtro solo aplica a nodos raíz, los descendientes se incluyen sin filtrar |
+
+### 8.5 Ejemplo Práctico
+
+**Datos en tabla `roles`:**
+
+| id | name | role_id |
+|----|------|---------|
+| 1 | admin | null |
+| 2 | admin_users | 1 |
+| 3 | editor | null |
+| 4 | editor_posts | 3 |
+| 5 | viewer | null |
+| 6 | editor_drafts | 4 |
+
+**Request sin `hierarchy`:**
+```http
+GET /api/roles
+```
+
+**Response (array plano):**
+```json
+{
+  "data": [
+    {"id": 1, "name": "admin", "role_id": null},
+    {"id": 2, "name": "admin_users", "role_id": 1},
+    {"id": 3, "name": "editor", "role_id": null},
+    {"id": 4, "name": "editor_posts", "role_id": 3},
+    {"id": 5, "name": "viewer", "role_id": null},
+    {"id": 6, "name": "editor_drafts", "role_id": 4}
+  ]
+}
+```
+
+**Request con `hierarchy=true`:**
+```http
+GET /api/roles?hierarchy=true
+```
+
+**Response (estructura de árbol):**
+```json
+{
+  "data": [
+    {
+      "id": 1,
+      "name": "admin",
+      "role_id": null,
+      "children": [
+        {
+          "id": 2,
+          "name": "admin_users",
+          "role_id": 1,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "editor",
+      "role_id": null,
+      "children": [
+        {
+          "id": 4,
+          "name": "editor_posts",
+          "role_id": 3,
+          "children": [
+            {
+              "id": 6,
+              "name": "editor_drafts",
+              "role_id": 4,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "viewer",
+      "role_id": null,
+      "children": []
+    }
+  ]
+}
+```
+
+### 8.6 Combinación con Otras Funcionalidades
+
+El listado jerárquico es compatible con todas las funcionalidades existentes:
+
+```http
+POST /api/roles
+Content-Type: application/json
+
+{
+  "select": ["id", "name", "role_id", "active"],
+  "relations": ["permissions:id,name"],
+  "oper": {
+    "and": ["active|=|1"]
+  },
+  "orderby": [{"name": "asc"}],
+  "pagination": {
+    "page": 1,
+    "pageSize": 10
+  },
+  "hierarchy": {
+    "children_key": "sub_roles",
+    "max_depth": 2,
+    "filter_mode": "with_descendants"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "current_page": 1,
+  "data": [
+    {
+      "id": 1,
+      "name": "admin",
+      "role_id": null,
+      "active": 1,
+      "permissions": [{"id": 1, "name": "all"}],
+      "sub_roles": [
+        {
+          "id": 2,
+          "name": "admin_users",
+          "role_id": 1,
+          "active": 1,
+          "permissions": [{"id": 2, "name": "users.manage"}],
+          "sub_roles": []
+        }
+      ]
+    }
+  ],
+  "per_page": 10,
+  "total": 3,
+  "last_page": 1
+}
+```
+
+### 8.7 Paginación con Jerarquía
+
+Cuando se usa paginación con `hierarchy`, se paginan los **nodos raíz**:
+
+- `total`: Cantidad de nodos raíz
+- `per_page`: Nodos raíz por página
+- Cada nodo raíz incluye todos sus descendientes (respetando `max_depth`)
+
+**Paginación estándar:**
+```http
+GET /api/roles?hierarchy=true&pagination={"page":1,"pageSize":2}
+```
+
+**Paginación infinita (cursor):**
+```http
+GET /api/roles?hierarchy=true&pagination={"infinity":true,"pageSize":2}
+```
+
+### 8.8 Métodos Disponibles en el Modelo
+
+Cuando defines `HIERARCHY_FIELD_ID`, los siguientes métodos están disponibles:
+
+| Método | Descripción |
+|--------|-------------|
+| `hasHierarchyField()` | Verifica si el modelo tiene jerarquía habilitada |
+| `getHierarchyFieldId()` | Obtiene el nombre del campo FK |
+| `hierarchyParent()` | Relación BelongsTo al padre |
+| `hierarchyChildren()` | Relación HasMany a los hijos |
+| `isHierarchyRoot()` | Verifica si es nodo raíz (sin padre) |
+| `getHierarchyAncestors()` | Obtiene todos los ancestros hasta la raíz |
+| `getHierarchyDescendants($maxDepth)` | Obtiene todos los descendientes |
+
+**Ejemplo de uso en código:**
+```php
+$role = Role::find(4); // editor_posts
+
+// Verificar si es raíz
+$isRoot = $role->isHierarchyRoot(); // false
+
+// Obtener padre
+$parent = $role->hierarchyParent; // editor (id: 3)
+
+// Obtener hijos directos
+$children = $role->hierarchyChildren; // [editor_drafts]
+
+// Obtener todos los ancestros
+$ancestors = $role->getHierarchyAncestors(); // [editor]
+
+// Obtener todos los descendientes
+$descendants = $role->getHierarchyDescendants(); // [editor_drafts]
+```
+
+---
+
+## 9. Validación
 
 ### 8.1 Validación Basada en Modelo
 
@@ -1766,7 +2037,7 @@ public function update(Request $request, $id)
 
 ---
 
-## 9. Permisos Spatie
+## 10. Permisos Spatie
 
 ### 9.1 Configuración
 
@@ -1874,7 +2145,7 @@ php artisan permission:refresh --guard=api
 
 ---
 
-## 10. Patrones Avanzados
+## 11. Patrones Avanzados
 
 ### 10.1 Métodos Personalizados en el Servicio
 ```php
@@ -1983,7 +2254,7 @@ public function boot()
 
 ---
 
-## 11. Referencia API
+## 12. Referencia API
 
 ### 11.1 Parámetros de Consulta
 
@@ -2066,7 +2337,7 @@ public function boot()
 
 ---
 
-## 12. Resolución de Problemas
+## 13. Resolución de Problemas
 
 ### 12.1 Problemas Comunes
 
