@@ -784,26 +784,13 @@ class BaseService
                 return $result;
 
             case 'with_descendants':
-                // Node + all descendants as tree
-                $allRecords = collect([$record]);
-                $allRecords = $this->addDescendantsToCollection($allRecords, $hierarchyFieldId, $primaryKey);
-
-                // Apply relations/select to descendants
-                if ($allRecords->count() > 1) {
-                    $descendantIds = $allRecords->pluck($primaryKey)->filter(fn($id) => $id != $recordId)->toArray();
-                    if (!empty($descendantIds)) {
-                        $query = $this->modelClass->query()->whereIn($primaryKey, $descendantIds);
-                        if (isset($params['relations'])) {
-                            $query = $this->relations($query, $params['relations'], null);
-                        }
-                        if (isset($params['select'])) {
-                            $query = $query->select($params['select']);
-                        }
-                        $descendants = $query->get();
-                        // Replace records with full data
-                        $allRecords = collect([$record])->merge($descendants);
-                    }
-                }
+                // Node + all descendants as tree - optimized single query approach
+                $allRecords = $this->loadDescendantsOptimized(
+                    collect([$record]),
+                    $hierarchyFieldId,
+                    $primaryKey,
+                    $params
+                );
 
                 $tree = $this->buildHierarchyTree(
                     $allRecords,
@@ -818,25 +805,13 @@ class BaseService
                 return $this->findNodeInTree($tree, $recordId, $primaryKey) ?? $record->toArray();
 
             case 'with_ancestors':
-                // Build chain from root to this node
-                $allRecords = collect([$record]);
-                $allRecords = $this->addAncestorsToCollection($allRecords, $hierarchyFieldId, $primaryKey);
-
-                // Apply relations/select to ancestors
-                if ($allRecords->count() > 1) {
-                    $ancestorIds = $allRecords->pluck($primaryKey)->filter(fn($id) => $id != $recordId)->toArray();
-                    if (!empty($ancestorIds)) {
-                        $query = $this->modelClass->query()->whereIn($primaryKey, $ancestorIds);
-                        if (isset($params['relations'])) {
-                            $query = $this->relations($query, $params['relations'], null);
-                        }
-                        if (isset($params['select'])) {
-                            $query = $query->select($params['select']);
-                        }
-                        $ancestors = $query->get();
-                        $allRecords = collect([$record])->merge($ancestors);
-                    }
-                }
+                // Build chain from root to this node - optimized
+                $allRecords = $this->loadAncestorsOptimized(
+                    collect([$record]),
+                    $hierarchyFieldId,
+                    $primaryKey,
+                    $params
+                );
 
                 $tree = $this->buildHierarchyTree(
                     $allRecords,
@@ -851,24 +826,20 @@ class BaseService
                 return $tree[0] ?? $record->toArray();
 
             case 'full_branch':
-                // Ancestors + node + descendants
-                $allRecords = collect([$record]);
-                $allRecords = $this->addAncestorsToCollection($allRecords, $hierarchyFieldId, $primaryKey);
-                $allRecords = $this->addDescendantsToCollection($allRecords, $hierarchyFieldId, $primaryKey);
+                // Ancestors + node + descendants - optimized
+                $withAncestors = $this->loadAncestorsOptimized(
+                    collect([$record]),
+                    $hierarchyFieldId,
+                    $primaryKey,
+                    $params
+                );
 
-                // Apply relations/select to all extra records
-                $extraIds = $allRecords->pluck($primaryKey)->filter(fn($id) => $id != $recordId)->toArray();
-                if (!empty($extraIds)) {
-                    $query = $this->modelClass->query()->whereIn($primaryKey, $extraIds);
-                    if (isset($params['relations'])) {
-                        $query = $this->relations($query, $params['relations'], null);
-                    }
-                    if (isset($params['select'])) {
-                        $query = $query->select($params['select']);
-                    }
-                    $extras = $query->get();
-                    $allRecords = collect([$record])->merge($extras);
-                }
+                $allRecords = $this->loadDescendantsOptimized(
+                    $withAncestors,
+                    $hierarchyFieldId,
+                    $primaryKey,
+                    $params
+                );
 
                 $tree = $this->buildHierarchyTree(
                     $allRecords,
@@ -885,6 +856,110 @@ class BaseService
             default:
                 return $record->toArray();
         }
+    }
+
+    /**
+     * Load descendants with optimized queries (loads full records, not just IDs).
+     *
+     * @param \Illuminate\Support\Collection $records Starting records
+     * @param string $hierarchyFieldId FK field name
+     * @param string $primaryKey PK field name
+     * @param array $params Query params for relations/select
+     * @return \Illuminate\Support\Collection All records including descendants
+     */
+    private function loadDescendantsOptimized(
+        \Illuminate\Support\Collection $records,
+        string $hierarchyFieldId,
+        string $primaryKey,
+        array $params
+    ): \Illuminate\Support\Collection {
+        $existingIds = $records->pluck($primaryKey)->toArray();
+        $allDescendants = collect();
+
+        // BFS to get all descendants - load full records in each iteration
+        $currentIds = $existingIds;
+        while (!empty($currentIds)) {
+            $query = $this->modelClass->query()
+                ->whereIn($hierarchyFieldId, $currentIds);
+
+            // Apply relations if specified
+            if (isset($params['relations'])) {
+                $query = $this->relations($query, $params['relations'], null);
+            }
+            // Apply select if specified
+            if (isset($params['select'])) {
+                $query = $query->select($params['select']);
+            }
+
+            $children = $query->get();
+
+            if ($children->isEmpty()) {
+                break;
+            }
+
+            // Filter out already processed records
+            $newChildren = $children->filter(function ($child) use ($existingIds, $allDescendants, $primaryKey) {
+                $id = $child->{$primaryKey};
+                return !in_array($id, $existingIds) && !$allDescendants->contains($primaryKey, $id);
+            });
+
+            if ($newChildren->isEmpty()) {
+                break;
+            }
+
+            $allDescendants = $allDescendants->merge($newChildren);
+            $currentIds = $newChildren->pluck($primaryKey)->toArray();
+        }
+
+        return $records->merge($allDescendants);
+    }
+
+    /**
+     * Load ancestors with optimized queries (loads full records, not just IDs).
+     *
+     * @param \Illuminate\Support\Collection $records Starting records
+     * @param string $hierarchyFieldId FK field name
+     * @param string $primaryKey PK field name
+     * @param array $params Query params for relations/select
+     * @return \Illuminate\Support\Collection All records including ancestors
+     */
+    private function loadAncestorsOptimized(
+        \Illuminate\Support\Collection $records,
+        string $hierarchyFieldId,
+        string $primaryKey,
+        array $params
+    ): \Illuminate\Support\Collection {
+        $existingIds = $records->pluck($primaryKey)->toArray();
+        $ancestorIds = [];
+
+        // Collect all ancestor IDs first (this is fast, just IDs)
+        foreach ($records as $record) {
+            $parentId = $record->{$hierarchyFieldId};
+            while ($parentId !== null && !in_array($parentId, $existingIds) && !in_array($parentId, $ancestorIds)) {
+                $ancestorIds[] = $parentId;
+                $parent = $this->modelClass->query()
+                    ->select([$primaryKey, $hierarchyFieldId])
+                    ->find($parentId);
+                $parentId = $parent ? $parent->{$hierarchyFieldId} : null;
+            }
+        }
+
+        // Load all ancestors in a single query with relations/select
+        if (!empty($ancestorIds)) {
+            $query = $this->modelClass->query()->whereIn($primaryKey, $ancestorIds);
+
+            if (isset($params['relations'])) {
+                $query = $this->relations($query, $params['relations'], null);
+            }
+            if (isset($params['select'])) {
+                $query = $query->select($params['select']);
+            }
+
+            $ancestors = $query->get();
+            $records = $records->merge($ancestors)->unique($primaryKey);
+        }
+
+        return $records;
     }
 
     /**
