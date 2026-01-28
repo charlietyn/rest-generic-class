@@ -96,6 +96,7 @@ class RestController extends BaseController
         array_key_exists('pagination', $payloads) ? $parameters['pagination'] = $request['pagination'] : $parameters['pagination'] = null;
         array_key_exists('orderby', $payloads) ? $parameters['orderby'] = $request['orderby'] : $parameters['orderby'] = null;
         array_key_exists('oper', $payloads) ? $parameters['oper'] = $request['oper'] : $parameters['oper'] = null;
+        array_key_exists('hierarchy', $payloads) ? $parameters['hierarchy'] = $request['hierarchy'] : $parameters['hierarchy'] = null;
         return $parameters;
     }
 

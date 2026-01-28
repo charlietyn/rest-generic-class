@@ -11,6 +11,7 @@ Esta documentación describe cómo realizar consultas a la API REST usando la bi
 1. [Diferencias entre LISTADO y SHOW](#diferencias-entre-listado-y-show)
 2. [Parámetros Soportados](#parámetros-soportados)
 3. [Escenarios de Uso](#escenarios-de-uso)
+4. [Listado Jerárquico](#listado-jerárquico)
    - [Listado básico](#1-listado-básico-sin-parámetros)
    - [Show básico](#2-show-básico-por-id)
    - [Show con select](#21-show-con-select)
@@ -1276,3 +1277,159 @@ GET /orders?pagination={"infinity":true,"cursor":"..."}
 | `pagination` | object | `{"page":1,"pageSize":20}` o `{"infinity":true}` |
 | `_nested` | boolean | `true` / `false` |
 | `soft_delete` | boolean | `true` / `false` |
+| `hierarchy` | boolean/object | `true` o `{"children_key":"children","max_depth":3}` |
+
+---
+
+## Listado Jerárquico
+
+El listado jerárquico permite obtener datos estructurados en forma de árbol para modelos con auto-referencia (categorías con subcategorías, roles con roles padres, etc.).
+
+### Configuración del Modelo
+
+Define `HIERARCHY_FIELD_ID` en tu modelo:
+
+```php
+class Role extends BaseModel
+{
+    const HIERARCHY_FIELD_ID = 'role_id'; // FK que apunta al padre
+}
+```
+
+### Parámetro `hierarchy`
+
+#### Uso Simple
+```http
+GET /api/roles?hierarchy=true
+```
+
+#### Uso con Configuración
+```json
+{
+  "hierarchy": {
+    "children_key": "children",
+    "max_depth": 3,
+    "filter_mode": "with_descendants",
+    "include_empty_children": true
+  }
+}
+```
+
+### Opciones del Objeto `hierarchy`
+
+| Propiedad | Tipo | Default | Descripción |
+|-----------|------|---------|-------------|
+| `children_key` | string | `"children"` | Nombre de la propiedad para los hijos |
+| `max_depth` | int\|null | `null` | Profundidad máxima (`null` = sin límite) |
+| `filter_mode` | string | `"match_only"` | Modo de comportamiento de filtros |
+| `include_empty_children` | boolean | `true` | Incluir `children: []` en nodos hoja |
+
+### Modos de Filtrado (`filter_mode`)
+
+| Modo | Descripción |
+|------|-------------|
+| `match_only` | Solo nodos que coinciden, organizados jerárquicamente |
+| `with_ancestors` | Nodos coincidentes + ancestros hasta la raíz |
+| `with_descendants` | Nodos coincidentes + todos sus descendientes |
+| `full_branch` | Nodos coincidentes + ancestros + descendientes |
+| `root_filter` | Filtro solo aplica a raíces, descendientes sin filtrar |
+
+### Ejemplo
+
+**Datos:**
+```
+admin (id:1, role_id:null)
+  └── admin_users (id:2, role_id:1)
+editor (id:3, role_id:null)
+  └── editor_posts (id:4, role_id:3)
+        └── editor_drafts (id:6, role_id:4)
+viewer (id:5, role_id:null)
+```
+
+**Request:**
+```http
+GET /api/roles?hierarchy=true
+```
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "id": 1, "name": "admin", "role_id": null,
+      "children": [
+        {"id": 2, "name": "admin_users", "role_id": 1, "children": []}
+      ]
+    },
+    {
+      "id": 3, "name": "editor", "role_id": null,
+      "children": [
+        {
+          "id": 4, "name": "editor_posts", "role_id": 3,
+          "children": [
+            {"id": 6, "name": "editor_drafts", "role_id": 4, "children": []}
+          ]
+        }
+      ]
+    },
+    {"id": 5, "name": "viewer", "role_id": null, "children": []}
+  ]
+}
+```
+
+### Combinación con Otras Funcionalidades
+
+```http
+POST /api/roles
+Content-Type: application/json
+
+{
+  "select": ["id", "name", "role_id"],
+  "relations": ["permissions:id,name"],
+  "oper": {"and": ["active|=|1"]},
+  "orderby": [{"name": "asc"}],
+  "pagination": {"page": 1, "pageSize": 10},
+  "hierarchy": {
+    "children_key": "sub_roles",
+    "max_depth": 2,
+    "filter_mode": "with_descendants"
+  }
+}
+```
+
+### Paginación con Jerarquía
+
+Con `hierarchy`, se paginan los **nodos raíz**:
+
+- `total`: Cantidad de nodos raíz
+- `per_page`: Nodos raíz por página
+- Cada raíz incluye todos sus descendientes
+
+**Paginación estándar:**
+```http
+GET /api/roles?hierarchy=true&pagination={"page":1,"pageSize":2}
+```
+
+**Paginación infinita:**
+```http
+GET /api/roles?hierarchy=true&pagination={"infinity":true,"pageSize":2}
+```
+
+### Referencia Rápida Jerarquía
+
+```
+# Listado jerárquico básico
+GET /roles?hierarchy=true
+
+# Con nombre personalizado para hijos
+GET /roles?hierarchy={"children_key":"sub_items"}
+
+# Con profundidad limitada
+GET /roles?hierarchy={"max_depth":2}
+
+# Con filtros que incluyen descendientes
+GET /roles?hierarchy={"filter_mode":"with_descendants"}&oper=["name|like|%admin%"]
+
+# Combinado con paginación
+GET /roles?hierarchy=true&pagination={"page":1,"pageSize":5}
+```
