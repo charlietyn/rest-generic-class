@@ -13,12 +13,17 @@ Esta documentación describe cómo realizar consultas a la API REST usando la bi
 3. [Escenarios de Uso](#escenarios-de-uso)
    - [Listado básico](#1-listado-básico-sin-parámetros)
    - [Show básico](#2-show-básico-por-id)
+   - [Show con select](#21-show-con-select)
+   - [Show con relations](#22-show-con-relations)
    - [Select de campos](#3-listado-con-select)
    - [Relaciones simples](#4-listado-con-relaciones-simples)
    - [Relaciones con campos específicos](#5-listado-con-relaciones-y-selección-de-campos)
-   - [Filtros simples](#6-listado-con-filtros-simples-oper-como-array)
+   - [Filtros simples (oper)](#6-listado-con-filtros-simples-oper-como-array)
+   - [Filtros de igualdad (attr/eq)](#61-filtros-de-igualdad-simple-attreq)
    - [Filtros complejos AND/OR](#7-listado-con-filtros-complejos-andor)
    - [Filtros anidados por relaciones](#8-filtros-anidados-por-relaciones)
+   - [Parámetro _nested](#81-parámetro-_nested-filtrar-relaciones-cargadas)
+   - [Soft Delete](#82-soft-delete-registros-eliminados)
    - [Order By](#9-order-by-simple-y-múltiple)
    - [Paginación estándar](#10-paginación-estándar)
    - [Paginación infinita (cursor)](#11-paginación-infinita-cursor)
@@ -67,6 +72,8 @@ public function show(Request $request, $id): mixed
 | `orderby` | array | ✅ | ❌ | Ordenamiento de resultados |
 | `pagination` | object | ✅ | ❌ | Configuración de paginación |
 | `_nested` | boolean | ✅ | ✅ | Aplica filtros oper a relaciones cargadas |
+| `attr` / `eq` | object | ✅ | ❌ | Filtros de igualdad simple (key=value) |
+| `soft_delete` | boolean | ✅ | ✅ | Incluir registros soft-deleted |
 
 ---
 
@@ -151,6 +158,64 @@ Accept: application/json
 ```json
 {
   "message": "No query results for model [App\\Models\\Order] 999"
+}
+```
+
+---
+
+### 2.1 Show con select
+
+Obtiene un registro específico retornando solo los campos indicados.
+
+**Request:**
+```http
+GET /api/orders/1?select=["id","status","total"] HTTP/1.1
+Host: api.example.com
+Accept: application/json
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": 1,
+  "status": "pending",
+  "total": 150.00
+}
+```
+
+---
+
+### 2.2 Show con relations
+
+Obtiene un registro específico incluyendo sus relaciones.
+
+**Request:**
+```http
+GET /api/orders/1?relations=["user:id,name","items:id,product_name,quantity"] HTTP/1.1
+Host: api.example.com
+Accept: application/json
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": 1,
+  "user_id": 10,
+  "status": "pending",
+  "total": 150.00,
+  "created_at": "2026-01-15T10:30:00.000000Z",
+  "updated_at": "2026-01-15T10:30:00.000000Z",
+  "user": {
+    "id": 10,
+    "name": "Juan Pérez"
+  },
+  "items": [
+    {
+      "id": 100,
+      "product_name": "Laptop",
+      "quantity": 1
+    }
+  ]
 }
 ```
 
@@ -343,6 +408,50 @@ WHERE status = 'pending' AND total >= 100
 
 ---
 
+### 6.1 Filtros de igualdad simple (attr/eq)
+
+Para filtros de igualdad simple (`=`), usa los parámetros `attr` o `eq` como alternativa más concisa a `oper`.
+
+**Request con attr:**
+```http
+GET /api/orders?attr={"status":"pending","user_id":10} HTTP/1.1
+Host: api.example.com
+Accept: application/json
+```
+
+**Request con eq (equivalente):**
+```http
+GET /api/orders?eq={"status":"pending","user_id":10} HTTP/1.1
+Host: api.example.com
+Accept: application/json
+```
+
+**SQL generado:**
+```sql
+SELECT * FROM orders
+WHERE status = 'pending' AND user_id = 10
+```
+
+**Response (200 OK):**
+```json
+{
+  "data": [
+    {
+      "id": 1,
+      "user_id": 10,
+      "status": "pending",
+      "total": 150.00,
+      "created_at": "2026-01-15T10:30:00.000000Z",
+      "updated_at": "2026-01-15T10:30:00.000000Z"
+    }
+  ]
+}
+```
+
+> **Nota:** `attr` y `eq` son equivalentes y se pueden combinar. Son útiles para filtros simples; para operadores avanzados usa `oper`.
+
+---
+
 ### 7. Listado con filtros complejos (AND/OR)
 
 Usa un objeto con claves `and` y/o `or` para combinar condiciones con lógica explícita.
@@ -516,6 +625,97 @@ WHERE EXISTS (
 ```
 
 > **Importante:** `whereHas` filtra qué registros del modelo principal se retornan. Para filtrar también los datos de las relaciones cargadas, usa el parámetro `_nested=true`.
+
+---
+
+### 8.1 Parámetro _nested (filtrar relaciones cargadas)
+
+Por defecto, los filtros en relaciones (`whereHas`) solo filtran el modelo principal. El parámetro `_nested=true` aplica también los filtros a los datos de las relaciones cargadas.
+
+**Sin _nested (comportamiento por defecto):**
+
+```http
+GET /api/orders?relations=["items"]&oper={"items":{"and":["quantity|>|5"]}} HTTP/1.1
+```
+
+Retorna órdenes que tienen al menos un item con quantity > 5, pero carga TODOS los items de esas órdenes.
+
+**Con _nested=true:**
+
+```http
+GET /api/orders HTTP/1.1
+Host: api.example.com
+Content-Type: application/json
+
+{
+  "relations": ["items"],
+  "oper": {
+    "items": {
+      "and": ["quantity|>|5"]
+    }
+  },
+  "_nested": true
+}
+```
+
+Retorna órdenes que tienen items con quantity > 5, y solo carga los items que cumplen esa condición.
+
+**Response con _nested=true (200 OK):**
+```json
+{
+  "data": [
+    {
+      "id": 1,
+      "status": "pending",
+      "total": 500.00,
+      "items": [
+        {
+          "id": 101,
+          "product_name": "Bulk Order",
+          "quantity": 10
+        }
+      ]
+    }
+  ]
+}
+```
+
+> **Caso de uso:** Útil cuando necesitas filtrar tanto el modelo principal como los datos anidados que se cargan. Por ejemplo, mostrar solo los items activos de las órdenes activas.
+
+---
+
+### 8.2 Soft Delete (registros eliminados)
+
+Incluye registros que han sido soft-deleted (eliminación lógica).
+
+**Request:**
+```http
+GET /api/orders?soft_delete=true HTTP/1.1
+Host: api.example.com
+Accept: application/json
+```
+
+**Response (200 OK):**
+```json
+{
+  "data": [
+    {
+      "id": 1,
+      "status": "pending",
+      "total": 150.00,
+      "deleted_at": null
+    },
+    {
+      "id": 5,
+      "status": "cancelled",
+      "total": 75.00,
+      "deleted_at": "2026-01-20T14:30:00.000000Z"
+    }
+  ]
+}
+```
+
+> **Nota:** Requiere que el modelo use el trait `SoftDeletes` de Laravel.
 
 ---
 
@@ -862,6 +1062,7 @@ return [
 | `like` | `name|like|%john%` | Contiene (case sensitive) |
 | `not like` | `name|not like|%test%` | No contiene |
 | `ilike` | `name|ilike|%john%` | Contiene (case insensitive) |
+| `ilikeu` | `name|ilikeu|%jose%` | Contiene (case insensitive + sin acentos) |
 | `not ilike` | `name|not ilike|%test%` | No contiene (case insensitive) |
 | `in` | `status|in|active,pending` | En lista de valores |
 | `not in` | `status|not in|deleted,archived` | No en lista |
@@ -1019,6 +1220,9 @@ GET /orders
 # Show por ID
 GET /orders/1
 
+# Show con select y relations
+GET /orders/1?select=["id","status"]&relations=["user:id,name"]
+
 # Select campos
 GET /orders?select=["id","status"]
 
@@ -1028,6 +1232,10 @@ GET /orders?relations=["user","items"]
 # Relaciones con campos
 GET /orders?relations=["user:id,name"]
 
+# Filtros de igualdad simple (attr/eq)
+GET /orders?attr={"status":"pending","user_id":10}
+GET /orders?eq={"status":"active"}
+
 # Filtros simples (AND implícito)
 GET /orders?oper=["status|=|active","total|>|100"]
 
@@ -1036,6 +1244,12 @@ GET /orders?oper={"and":[...],"or":[...]}
 
 # Filtros en relaciones
 GET /orders?oper={"user":{"and":["active|=|1"]}}
+
+# Filtros con _nested (filtra también relaciones cargadas)
+POST /orders (body: {"relations":["items"],"oper":{"items":{"and":["qty|>|5"]}},"_nested":true})
+
+# Incluir soft-deleted
+GET /orders?soft_delete=true
 
 # Ordenamiento
 GET /orders?orderby=[{"created_at":"desc"}]
@@ -1047,3 +1261,18 @@ GET /orders?pagination={"page":1,"pageSize":20}
 GET /orders?pagination={"infinity":true,"pageSize":20}
 GET /orders?pagination={"infinity":true,"cursor":"..."}
 ```
+
+---
+
+## Resumen de Parámetros
+
+| Parámetro | Formato | Ejemplo |
+|-----------|---------|---------|
+| `select` | array | `["id","name","status"]` |
+| `relations` | array | `["user","items:id,name"]` |
+| `oper` | array/object | `["field\|op\|val"]` o `{"and":[...],"or":[...]}` |
+| `attr` / `eq` | object | `{"status":"active","type":"premium"}` |
+| `orderby` | array | `[{"created_at":"desc"}]` |
+| `pagination` | object | `{"page":1,"pageSize":20}` o `{"infinity":true}` |
+| `_nested` | boolean | `true` / `false` |
+| `soft_delete` | boolean | `true` / `false` |
