@@ -194,9 +194,28 @@ trait HasDynamicFilter
 
     /**
      * Parse a condition string into an array of field, operator, and value.
+     *
+     * @param mixed $condition The condition to parse (must be a string)
+     * @return array [field, operator, value]
+     * @throws HttpException If condition is not a valid string format
      */
-    protected function parseConditionString(string $condition): array
+    protected function parseConditionString(mixed $condition): array
     {
+        // Validate that condition is a string
+        if (!is_string($condition)) {
+            $type = gettype($condition);
+            $example = is_array($condition) ? json_encode($condition) : (string) $condition;
+
+            throw new HttpException(
+                400,
+                "Invalid condition format: expected a string like 'field|operator|value', " .
+                "but received {$type}" . ($type === 'array' ? " ({$example})" : "") . ". " .
+                "Ensure 'oper' is an array of strings, e.g.: " .
+                '{"oper": {"and": ["category_id|=|1", "status|=|active"]}} or ' .
+                '{"oper": ["category_id|=|1"]}.'
+            );
+        }
+
         $parts = explode('|', $condition, 3);
 
         if (count($parts) !== 3) {
