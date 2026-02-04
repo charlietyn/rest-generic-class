@@ -117,13 +117,13 @@ return [
     
     'filtering' => [
         // Profundidad máxima de anidación para consultas anidadas
-        'max_depth' => env('REST_MAX_DEPTH', 5),
+        'max_depth' => 5,
         
         // Máximo total de condiciones de filtro
-        'max_conditions' => env('REST_MAX_CONDITIONS', 100),
+        'max_conditions' => 100,
         
         // Requiere que Model::RELATIONS esté definido
-        'strict_relations' => env('REST_STRICT_RELATIONS', true),
+        'strict_relations' => true,
         
         // Operadores permitidos
         'allowed_operators' => [
@@ -140,9 +140,6 @@ return [
 **Variables de Entorno:**
 ```env
 # .env
-REST_MAX_DEPTH=5
-REST_MAX_CONDITIONS=100
-REST_STRICT_RELATIONS=true
 LOG_LEVEL=debug
 ```
 

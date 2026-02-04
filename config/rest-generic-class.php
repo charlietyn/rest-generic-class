@@ -7,6 +7,12 @@ return [
             'path' => storage_path('logs/rest-generic-class.log'),
             'level' => env('LOG_LEVEL', 'debug'),
         ],
+        'channel' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/rest-generic-class.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+        ],
+        'query' => env('LOG_QUERY', false),
     ],
     'filtering' => [
         'max_depth' => 5,

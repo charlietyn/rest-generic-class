@@ -22,7 +22,7 @@ class RestGenericClassServiceProvider extends ServiceProvider
                 'logging.channels.rest-generic-class' => [
                     'driver' => config('rest-generic-class.logging.channel.driver', 'single'),
                     'path' => config('rest-generic-class.logging.channel.path', storage_path('logs/rest-generic-class.log')),
-                    'level' => config('rest-generic-class.logging.channel.level', env('LOG_LEVEL', 'debug')),
+                    'level' => config('rest-generic-class.logging.channel.level', 'debug'),
                 ],
             ]);
         }

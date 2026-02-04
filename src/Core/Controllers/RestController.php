@@ -41,7 +41,7 @@ class RestController extends BaseController
      */
     public function callAction($method, $parameters)
     {
-        $log = env('LOG_QUERY', false);
+        $log = config('rest-generic-class.logging.query', false);
         if ($log)
             File::append(
                 storage_path('/logs/query.log'),
