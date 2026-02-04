@@ -1,0 +1,28 @@
+diff --git a/src/Core/Controllers/RestController.php b/src/Core/Controllers/RestController.php
+index 5d54b5f..f9d3c2b 100644
+--- a/src/Core/Controllers/RestController.php
++++ b/src/Core/Controllers/RestController.php
+@@ -41,7 +41,7 @@ class RestController extends BaseController
+     public function callAction($method, $parameters)
+     {
+-        $log = env('LOG_QUERY', false);
++        $log = config('rest-generic-class.logging.query', false);
+         if ($log)
+             File::append(
+                 storage_path('/logs/query.log'),
+                 PHP_EOL . PHP_EOL . '--------Calling action ' . get_class($this) . ' method  ' . $method . ' ' . date('Y-m-d h:m:s a') . '------------' . PHP_EOL
+             );
+diff --git a/src/Core/Providers/RestGenericClassServiceProvider.php b/src/Core/Providers/RestGenericClassServiceProvider.php
+index a721ef4..f851e31 100644
+--- a/src/Core/Providers/RestGenericClassServiceProvider.php
++++ b/src/Core/Providers/RestGenericClassServiceProvider.php
+@@ -22,7 +22,7 @@ class RestGenericClassServiceProvider extends ServiceProvider
+                 'logging.channels.rest-generic-class' => [
+                     'driver' => config('rest-generic-class.logging.channel.driver', 'single'),
+                     'path' => config('rest-generic-class.logging.channel.path', storage_path('logs/rest-generic-class.log')),
+-                    'level' => config('rest-generic-class.logging.channel.level', env('LOG_LEVEL', 'debug')),
++                    'level' => config('rest-generic-class.logging.channel.level', 'debug'),
+                 ],
+             ]);
+         }
+     }
