@@ -1007,17 +1007,68 @@ class BaseService
     public function exportExcel($params)
     {
         $result = $this->list_all($params);
-        $columns = $params['select'] == "*" ? $this->modelClass->getFillable() : $params['select'];
-        return Excel::download(new ModelExport($result['data'], $columns), 'excel.xlsx');
+        $data = $this->extractExportData($result);
+        $columns = $this->resolveExportColumns($params);
+        $filename = $params['filename'] ?? 'excel.xlsx';
+        return Excel::download(new ModelExport($data, $columns), $filename);
     }
 
     public function exportPdf($params)
     {
         $result = $this->list_all($params);
-        $columns = $params['select'] == "*" ? $this->modelClass->getFillable() : $params['select'];
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf', []);
+        $data = $this->extractExportData($result);
+        $columns = $this->resolveExportColumns($params);
+        $template = $params['template'] ?? 'pdf';
+        $filename = $params['filename'] ?? 'pdf_file.pdf';
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView($template, [
+            'data' => $data,
+            'columns' => $columns,
+            'model' => $this->modelClass,
+            'params' => $params,
+        ]);
         // download PDF file with download method
-        return $pdf->download('pdf_file.pdf');
+        return $pdf->download($filename);
+    }
+
+    private function extractExportData(mixed $result): array
+    {
+        if ($result instanceof LengthAwarePaginator) {
+            return $result->items();
+        }
+        if (is_array($result) && array_key_exists('data', $result)) {
+            return $result['data'];
+        }
+        if (is_array($result)) {
+            return $result;
+        }
+        return [];
+    }
+
+    private function resolveExportColumns(array $params): array
+    {
+        if (array_key_exists('columns', $params)) {
+            return $this->normalizeExportColumns($params['columns']);
+        }
+        $select = $params['select'] ?? '*';
+        if ($select === '*') {
+            return $this->modelClass->getFillable();
+        }
+        if (is_array($select) && count($select) === 1 && $select[0] === '*') {
+            return $this->modelClass->getFillable();
+        }
+        $normalized = $this->normalizeExportColumns($select);
+        return empty($normalized) ? $this->modelClass->getFillable() : $normalized;
+    }
+
+    private function normalizeExportColumns(mixed $columns): array
+    {
+        if (is_string($columns)) {
+            $columns = array_filter(array_map('trim', explode(',', $columns)));
+        }
+        if (!is_array($columns)) {
+            return [];
+        }
+        return array_values(array_filter($columns, static fn($value) => $value !== ''));
     }
 
     public static function sendEmail($view, $variables, $from, $name, $email, $subject): array
