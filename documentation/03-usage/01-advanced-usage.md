@@ -68,6 +68,49 @@ The same `hierarchy` parameter can be used on `show()` to return a branch for a 
 composer require maatwebsite/excel barryvdh/laravel-dompdf
 ```
 
+### Export parameters (junior-friendly guide)
+
+Both export helpers use the **same filtering pipeline** as `list_all()`, so your existing filters, relations, and pagination rules still apply. You can control which columns are exported and, for PDFs, which Blade template is used.
+
+#### Common parameters
+
+| Parameter | Type | Example | What it does |
+| --- | --- | --- | --- |
+| `select` | `array` or `string` | `["id","name"]` or `"id,name"` | Controls which columns are fetched in the query. |
+| `columns` | `array` or `string` | `["name","email"]` or `"name,email"` | Controls which columns are exported. If omitted, it falls back to `select`, or to model `fillable` when `select="*"`. |
+| `pagination` | `object` | `{ "page": 1, "pageSize": 50 }` | Keeps your existing pagination behavior. Exports only the requested page unless you use infinite pagination. |
+| `filename` | `string` | `"users-2024-10-01.xlsx"` | Overrides the default export filename. |
+
+#### PDF-only parameters
+
+| Parameter | Type | Example | What it does |
+| --- | --- | --- | --- |
+| `template` | `string` | `"pdf"` or `"reports.users"` | Blade view name used to render the PDF. Defaults to `pdf`. |
+
+#### Example: export Excel (filtered + specific columns)
+
+```json
+{
+  "select": ["id", "name", "email"],
+  "columns": ["name", "email"],
+  "oper": { "and": ["active|=|1"] },
+  "pagination": { "page": 1, "pageSize": 25 },
+  "filename": "active-users.xlsx"
+}
+```
+
+#### Example: export PDF (filtered + Blade template)
+
+```json
+{
+  "select": "*",
+  "columns": ["name", "email", "created_at"],
+  "oper": { "and": ["active|=|1"] },
+  "template": "pdf",
+  "filename": "active-users.pdf"
+}
+```
+
 [Back to documentation index](../index.md)
 
 ## Evidence
