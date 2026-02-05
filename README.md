@@ -178,24 +178,25 @@ Content-Type: application/json
 - Deep hierarchy trees can time out without `max_depth`.
 - Excessive filter conditions trigger safety limits.
 
-See [Edge and extreme scenarios](documentation/03-usage/03-edge-and-extreme-scenarios.md) for detailed guidance.
+See [Edge and extreme scenarios](documentacion/doc-en/03-usage/03-edge-and-extreme-scenarios.md) for detailed guidance.
 
 ## API reference
 
-- [Public API](documentation/04-reference/00-public-api.md)
-- [Middleware](documentation/04-reference/02-middleware.md)
-- [Exceptions](documentation/04-reference/04-exceptions.md)
+- [Public API](documentacion/doc-en/04-reference/00-public-api.md)
+- [Middleware](documentacion/doc-en/04-reference/02-middleware.md)
+- [Exceptions](documentacion/doc-en/04-reference/04-exceptions.md)
 
 ## Troubleshooting
 
-Start with [Troubleshooting](documentation/05-quality/02-troubleshooting.md) for common errors such as invalid relations, operator errors, and missing optional packages.
+Start with [Troubleshooting](documentacion/doc-en/05-quality/02-troubleshooting.md) for common errors such as invalid relations, operator errors, and missing optional packages.
 
 ## Documentation
 
-- [Documentation index](documentation/index.md)
-- [Quickstart](documentation/01-getting-started/02-quickstart.md)
-- [Configuration reference](documentation/02-configuration/00-configuration-reference.md)
-- [Scenarios](documentation/03-usage/02-scenarios.md)
+- [Documentation index (EN)](documentacion/doc-en/index.md)
+- [Documentation index (ES)](documentacion/doc-es/index.md)
+- [Quickstart](documentacion/doc-en/01-getting-started/02-quickstart.md)
+- [Configuration reference](documentacion/doc-en/02-configuration/00-configuration-reference.md)
+- [Scenarios](documentacion/doc-en/03-usage/02-scenarios.md)
 
 ## Contributing / Security
 
