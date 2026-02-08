@@ -406,14 +406,26 @@ class BaseService
         if (isset($params['hierarchy']) && $params['hierarchy']) {
             return $this->listHierarchy($params, $toJson);
         }
-
         $query = $this->modelClass->query();
+        $query = $this->process_all($params, $query);
+        $value = $query->get();
+        return $toJson ? ['data' => $value->jsonSerialize()] : $value->toArray();
+    }
+
+    /**
+     * Process the query with all parameters including pagination.
+     * @param $params
+     * @param $query
+     * @return mixed
+     */
+
+    public function process_all($params, $query): mixed
+    {
         $query = $this->process_query($params, $query);
         if (isset($params['pagination'])) {
             return $this->process_pagination($params, $query);
         }
-        $value = $query->get();
-        return $toJson ? ['data' => $value->jsonSerialize()] : $value->toArray();
+        return $query;
     }
 
     /**
@@ -438,6 +450,7 @@ class BaseService
             ];
         }
     }
+
     public function get_one($params, $toJson = true): mixed
     {
         $query = $this->modelClass->query();
@@ -781,7 +794,8 @@ class BaseService
         ?int $maxDepth,
         bool $includeEmptyChildren,
         array $params
-    ): array {
+    ): array
+    {
         $recordId = $record->{$primaryKey};
 
         switch ($mode) {
@@ -879,10 +893,11 @@ class BaseService
      */
     private function loadDescendantsOptimized(
         \Illuminate\Support\Collection $records,
-        string $hierarchyFieldId,
-        string $primaryKey,
-        array $params
-    ): \Illuminate\Support\Collection {
+        string                         $hierarchyFieldId,
+        string                         $primaryKey,
+        array                          $params
+    ): \Illuminate\Support\Collection
+    {
         $existingIds = $records->pluck($primaryKey)->toArray();
         $allDescendants = collect();
 
@@ -935,10 +950,11 @@ class BaseService
      */
     private function loadAncestorsOptimized(
         \Illuminate\Support\Collection $records,
-        string $hierarchyFieldId,
-        string $primaryKey,
-        array $params
-    ): \Illuminate\Support\Collection {
+        string                         $hierarchyFieldId,
+        string                         $primaryKey,
+        array                          $params
+    ): \Illuminate\Support\Collection
+    {
         $existingIds = $records->pluck($primaryKey)->toArray();
         $ancestorIds = [];
 
@@ -1339,11 +1355,12 @@ class BaseService
      */
     private function applyNestedWhereHas(
         Builder $query,
-        string $relationPath,
-        mixed $subOper,
-        string $boolean,
+        string  $relationPath,
+        mixed   $subOper,
+        string  $boolean,
                 $currentModel
-    ): Builder {
+    ): Builder
+    {
         $method = $boolean === 'or' ? 'orWhereHas' : 'whereHas';
 
         // Handle dot notation: user.roles
@@ -1688,10 +1705,11 @@ class BaseService
      */
     private function applyHierarchyFilterMode(
         \Illuminate\Support\Collection $matchedRecords,
-        string $filterMode,
-        string $hierarchyFieldId,
-        string $primaryKey
-    ): \Illuminate\Support\Collection {
+        string                         $filterMode,
+        string                         $hierarchyFieldId,
+        string                         $primaryKey
+    ): \Illuminate\Support\Collection
+    {
         if ($matchedRecords->isEmpty()) {
             return $matchedRecords;
         }
@@ -1734,9 +1752,10 @@ class BaseService
      */
     private function addAncestorsToCollection(
         \Illuminate\Support\Collection $records,
-        string $hierarchyFieldId,
-        string $primaryKey
-    ): \Illuminate\Support\Collection {
+        string                         $hierarchyFieldId,
+        string                         $primaryKey
+    ): \Illuminate\Support\Collection
+    {
         $existingIds = $records->pluck($primaryKey)->toArray();
         $ancestorIds = [];
 
@@ -1770,9 +1789,10 @@ class BaseService
      */
     private function addDescendantsToCollection(
         \Illuminate\Support\Collection $records,
-        string $hierarchyFieldId,
-        string $primaryKey
-    ): \Illuminate\Support\Collection {
+        string                         $hierarchyFieldId,
+        string                         $primaryKey
+    ): \Illuminate\Support\Collection
+    {
         $existingIds = $records->pluck($primaryKey)->toArray();
         $allDescendantIds = [];
 
@@ -1816,12 +1836,13 @@ class BaseService
      */
     private function buildHierarchyTree(
         \Illuminate\Support\Collection $records,
-        string $hierarchyFieldId,
-        string $primaryKey,
-        string $childrenKey = 'children',
-        ?int $maxDepth = null,
-        bool $includeEmptyChildren = true
-    ): array {
+        string                         $hierarchyFieldId,
+        string                         $primaryKey,
+        string                         $childrenKey = 'children',
+        ?int                           $maxDepth = null,
+        bool                           $includeEmptyChildren = true
+    ): array
+    {
         if ($records->isEmpty()) {
             return [];
         }
@@ -1976,7 +1997,7 @@ class BaseService
         $offset = ($page - 1) * $pageSize;
         $pagedRoots = array_slice($tree, $offset, $pageSize);
 
-        $lastPage = (int) ceil($totalRoots / $pageSize);
+        $lastPage = (int)ceil($totalRoots / $pageSize);
 
         return [
             'current_page' => $page,
