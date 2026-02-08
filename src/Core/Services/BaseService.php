@@ -410,24 +410,34 @@ class BaseService
         $query = $this->modelClass->query();
         $query = $this->process_query($params, $query);
         if (isset($params['pagination'])) {
-            $pagination_lower = array_change_key_case($params['pagination']);
-            $pagesize = array_key_exists('pagesize', $pagination_lower) ? $pagination_lower['pagesize'] : $this->modelClass->getPerPage();
-            if (!isset($params['pagination']['infinity']) || $params['pagination']['infinity'] !== true)
-                return $this->pagination($query, $params['pagination']);
-            else {
-                $cursor = isset($params['pagination']['cursor']) ? $params['pagination']['cursor'] : null;
-                $items = $query->cursorPaginate($pagesize, ['*'], 'cursor', $cursor);
-                return [
-                    'data' => $items->items(),
-                    'next_cursor' => $items->nextCursor()?->encode(),
-                    'has_more' => $items->hasMorePages(),
-                ];
-            }
+            return $this->process_pagination($params, $query);
         }
         $value = $query->get();
         return $toJson ? ['data' => $value->jsonSerialize()] : $value->toArray();
     }
 
+    /**
+     * Process pagination for the query based on the given parameters.
+     * @param $params
+     * @param $query
+     * @return mixed
+     */
+    public function process_pagination($params, $query): mixed
+    {
+        $pagination_lower = array_change_key_case($params['pagination']);
+        $pagesize = array_key_exists('pagesize', $pagination_lower) ? $pagination_lower['pagesize'] : $this->modelClass->getPerPage();
+        if (!isset($params['pagination']['infinity']) || $params['pagination']['infinity'] !== true)
+            return $this->pagination($query, $params['pagination']);
+        else {
+            $cursor = isset($params['pagination']['cursor']) ? $params['pagination']['cursor'] : null;
+            $items = $query->cursorPaginate($pagesize, ['*'], 'cursor', $cursor);
+            return [
+                'data' => $items->items(),
+                'next_cursor' => $items->nextCursor()?->encode(),
+                'has_more' => $items->hasMorePages(),
+            ];
+        }
+    }
     public function get_one($params, $toJson = true): mixed
     {
         $query = $this->modelClass->query();
