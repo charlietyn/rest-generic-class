@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Maatwebsite\Excel\Facades\Excel;
@@ -28,6 +29,14 @@ class BaseService
 
     /** @var BaseModel|string $modelClass */
     public string|BaseModel|Model $modelClass = '';
+
+    /**
+     * Prefijo base para las claves de caché del paquete.
+     *
+     * Nota para junior: este prefijo ayuda a separar nuestras claves
+     * de otras claves del proyecto y facilita versionar la estrategia.
+     */
+    private string $cachePrefix = 'rgc:v1';
 
     /**
      * @var int Depth counter for recursive nested queries
@@ -402,6 +411,17 @@ class BaseService
 
     public function list_all($params, $toJson = true): mixed
     {
+        if ($toJson && $this->shouldUseCache('list_all', (array)$params)) {
+            return $this->rememberWithCache('list_all', (array)$params, function () use ($params, $toJson) {
+                return $this->listAllWithoutCache($params, $toJson);
+            });
+        }
+
+        return $this->listAllWithoutCache($params, $toJson);
+    }
+
+    private function listAllWithoutCache($params, $toJson = true): mixed
+    {
         // Check if hierarchy mode is requested
         if (isset($params['hierarchy']) && $params['hierarchy']) {
             return $this->listHierarchy($params, $toJson);
@@ -452,6 +472,17 @@ class BaseService
     }
 
     public function get_one($params, $toJson = true): mixed
+    {
+        if ($toJson && $this->shouldUseCache('get_one', (array)$params)) {
+            return $this->rememberWithCache('get_one', (array)$params, function () use ($params, $toJson) {
+                return $this->getOneWithoutCache($params, $toJson);
+            });
+        }
+
+        return $this->getOneWithoutCache($params, $toJson);
+    }
+
+    private function getOneWithoutCache($params, $toJson = true): mixed
     {
         $query = $this->modelClass->query();
         $query = $this->process_query($params, $query);
@@ -582,6 +613,11 @@ class BaseService
         } else {
             $result = $this->save($params);
         }
+
+        if (($result['success'] ?? false) === true) {
+            $this->bumpCacheVersion();
+        }
+
         return $result;
     }
 
@@ -612,6 +648,7 @@ class BaseService
         $valid = $validate ? $this->modelClass->self_validate($this->modelClass->getScenario(), $specific) : ["success" => true];
         if ($valid['success']) {
             $this->modelClass->save();
+            $this->bumpCacheVersion();
             $result = ["success" => true, "model" => $this->modelClass->jsonSerialize()];
         } else {
             $result = $valid;
@@ -1020,6 +1057,9 @@ class BaseService
         $result['model'] = $this->modelClass;
         if (!$this->modelClass->destroy($id))
             $result['success'] = false;
+        if ($result['success']) {
+            $this->bumpCacheVersion();
+        }
         return $result;
     }
 
@@ -1027,7 +1067,142 @@ class BaseService
     {
         $response = $this->modelClass::destroy($id);
         $result['success'] = $response > 0;
+        if ($result['success']) {
+            $this->bumpCacheVersion();
+        }
         return $result;
+    }
+
+
+    /**
+     * Decide si la operación actual debe usar caché.
+     *
+     * Reglas:
+     * 1) Debe estar habilitado globalmente en config.
+     * 2) El método debe estar permitido en cacheable_methods.
+     * 3) El request puede desactivar caché con cache=false.
+     */
+    private function shouldUseCache(string $operation, array $params): bool
+    {
+        $cacheConfig = config('rest-generic-class.cache', []);
+        if (!($cacheConfig['enabled'] ?? false)) {
+            return false;
+        }
+
+        $cacheableMethods = $cacheConfig['cacheable_methods'] ?? [];
+        if (!in_array($operation, $cacheableMethods, true)) {
+            return false;
+        }
+
+        if (array_key_exists('cache', $params) && $params['cache'] === false) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Recupera de caché o calcula y guarda el resultado.
+     */
+    private function rememberWithCache(string $operation, array $params, callable $callback): mixed
+    {
+        $store = $this->resolveCacheStore();
+        $ttl = $this->resolveCacheTtl($operation, $params);
+        $key = $this->buildCacheKey($operation, $params);
+
+        return $store->remember($key, $ttl, $callback);
+    }
+
+    /**
+     * Construye una clave determinística basada en el request.
+     *
+     * Importante: si cambia cualquier dimensión relevante (filtros, relaciones,
+     * paginación, usuario, tenant, headers configurados), cambia la clave.
+     */
+    private function buildCacheKey(string $operation, array $params): string
+    {
+        $request = request();
+        $route = $request?->route();
+        $headersToVary = config('rest-generic-class.cache.vary.headers', []);
+        $varyHeaders = [];
+
+        foreach ($headersToVary as $header) {
+            $varyHeaders[$header] = $request?->header($header);
+        }
+
+        $fingerprint = [
+            'op' => $operation,
+            'model' => get_class($this->modelClass),
+            'route' => $route?->getName() ?? $request?->path() ?? 'cli',
+            'method' => $request?->method(),
+            'query' => $request?->query(),
+            'headers' => $varyHeaders,
+            'user' => auth()->id(),
+            'params' => $params,
+            'version' => $this->getCacheVersion(),
+        ];
+
+        return $this->cachePrefix . ':' . sha1(json_encode($fingerprint));
+    }
+
+    /**
+     * Resuelve el store de Laravel Cache configurado para el paquete.
+     * Puede ser redis, database, file, memcached, etc.
+     */
+    private function resolveCacheStore()
+    {
+        $store = config('rest-generic-class.cache.store');
+        return $store ? Cache::store($store) : Cache::store();
+    }
+
+    /**
+     * Determina el TTL efectivo.
+     * Prioridad: cache_ttl en request > ttl_by_method > ttl global.
+     */
+    private function resolveCacheTtl(string $operation, array $params)
+    {
+        $defaultTtl = (int)config('rest-generic-class.cache.ttl', 60);
+        $ttlByMethod = (int)config('rest-generic-class.cache.ttl_by_method.' . $operation, $defaultTtl);
+
+        if (isset($params['cache_ttl']) && is_numeric($params['cache_ttl'])) {
+            return now()->addSeconds((int)$params['cache_ttl']);
+        }
+
+        return now()->addSeconds($ttlByMethod);
+    }
+
+    /**
+     * Obtiene la versión de caché por modelo.
+     *
+     * Esta versión se usa para invalidación lógica sin borrar claves una a una.
+     */
+    private function getCacheVersion(): int
+    {
+        $store = $this->resolveCacheStore();
+        $version = $store->get($this->cacheVersionKey(), 1);
+        return is_numeric($version) ? (int)$version : 1;
+    }
+
+    /**
+     * Incrementa la versión de caché del modelo después de escrituras exitosas.
+     */
+    private function bumpCacheVersion(): void
+    {
+        if (!config('rest-generic-class.cache.enabled', false)) {
+            return;
+        }
+
+        $store = $this->resolveCacheStore();
+        $currentVersion = $store->get($this->cacheVersionKey(), 1);
+        $store->forever($this->cacheVersionKey(), ((int)$currentVersion) + 1);
+    }
+
+    /**
+     * Clave donde se guarda la versión de caché por modelo.
+     */
+    private function cacheVersionKey(): string
+    {
+        return $this->cachePrefix . ':version:' . get_class($this->modelClass);
     }
 
     public function exportExcel($params)
