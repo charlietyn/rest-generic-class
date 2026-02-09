@@ -129,6 +129,48 @@ Environment variables:
 - `LOG_QUERY` (default: `false`)
 - `REST_VALIDATE_COLUMNS` (default: `true`)
 - `REST_STRICT_COLUMNS` (default: `true`)
+- `REST_CACHE_ENABLED` (default: `false`)
+- `REST_CACHE_STORE` (default: `CACHE_STORE`; supports `redis`, `database`, `file`, `memcached`, etc.)
+- `REST_CACHE_TTL` (default: `60` seconds)
+- `REST_CACHE_TTL_LIST` / `REST_CACHE_TTL_ONE`
+
+
+## Cache strategy (Laravel native / Redis / database)
+
+This package now supports **generic cache integration** via Laravel Cache stores.
+
+### How it works
+
+- Cache is applied in `BaseService` for read operations: `list_all` and `get_one`.
+- Cache key fingerprint includes: model, operation, route, query params, auth user, selected headers, normalized params, and a model cache version.
+- Any successful write (`create`, `update`, `destroy`, `destroybyid`) bumps a model-level cache version to avoid stale reads without needing tags.
+
+### Store selection
+
+Use any Laravel cache store by setting:
+
+```env
+REST_CACHE_ENABLED=true
+REST_CACHE_STORE=redis
+# or: database, file, memcached, dynamodb, etc.
+```
+
+### Request-aware behavior
+
+You can control cache per request:
+
+- `cache=false` disables cache for that request.
+- `cache_ttl=120` overrides TTL (seconds) for that request.
+
+Example:
+
+```http
+GET /api/v1/products?cache_ttl=120&select=["id","name"]
+```
+
+### Multi-tenant / locale aware keys
+
+By default cache varies by `Accept-Language` and `X-Tenant-Id` headers to avoid cross-tenant or cross-locale data leaks.
 
 ## Common scenarios
 
