@@ -36,9 +36,9 @@ return [
             'list_all' => (int)env('REST_CACHE_TTL_LIST', 60),
             'get_one' => (int)env('REST_CACHE_TTL_ONE', 30),
         ],
-        // Métodos de BaseService a cachear
+        // BaseService methods that will be cached if cache is enabled. The cache key will be generated based on the method name and parameters.
         'cacheable_methods' => ['list_all', 'get_one'],
-        // Headers que alteran la respuesta y por tanto la clave de caché
+        // Headers to include in the cache key to allow caching different versions of the same resource based on these headers (e.g. for localization or multi-tenancy)
         'vary' => [
             'headers' => ['Accept-Language', 'X-Tenant-Id'],
         ],
