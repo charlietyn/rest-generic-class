@@ -29,12 +29,14 @@ Bienvenido/a a la documentación del paquete **Rest Generic Class**. Esta librer
 - [Referencia de configuración](02-configuration/00-configuration-reference.md)
 - [Variables de entorno](02-configuration/01-env-vars.md)
 - [Publicar assets](02-configuration/02-publishing-assets.md)
+- [Estrategia de caché](02-configuration/03-cache-strategy.md)
 
 ### Uso
 - [Uso básico](03-usage/00-basic-usage.md)
 - [Uso avanzado](03-usage/01-advanced-usage.md)
 - [Escenarios](03-usage/02-scenarios.md)
 - [Escenarios límite y extremos](03-usage/03-edge-and-extreme-scenarios.md)
+- [Escenarios de caché](03-usage/04-cache-scenarios.md)
 
 ### Referencia
 - [API pública](04-reference/00-public-api.md)

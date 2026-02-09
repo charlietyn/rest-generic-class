@@ -9,6 +9,6 @@ El paquete lee variables de entorno únicamente desde el archivo de configuraci�
 | `REST_VALIDATE_COLUMNS` | `true` | Habilita validación de columnas para filtrado. |
 | `REST_STRICT_COLUMNS` | `true` | Habilita comportamiento de validación estricta de columnas. |
 
-**Siguiente:** [Publicar assets](02-publishing-assets.md)
+**Siguiente:** [Estrategia de caché](03-cache-strategy.md)
 
 [Volver al índice de documentación](../index.md)

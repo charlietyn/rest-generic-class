@@ -29,12 +29,14 @@ Welcome to the **Rest Generic Class** package documentation. This library provid
 - [Configuration reference](02-configuration/00-configuration-reference.md)
 - [Environment variables](02-configuration/01-env-vars.md)
 - [Publishing assets](02-configuration/02-publishing-assets.md)
+- [Cache strategy](02-configuration/03-cache-strategy.md)
 
 ### Usage
 - [Basic usage](03-usage/00-basic-usage.md)
 - [Advanced usage](03-usage/01-advanced-usage.md)
 - [Scenarios](03-usage/02-scenarios.md)
 - [Edge and extreme scenarios](03-usage/03-edge-and-extreme-scenarios.md)
+- [Cache scenarios](03-usage/04-cache-scenarios.md)
 
 ### Reference
 - [Public API](04-reference/00-public-api.md)
