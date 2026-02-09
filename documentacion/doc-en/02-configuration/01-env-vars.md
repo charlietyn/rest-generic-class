@@ -9,6 +9,6 @@ The package reads environment variables only from the configuration file. This i
 | `REST_VALIDATE_COLUMNS` | `true` | Enables column validation for filtering. |
 | `REST_STRICT_COLUMNS` | `true` | Enables strict column validation behavior. |
 
-**Next:** [Publishing assets](02-publishing-assets.md)
+**Next:** [Cache strategy](03-cache-strategy.md)
 
 [Back to documentation index](../index.md)
