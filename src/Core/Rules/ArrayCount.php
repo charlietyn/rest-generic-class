@@ -4,12 +4,20 @@ namespace Ronu\RestGenericClass\Core\Rules;
 
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Support\Str;
 
 /**
  * ArrayCount Rule
  *
  * Validates that an array has between $min and $max elements.
- * Supports both bounds, only minimum, or only maximum.
+ *
+ * Root cause fix: Laravel's FormatsMessages::replaceAttributePlaceholder()
+ * calls Str::upper($value) where $value is the raw input — when that input
+ * is an array, PHP throws "Array to string conversion".
+ *
+ * Solution: resolve the human-readable attribute name inside the Closure
+ * and inject it directly into the message string, so Laravel receives a
+ * fully-formed message with NO remaining :attribute placeholders to replace.
  *
  * Usage:
  *   new ArrayCount(min: 2, max: 5)   // between 2 and 5
@@ -23,24 +31,32 @@ class ArrayCount implements ValidationRule
         private readonly ?int $min = null,
         private readonly ?int $max = null,
     ) {
-        // Guard: at least one bound must be provided
         if ($this->min === null && $this->max === null) {
             throw new \InvalidArgumentException('ArrayCount requires at least a min or max value.');
         }
 
-        // Guard: min cannot exceed max
         if ($this->min !== null && $this->max !== null && $this->min > $this->max) {
-            throw new \InvalidArgumentException("ArrayCount: min ({$this->min}) cannot be greater than max ({$this->max}).");
+            throw new \InvalidArgumentException(
+                "ArrayCount: min ({$this->min}) cannot be greater than max ({$this->max})."
+            );
         }
     }
 
     /**
      * Run the validation rule.
+     *
+     * We intentionally resolve the human-readable attribute name here and
+     * embed it in the final string before calling $fail(), so that Laravel's
+     * replaceAttributePlaceholder() receives a message that has NO :attribute
+     * token left — avoiding the Array-to-string conversion crash.
      */
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
+        // Convert dot-notation key (e.g. "user.address_ids") to human label
+        $label = $this->resolveLabel($attribute);
+
         if (! is_array($value)) {
-            $fail("The :attribute must be an array.");
+            $fail("The {$label} must be an array.");
             return;
         }
 
@@ -49,7 +65,8 @@ class ArrayCount implements ValidationRule
         // Exactly N elements
         if ($this->min !== null && $this->max !== null && $this->min === $this->max) {
             if ($count !== $this->min) {
-                $fail("The :attribute must contain exactly {$this->min} " . str('item')->plural($this->min) . ".");
+                $noun = Str::plural('item', $this->min);
+                $fail("The {$label} must contain exactly {$this->min} {$noun}.");
             }
             return;
         }
@@ -57,20 +74,35 @@ class ArrayCount implements ValidationRule
         // Between min and max
         if ($this->min !== null && $this->max !== null) {
             if ($count < $this->min || $count > $this->max) {
-                $fail("The :attribute must contain between {$this->min} and {$this->max} items.");
+                $fail("The {$label} must contain between {$this->min} and {$this->max} items.");
             }
             return;
         }
 
         // Only minimum
         if ($this->min !== null && $count < $this->min) {
-            $fail("The :attribute must contain at least {$this->min} " . str('item')->plural($this->min) . ".");
+            $noun = Str::plural('item', $this->min);
+            $fail("The {$label} must contain at least {$this->min} {$noun}.");
             return;
         }
 
         // Only maximum
         if ($this->max !== null && $count > $this->max) {
-            $fail("The :attribute must not exceed {$this->max} " . str('item')->plural($this->max) . ".");
+            $noun = Str::plural('item', $this->max);
+            $fail("The {$label} must not exceed {$this->max} {$noun}.");
         }
+    }
+
+    /**
+     * Convert a dot-notation attribute key to a readable label.
+     *
+     * "address_ids"        → "address ids"
+     * "user.address_ids"   → "address ids"  (only the last segment)
+     */
+    private function resolveLabel(string $attribute): string
+    {
+        $segment = Str::afterLast($attribute, '.');
+
+        return str_replace('_', ' ', $segment);
     }
 }
