@@ -3,6 +3,10 @@
 namespace Ronu\RestGenericClass\Core\Requests;
 
 use Illuminate\Foundation\Validation\ValidatesRequests;
+use Illuminate\Support\Facades\Log;
+use Ronu\RestGenericClass\Core\Traits\ValidatesExistenceInDatabase;
+use Illuminate\Support\Facades\DB;
+
 
 /**
  * Class BaseFormRequest
@@ -14,7 +18,8 @@ use Illuminate\Foundation\Validation\ValidatesRequests;
  */
 class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
 {
-    use ValidatesRequests;
+    use ValidatesRequests,ValidatesExistenceInDatabase;
+
 
     /**
      * The name of the entity associated with the request.
@@ -155,7 +160,7 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
      *
      * @return array Scenario names
      */
-    public function getAvailableScenarios(): array
+    public function getAvailableScenarios(): mixed
     {
         return $this->has_escenario ? array_keys($this->getAllRules()) : true;
     }
@@ -177,5 +182,156 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
     public function pathRules(): string
     {
         return "";
+    }
+
+    /**
+     * Validate IDs with relationship constraint
+     * Ensures IDs exist and belong to a specific parent resource
+     *
+     * @param array<int|string> $ids
+     * @param string $table Table name
+     * @param string $relationColumn Relation column name (e.g., 'department_id')
+     * @param int|string $relationValue Relation value to match
+     * @param array<string, mixed> $additionalConditions Additional conditions
+     * @return bool
+     */
+    protected function validateIdsWithRelation(
+        array $ids,
+        string $table,
+        string $relationColumn,
+        int|string $relationValue,
+        array $additionalConditions = []
+    ): bool {
+        $conditions = array_merge(
+            [$relationColumn => $relationValue],
+            $additionalConditions
+        );
+
+        return $this->validateIdsExistInTable($ids, $table, 'id', $conditions);
+    }
+
+    /**
+     * Validate unique values in database excluding current record
+     * Useful for update operations
+     *
+     * @param string $value Value to check
+     * @param string $table Table name
+     * @param string $column Column to check
+     * @param int|string|null $excludeId ID to exclude from check
+     * @param array<string, mixed> $additionalConditions Additional conditions
+     * @return bool
+     */
+    protected function validateUnique(
+        string $value,
+        string $table,
+        string $column,
+        int|string|null $excludeId = null,
+        array $additionalConditions = []
+    ): bool {
+        try {
+            $query = DB::table($table)->where($column, $value);
+            if ($excludeId !== null) {
+                $query->where('id', '!=', $excludeId);
+            }
+            foreach ($additionalConditions as $col => $val) {
+                $query->where($col, $val);
+            }
+
+            return $query->doesntExist();
+        } catch (\Exception $e) {
+            Log::channel('rest-generic-class')->error('Unique validation error', [
+                'table' => $table,
+                'column' => $column,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
+    /**
+     * Get missing IDs with formatted error message
+     * Convenience method for building error messages
+     *
+     * @param array<int|string> $ids
+     * @param string $table
+     * @param string $resourceName Human-readable resource name
+     * @param array<string, mixed> $conditions
+     * @return string|null Error message or null if all IDs exist
+     */
+    protected function getMissingIdsMessage(
+        array $ids,
+        string $table,
+        string $resourceName,
+        array $conditions = []
+    ): ?string {
+        $missing = $this->getMissingIds($ids, $table, 'id', $conditions);
+
+        if (empty($missing)) {
+            return null;
+        }
+
+        return sprintf(
+            'The following %s IDs do not exist or are invalid: %s',
+            $resourceName,
+            implode(', ', $missing)
+        );
+    }
+
+    /**
+     * Get input with default value if null or empty
+     *
+     * @param string $key
+     * @param mixed $default
+     * @return mixed
+     */
+    public function getWithDefault(string $key, mixed $default = null): mixed
+    {
+        $value = $this->input($key);
+
+        return ($value === null || $value === '') ? $default : $value;
+    }
+    /**
+     * Check if request is for creating a new resource
+     *
+     * @return bool
+     */
+    protected function isCreating(): bool
+    {
+        return $this->isMethod('POST');
+    }
+
+    /**
+     * Check if request is for updating an existing resource
+     *
+     * @return bool
+     */
+    protected function isUpdating(): bool
+    {
+        return in_array($this->method(), ['PUT', 'PATCH'], true);
+    }
+
+    /**
+     * Get the route parameter value
+     *
+     * @param string $key
+     * @param mixed $default
+     * @return mixed
+     */
+    protected function getRouteParameter(string $key, mixed $default = null): mixed
+    {
+        return $this->route($key, $default);
+    }
+
+    /**
+     * Merge additional data into validated data
+     * Useful for adding computed or default values
+     *
+     * @param array<string, mixed> $additionalData
+     * @return array<string, mixed>
+     */
+    public function validatedWith(array $additionalData): array
+    {
+        return array_merge($this->validated(), $additionalData);
     }
 }
