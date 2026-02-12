@@ -27,6 +27,13 @@ return [
         'column_cache_ttl' => 3600, // Cache column lists for 1 hour
     ],
 
+    'validation' => [
+        'cache_enabled' => env('REST_VALIDATION_CACHE_ENABLED', true),
+        'cache_ttl' => (int)env('REST_VALIDATION_CACHE_TTL', 3600),
+        'cache_prefix' => env('REST_VALIDATION_CACHE_PREFIX', 'validation'),
+        'connection' => env('REST_VALIDATION_CONNECTION', 'db'),
+    ],
+
     'cache' => [
         'enabled' => env('REST_CACHE_ENABLED', false),
         // Any Laravel cache store: redis, database, file, memcached, dynamodb, array...

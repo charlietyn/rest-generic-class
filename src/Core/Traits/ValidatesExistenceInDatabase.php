@@ -18,32 +18,51 @@ use Illuminate\Support\Facades\Log;
 trait ValidatesExistenceInDatabase
 {
     /**
-     * Cache TTL in seconds (1 hour default)
+     * Cache TTL in seconds.
+     * Reads from config('rest-generic-class.validation.cache_ttl'), falls back to 3600.
      *
      * @var int
      */
     protected int $validationCacheTtl = 3600;
 
     /**
-     * Enable/disable caching for validation queries
+     * Enable/disable caching for validation queries.
+     * Reads from config('rest-generic-class.validation.cache_enabled'), falls back to true.
      *
      * @var bool
      */
     protected bool $enableValidationCache = true;
 
     /**
-     * Cache key prefix for validation queries
+     * Cache key prefix for validation queries.
+     * Reads from config('rest-generic-class.validation.cache_prefix'), falls back to 'validation'.
      *
      * @var string
      */
     protected string $cacheKeyPrefix = 'validation';
 
     /**
-     * Database connection name (default: 'db') - can be overridden in using class if needed
+     * Database connection name.
+     * Reads from config('rest-generic-class.validation.connection'), falls back to 'db'.
      *
      * @var string
      */
     protected string $connection = 'db';
+
+    /**
+     * Initialize validation properties from configuration.
+     * Called automatically via Laravel's trait boot convention (bootTraitName).
+     * Values set explicitly in the using class take precedence over config values.
+     *
+     * @return void
+     */
+    public function initializeValidatesExistenceInDatabase(): void
+    {
+        $this->validationCacheTtl = (int) config('rest-generic-class.validation.cache_ttl', $this->validationCacheTtl);
+        $this->enableValidationCache = (bool) config('rest-generic-class.validation.cache_enabled', $this->enableValidationCache);
+        $this->cacheKeyPrefix = (string) config('rest-generic-class.validation.cache_prefix', $this->cacheKeyPrefix);
+        $this->connection = (string) config('rest-generic-class.validation.connection', $this->connection);
+    }
 
     /**
      * Validate that all IDs exist in the specified table with optional conditions

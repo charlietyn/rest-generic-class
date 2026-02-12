@@ -133,6 +133,10 @@ Environment variables:
 - `REST_CACHE_STORE` (default: `CACHE_STORE`; supports `redis`, `database`, `file`, `memcached`, etc.)
 - `REST_CACHE_TTL` (default: `60` seconds)
 - `REST_CACHE_TTL_LIST` / `REST_CACHE_TTL_ONE`
+- `REST_VALIDATION_CACHE_ENABLED` (default: `true`)
+- `REST_VALIDATION_CACHE_TTL` (default: `3600` seconds)
+- `REST_VALIDATION_CACHE_PREFIX` (default: `validation`)
+- `REST_VALIDATION_CONNECTION` (default: `db`)
 
 
 ## Cache strategy (Laravel native / Redis / database)

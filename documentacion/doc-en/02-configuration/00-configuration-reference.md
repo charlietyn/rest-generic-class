@@ -26,6 +26,15 @@ The package publishes a single configuration file: `config/rest-generic-class.ph
 | `filtering.strict_column_validation` | bool | `true` | Enforce strict column validation. |
 | `filtering.column_cache_ttl` | int | `3600` | Cache TTL (seconds) for column lists. |
 
+## Validation
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `validation.cache_enabled` | bool | `true` | Enable/disable caching for validation queries in the `ValidatesExistenceInDatabase` trait. |
+| `validation.cache_ttl` | int | `3600` | Cache TTL in seconds for validation queries. |
+| `validation.cache_prefix` | string | `'validation'` | Prefix used for validation cache keys. |
+| `validation.connection` | string | `'db'` | Database connection name used by validation queries. |
+
 **Next:** [Environment variables](01-env-vars.md)
 
 [Back to documentation index](../index.md)
