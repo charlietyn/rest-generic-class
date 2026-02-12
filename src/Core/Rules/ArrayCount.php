@@ -11,35 +11,52 @@ use Illuminate\Support\Str;
 /**
  * ArrayCount Rule
  *
- * Validates that an array has between $min and $max elements.
+ * Validates that an array contains between $min and $max elements.
  *
+ * ──────────────────────────────────────────────────────────────────
+ * CUSTOM MESSAGE — 3 LEVELS (all optional, lowest index wins):
+ * ──────────────────────────────────────────────────────────────────
+ *
+ * Level 1 — single message for every failure scenario:
+ *   new ArrayCount(max: 1, message: 'Only one address is allowed.')
+ *
+ * Level 2 — per-scenario messages (onMin / onMax / onBetween / onExact):
+ *   new ArrayCount(min: 2, max: 5, messages: [
+ *       'onMin' => 'Please add at least :min addresses.',
+ *       'onMax' => 'You can add at most :max addresses.',
+ *   ])
+ *
+ * Level 3 — tokens inside any message string (safe, no array-to-string):
+ *   :attribute  → human-readable field name  ("address ids")
+ *   :min        → the min bound
+ *   :max        → the max bound
+ *   :count      → how many items were actually provided
+ *
+ * Priority:  per-scenario message  >  global message  >  built-in default
+ *
+ * ──────────────────────────────────────────────────────────────────
  * WHY ValidatorAwareRule:
- * Laravel's FormatsMessages::makeReplacements() calls getDisplayableValue()
- * which eventually calls Str::upper($value) — when $value is an array that
- * method throws "Array to string conversion".
- *
- * This happens NOT because of our $fail() message, but because the Validator
- * internally formats ALL failed rules for a given attribute, and somewhere in
- * that pipeline it tries to stringify the raw array value.
- *
- * Fix: implement ValidatorAwareRule to get a reference to the Validator
- * instance, then push messages directly into the MessageBag — bypassing
- * the makeReplacements() pipeline entirely. The message arrives final,
- * with NO placeholders for Laravel to touch.
- *
- * Usage:
- *   new ArrayCount(min: 2, max: 5)   // between 2 and 5
- *   new ArrayCount(min: 1)            // at least 1
- *   new ArrayCount(max: 10)           // at most 10
- *   new ArrayCount(min: 3, max: 3)    // exactly 3
+ * Laravel's makeReplacements() → getDisplayableValue() calls Str::upper()
+ * on the raw $value — which is an array — causing "Array to string conversion".
+ * Pushing messages directly to errors()->add() bypasses that entire pipeline.
+ * ──────────────────────────────────────────────────────────────────
  */
 class ArrayCount implements ValidationRule, ValidatorAwareRule
 {
     private Validator $validator;
 
+    /**
+     * @param int|null    $min      Minimum number of items (inclusive)
+     * @param int|null    $max      Maximum number of items (inclusive)
+     * @param string|null $message  Single custom message for ALL failure types
+     * @param array<string,string> $messages  Per-scenario messages:
+     *                                         'onMin', 'onMax', 'onBetween', 'onExact', 'onNotArray'
+     */
     public function __construct(
-        private readonly ?int $min = null,
-        private readonly ?int $max = null,
+        private readonly ?int    $min      = null,
+        private readonly ?int    $max      = null,
+        private readonly ?string $message  = null,
+        private readonly array   $messages = [],
     ) {
         if ($this->min === null && $this->max === null) {
             throw new \InvalidArgumentException('ArrayCount requires at least a min or max value.');
@@ -52,39 +69,37 @@ class ArrayCount implements ValidationRule, ValidatorAwareRule
         }
     }
 
-    /**
-     * Set the current validator instance.
-     * Called automatically by Laravel when ValidatorAwareRule is implemented.
-     */
+    /** Called automatically by Laravel — injects Validator instance. */
     public function setValidator(Validator $validator): static
     {
         $this->validator = $validator;
-
         return $this;
     }
 
-    /**
-     * Run the validation rule.
-     *
-     * Messages are pushed directly into the Validator's MessageBag —
-     * zero placeholders — so FormatsMessages never touches the raw array value.
-     */
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
         $label = $this->resolveLabel($attribute);
+        $count = is_array($value) ? count($value) : null;
+
+        // Build the token context for message interpolation
+        $tokens = [
+            ':attribute' => $label,
+            ':min'       => (string) ($this->min ?? ''),
+            ':max'       => (string) ($this->max ?? ''),
+            ':count'     => (string) ($count ?? ''),
+        ];
 
         if (! is_array($value)) {
-            $this->addError($attribute, "The {$label} must be an array.");
+            $this->addError($attribute, $this->resolve('onNotArray', "The {$label} must be an array.", $tokens));
             return;
         }
 
-        $count = count($value);
-
-        // Exactly N elements
+        // Exactly N
         if ($this->min !== null && $this->max !== null && $this->min === $this->max) {
             if ($count !== $this->min) {
-                $noun = Str::plural('item', $this->min);
-                $this->addError($attribute, "The {$label} must contain exactly {$this->min} {$noun}.");
+                $noun    = Str::plural('item', $this->min);
+                $default = "The {$label} must contain exactly {$this->min} {$noun}.";
+                $this->addError($attribute, $this->resolve('onExact', $default, $tokens));
             }
             return;
         }
@@ -92,33 +107,47 @@ class ArrayCount implements ValidationRule, ValidatorAwareRule
         // Between min and max
         if ($this->min !== null && $this->max !== null) {
             if ($count < $this->min || $count > $this->max) {
-                $this->addError(
-                    $attribute,
-                    "The {$label} must contain between {$this->min} and {$this->max} items."
-                );
+                $default = "The {$label} must contain between {$this->min} and {$this->max} items.";
+                $this->addError($attribute, $this->resolve('onBetween', $default, $tokens));
             }
             return;
         }
 
         // Only minimum
         if ($this->min !== null && $count < $this->min) {
-            $noun = Str::plural('item', $this->min);
-            $this->addError($attribute, "The {$label} must contain at least {$this->min} {$noun}.");
+            $noun    = Str::plural('item', $this->min);
+            $default = "The {$label} must contain at least {$this->min} {$noun}.";
+            $this->addError($attribute, $this->resolve('onMin', $default, $tokens));
             return;
         }
 
         // Only maximum
         if ($this->max !== null && $count > $this->max) {
-            $noun = Str::plural('item', $this->max);
-            $this->addError($attribute, "The {$label} must not exceed {$this->max} {$noun}.");
+            $noun    = Str::plural('item', $this->max);
+            $default = "The {$label} must not exceed {$this->max} {$noun}.";
+            $this->addError($attribute, $this->resolve('onMax', $default, $tokens));
         }
     }
 
     /**
-     * Push a fully-formed message directly into the Validator's MessageBag.
+     * Resolve the final message applying priority:
+     *   per-scenario  >  global $message  >  built-in $default
      *
-     * errors()->add() skips the entire makeReplacements() pipeline —
-     * the message arrives final with no tokens left to process.
+     * Then replace :attribute / :min / :max / :count tokens safely
+     * (tokens are always strings — no array-to-string risk).
+     */
+    private function resolve(string $scenario, string $default, array $tokens): string
+    {
+        $raw = $this->messages[$scenario]   // Level 2 — per-scenario
+            ?? $this->message               // Level 1 — global custom
+            ?? $default;                    // Level 0 — built-in
+
+        return str_replace(array_keys($tokens), array_values($tokens), $raw);
+    }
+
+    /**
+     * Push the final message directly into the Validator's MessageBag,
+     * bypassing makeReplacements() — no placeholder left for Laravel to touch.
      */
     private function addError(string $attribute, string $message): void
     {
@@ -126,15 +155,11 @@ class ArrayCount implements ValidationRule, ValidatorAwareRule
     }
 
     /**
-     * Convert dot-notation attribute key to a human-readable label.
-     *
-     * "address_ids"       → "address ids"
-     * "user.address_ids"  → "address ids"
+     * "user.address_ids"  →  "address ids"
+     * "address_ids"       →  "address ids"
      */
     private function resolveLabel(string $attribute): string
     {
-        $segment = Str::afterLast($attribute, '.');
-
-        return str_replace('_', ' ', $segment);
+        return str_replace('_', ' ', Str::afterLast($attribute, '.'));
     }
 }
