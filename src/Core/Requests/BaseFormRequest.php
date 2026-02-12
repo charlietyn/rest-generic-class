@@ -374,31 +374,14 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
      * @param string|array|\Closure $fieldOrMessages
      * @param string|null           $message  Used only when $fieldOrMessages is a string
      */
-    public function addMessageValidator(string|array|\Closure $fieldOrMessages, ?string $message = null): void
+    public function addMessageValidator(\Closure $callback): \Closure
     {
-        if ($fieldOrMessages instanceof \Closure) {
-            // Shape 3 — raw Closure, receives Validator instance
-            $this->pendingValidatorCallbacks[] = $fieldOrMessages;
-            return;
-        }
+        $this->pendingValidatorCallbacks[] = $callback;
 
-        if (is_string($fieldOrMessages)) {
-            // Shape 1 — single field + message
-            $field = $fieldOrMessages;
-            $this->pendingValidatorCallbacks[] = static function (Validator $v) use ($field, $message): void {
-                $v->errors()->add($field, $message ?? 'Validation failed.');
-            };
-            return;
-        }
-
-        // Shape 2 — ['field' => 'message', ...] or ['field' => ['msg1', 'msg2']]
-        $map = $fieldOrMessages;
-        $this->pendingValidatorCallbacks[] = static function (Validator $v) use ($map): void {
-            foreach ($map as $field => $messages) {
-                foreach ((array) $messages as $msg) {
-                    $v->errors()->add($field, $msg);
-                }
-            }
+        // Return a no-op closure that Laravel accepts as a valid rule
+        // The real validation happens in withValidator() → after()
+        return function ($attribute, $value, $fail): void {
+            // Intentionally empty - validation deferred to withValidator()
         };
     }
 
@@ -426,4 +409,6 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
             $this->pendingValidatorCallbacks = [];
         });
     }
+
+
 }

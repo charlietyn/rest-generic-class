@@ -39,6 +39,13 @@ trait ValidatesExistenceInDatabase
     protected string $cacheKeyPrefix = 'validation';
 
     /**
+     * Database connection name (default: 'db') - can be overridden in using class if needed
+     *
+     * @var string
+     */
+    protected string $connection = 'db';
+
+    /**
      * Validate that all IDs exist in the specified table with optional conditions
      *
      * @param array<int|string> $ids Array of IDs to validate
@@ -65,7 +72,7 @@ trait ValidatesExistenceInDatabase
         string $table,
         string $column = 'id',
         array $additionalConditions = []
-    ): array {
+    ): mixed {
         // Empty array is considered valid
         if (empty($ids)) {
             return true;
@@ -75,7 +82,7 @@ trait ValidatesExistenceInDatabase
         $ids = array_values(array_unique(array_filter($ids, fn($id) => $id !== null && $id !== '')));
 
         if (empty($ids)) {
-            return true;
+            return ['success'=>'false','error'=>'No valid IDs provided','missing_ids'=>[],'existing_ids'=>[]];
         }
 
         try {
@@ -113,7 +120,7 @@ trait ValidatesExistenceInDatabase
         string $table,
         string $status = 'active',
         string $statusColumn = 'status'
-    ): bool {
+    ): mixed {
         return $this->validateIdsExistInTable(
             $ids,
             $table,
@@ -152,7 +159,7 @@ trait ValidatesExistenceInDatabase
             $cacheKey = $this->buildCacheKey($table, $column, ['not_deleted' => true]);
 
             $validIds = $this->getCachedData($cacheKey, function () use ($table, $column) {
-                return DB::table($table)
+                return DB::connection($this->connection)->table($table)
                     ->whereNull('deleted_at')
                     ->pluck($column)
                     ->toArray();
@@ -241,7 +248,7 @@ trait ValidatesExistenceInDatabase
 
         try {
             // Execute the callback to get the query builder
-            $query = $queryCallback(DB::query());
+            $query = $queryCallback( DB::connection($this->connection)->query());
 
             if (!$query instanceof \Illuminate\Database\Query\Builder) {
                 throw new \InvalidArgumentException('Query callback must return a Query Builder instance');
@@ -291,7 +298,7 @@ trait ValidatesExistenceInDatabase
             ]);
 
             $validIds = $this->getCachedData($cacheKey, function () use ($table, $statusColumn, $statuses) {
-                return DB::table($table)
+                return  DB::connection($this->connection)->table($table)
                     ->whereIn($statusColumn, $statuses)
                     ->pluck('id')
                     ->toArray();
@@ -346,7 +353,7 @@ trait ValidatesExistenceInDatabase
         }
 
         try {
-            $query = DB::table($table)->whereIn('id', $ids);
+            $query =  DB::connection($this->connection)->table($table)->whereIn('id', $ids);
 
             if ($startDate !== null) {
                 $query->where($dateColumn, '>=', $startDate);
@@ -385,7 +392,7 @@ trait ValidatesExistenceInDatabase
         $cacheKey = $this->buildCacheKey($table, $column, $conditions);
 
         return $this->getCachedData($cacheKey, function () use ($table, $column, $conditions) {
-            $query = DB::table($table);
+            $query =  DB::connection($this->connection)->table($table);
 
             foreach ($conditions as $col => $value) {
                 if (is_array($value)) {
