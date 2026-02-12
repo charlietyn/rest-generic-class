@@ -120,3 +120,84 @@ Ambos helpers usan el **mismo pipeline de filtrado** que `list_all()`, así que 
 - Archivo: src/Core/Models/BaseModel.php
   - Símbolo: BaseModel::HIERARCHY_FIELD_ID, BaseModel::hasHierarchyField()
   - Notas: Muestra el contrato del modelo requerido para habilitar funciones de jerarquía.
+
+## Validación de arrays de IDs con reglas personalizadas
+
+El paquete incluye seis reglas de validación listas para usar en cualquier `FormRequest`. Todas operan sobre arrays de IDs con caché integrado.
+
+### Uso rápido en `rules()`
+
+```php
+use Ronu\RestGenericClass\Core\Rules\IdsExistInTable;
+use Ronu\RestGenericClass\Core\Rules\IdsExistNotDelete;
+use Ronu\RestGenericClass\Core\Rules\IdsExistWithAnyStatus;
+use Ronu\RestGenericClass\Core\Rules\IdsExistWithDateRange;
+use Ronu\RestGenericClass\Core\Rules\IdsWithCustomQuery;
+use Ronu\RestGenericClass\Core\Rules\ArrayCount;
+
+public function rules(): array
+{
+    return [
+        // Existencia simple
+        'role_ids'   => ['required', 'array', new IdsExistInTable('mysql', 'roles')],
+
+        // Excluye soft-deleted
+        'user_ids'   => ['required', 'array', new IdsExistNotDelete('mysql', 'users')],
+
+        // Con uno de varios statuses
+        'client_ids' => ['required', 'array',
+            new IdsExistWithAnyStatus('mysql', 'clients', ['active', 'trial'])
+        ],
+
+        // Dentro de un rango de fechas
+        'order_ids'  => ['required', 'array',
+            new IdsExistWithDateRange(
+                'mysql', 'orders', 'created_at',
+                now()->subDays(30)->toDateString(),
+                now()->toDateString()
+            )
+        ],
+
+        // Query completamente personalizada
+        'slot_ids'   => ['required', 'array',
+            new IdsWithCustomQuery('mysql', fn($q) =>
+                $q->from('slots')->where('available', true)->where('starts_at', '>', now())
+            )
+        ],
+
+        // Conteo de array
+        'photo_ids'  => ['required', 'array',
+            new ArrayCount(min: 1, max: 5, messages: [
+                'onMin' => 'Sube al menos :min foto.',
+                'onMax' => 'Máximo :max fotos permitidas.',
+            ])
+        ],
+    ];
+}
+```
+
+### Validación diferida con `addMessageValidator`
+
+Cuando la lógica depende del Validator ya construido (p. ej., cruzar dos campos validados), usa el hook diferido de `BaseFormRequest`:
+
+```php
+use Illuminate\Validation\Validator;
+
+public function rules(): array
+{
+    return [
+        'product_ids'   => ['required', 'array'],
+        'product_ids.*' => ['integer'],
+        '_check_products' => $this->addMessageValidator(function (Validator $v) {
+            $ids     = $this->input('product_ids', []);
+            $missing = $this->getMissingIds($ids, 'products', 'id', ['active' => true]);
+            if (!empty($missing)) {
+                $v->errors()->add('product_ids',
+                    'Productos inactivos o inexistentes: ' . implode(', ', $missing));
+            }
+        }),
+    ];
+}
+```
+
+Referencia completa de reglas y trait → [04-reference/05-validation-rules.md](../04-reference/05-validation-rules.md)

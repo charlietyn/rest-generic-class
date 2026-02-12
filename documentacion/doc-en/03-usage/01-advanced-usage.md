@@ -111,6 +111,87 @@ Both export helpers use the **same filtering pipeline** as `list_all()`, so your
 }
 ```
 
+## Validating ID arrays with custom rules
+
+The package ships six validation rules ready to use in any `FormRequest`. All of them operate on arrays of IDs with built-in caching.
+
+### Quick usage in `rules()`
+
+```php
+use Ronu\RestGenericClass\Core\Rules\IdsExistInTable;
+use Ronu\RestGenericClass\Core\Rules\IdsExistNotDelete;
+use Ronu\RestGenericClass\Core\Rules\IdsExistWithAnyStatus;
+use Ronu\RestGenericClass\Core\Rules\IdsExistWithDateRange;
+use Ronu\RestGenericClass\Core\Rules\IdsWithCustomQuery;
+use Ronu\RestGenericClass\Core\Rules\ArrayCount;
+
+public function rules(): array
+{
+    return [
+        // Basic existence
+        'role_ids'   => ['required', 'array', new IdsExistInTable('mysql', 'roles')],
+
+        // Excludes soft-deleted records
+        'user_ids'   => ['required', 'array', new IdsExistNotDelete('mysql', 'users')],
+
+        // Any of several statuses
+        'client_ids' => ['required', 'array',
+            new IdsExistWithAnyStatus('mysql', 'clients', ['active', 'trial'])
+        ],
+
+        // Within a date range
+        'order_ids'  => ['required', 'array',
+            new IdsExistWithDateRange(
+                'mysql', 'orders', 'created_at',
+                now()->subDays(30)->toDateString(),
+                now()->toDateString()
+            )
+        ],
+
+        // Fully custom query
+        'slot_ids'   => ['required', 'array',
+            new IdsWithCustomQuery('mysql', fn($q) =>
+                $q->from('slots')->where('available', true)->where('starts_at', '>', now())
+            )
+        ],
+
+        // Array count
+        'photo_ids'  => ['required', 'array',
+            new ArrayCount(min: 1, max: 5, messages: [
+                'onMin' => 'Upload at least :min photo.',
+                'onMax' => 'Maximum :max photos allowed.',
+            ])
+        ],
+    ];
+}
+```
+
+### Deferred validation with `addMessageValidator`
+
+When logic depends on the already-built Validator (e.g., cross-field checks), use the deferred hook from `BaseFormRequest`:
+
+```php
+use Illuminate\Validation\Validator;
+
+public function rules(): array
+{
+    return [
+        'product_ids'   => ['required', 'array'],
+        'product_ids.*' => ['integer'],
+        '_check_products' => $this->addMessageValidator(function (Validator $v) {
+            $ids     = $this->input('product_ids', []);
+            $missing = $this->getMissingIds($ids, 'products', 'id', ['active' => true]);
+            if (!empty($missing)) {
+                $v->errors()->add('product_ids',
+                    'Inactive or non-existent products: ' . implode(', ', $missing));
+            }
+        }),
+    ];
+}
+```
+
+Full rule and trait reference → [04-reference/05-validation-rules.md](../04-reference/05-validation-rules.md)
+
 [Back to documentation index](../index.md)
 
 ## Evidence

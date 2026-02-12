@@ -46,6 +46,13 @@ Este paquete expone clases, traits y helpers pensados para su uso en tu aplicaci
 - `Ronu\RestGenericClass\Core\Requests\BaseFormRequest`
   - Selección de escenario con `_scenario` y detección de modo masivo.
   - Helper `validate_request()` para uso en middleware.
+  - `addMessageValidator(Closure)` — validación diferida post-build del Validator.
+  - `validateIdsWithRelation()` — validar IDs con constraint de FK padre.
+  - `validateUnique()` — unicidad excluyendo el registro actual.
+  - `getMissingIdsMessage()` — mensaje de error formateado con IDs faltantes.
+  - `validatedWith(array)` — combina datos validados con datos adicionales.
+  - `isCreating()` / `isUpdating()` — helpers semánticos de tipo de request.
+  - `getWithDefault()` — valor del input con fallback.
 
 ## Traits
 
@@ -53,6 +60,21 @@ Este paquete expone clases, traits y helpers pensados para su uso en tu aplicaci
 - `HandlesQueryExceptions`
 - `HasPermissionsController` / `HasPermissionsService`
 - `HasReadableUserPermissions` / `HasReadableRolePermissions`
+- `ValidatesExistenceInDatabase` — validación de arrays de IDs contra BD con caché integrado
+  - `validateIdsExistInTable()`, `validateIdsExistWithStatus()`, `validateIdsExistNotDeleted()`
+  - `validateIdsExistWithAnyStatus()`, `validateIdsExistWithDateRange()`, `validateIdsWithCustomQuery()`
+  - `getMissingIds()`, `clearValidationCache()`
+
+## Reglas de validación
+
+- `Ronu\RestGenericClass\Core\Rules\IdsExistInTable` — existencia de IDs en tabla y columna arbitraria
+- `Ronu\RestGenericClass\Core\Rules\IdsExistNotDelete` — igual que anterior pero excluye soft-deleted
+- `Ronu\RestGenericClass\Core\Rules\IdsExistWithAnyStatus` — IDs con cualquiera de los statuses (OR)
+- `Ronu\RestGenericClass\Core\Rules\IdsExistWithDateRange` — IDs dentro de un rango de fechas
+- `Ronu\RestGenericClass\Core\Rules\IdsWithCustomQuery` — IDs con query `Closure` personalizada
+- `Ronu\RestGenericClass\Core\Rules\ArrayCount` — conteo de elementos con mensajes configurables
+
+Ver referencia completa → [05-validation-rules.md](./05-validation-rules.md)
 
 ## Helpers
 
@@ -76,11 +98,17 @@ Este paquete expone clases, traits y helpers pensados para su uso en tu aplicaci
   - Símbolo: BaseModelMongo
   - Notas: Clase base de modelo MongoDB.
 - Archivo: src/Core/Requests/BaseFormRequest.php
-  - Símbolo: BaseFormRequest::getScenario(), BaseFormRequest::validate_request()
-  - Notas: Superficie de validación de requests.
+  - Símbolo: BaseFormRequest::getScenario(), BaseFormRequest::validate_request(), BaseFormRequest::addMessageValidator(), BaseFormRequest::validatedWith()
+  - Notas: Superficie de validación con helpers avanzados y validación diferida.
 - Archivo: src/Core/Traits/HasDynamicFilter.php
   - Símbolo: HasDynamicFilter::scopeWithFilters()
   - Notas: Trait de filtrado usado por BaseService.
+- Archivo: src/Core/Traits/ValidatesExistenceInDatabase.php
+  - Símbolo: ValidatesExistenceInDatabase
+  - Notas: Trait base para validación de IDs contra BD con caché.
+- Archivo: src/Core/Rules/
+  - Símbolo: IdsExistInTable, IdsExistNotDelete, IdsExistWithAnyStatus, IdsExistWithDateRange, IdsWithCustomQuery, ArrayCount
+  - Notas: Seis reglas personalizadas de validación para arrays de IDs y conteo.
 - Archivo: src/Core/Helpers/RequestBody.php
   - Símbolo: RequestBody::get(), RequestBody::all()
   - Notas: Interface de helper para body de requests.
