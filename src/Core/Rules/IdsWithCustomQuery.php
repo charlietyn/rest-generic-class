@@ -15,9 +15,10 @@ class IdsWithCustomQuery implements ValidationRule, ValidatorAwareRule
     protected Validator $validator;
 
     public function __construct(
-        string           $connection,
+        string            $connection,
         protected Closure $queryCallback,
-        protected string $column = 'id'
+        protected string  $column = 'id',
+        protected array   $additionalConditions = [],
     )
     {
         $this->connection = $connection;
@@ -36,7 +37,7 @@ class IdsWithCustomQuery implements ValidationRule, ValidatorAwareRule
             return;
         }
         $ids = array_filter($value, fn($id) => $id !== null && $id !== '');
-        $validated = $this->validateIdsWithCustomQuery($ids, $this->queryCallback, $this->column);
+        $validated = $this->validateIdsWithCustomQuery($ids, $this->queryCallback, $this->column, $this->additionalConditions);
         if (!$validated) {
             $this->validator->errors()->add(
                 $attribute,

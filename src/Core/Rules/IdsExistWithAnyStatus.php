@@ -18,7 +18,8 @@ class IdsExistWithAnyStatus implements ValidationRule, ValidatorAwareRule
         string           $connection,
         protected string $table,
         protected array  $statuses,
-        protected string $column = 'status'
+        protected string $column = 'status',
+        protected array  $additionalConditions = [],
     )
     {
         $this->connection = $connection;
@@ -37,7 +38,7 @@ class IdsExistWithAnyStatus implements ValidationRule, ValidatorAwareRule
             return;
         }
         $ids = array_filter($value, fn($id) => $id !== null && $id !== '');
-        $validated = $this->validateIdsExistWithAnyStatus($ids, $this->table, $this->statuses, $this->column);
+        $validated = $this->validateIdsExistWithAnyStatus($ids, $this->table, $this->statuses, $this->column, $this->additionalConditions);
         if (!$validated) {
             $this->validator->errors()->add(
                 $attribute,

@@ -154,15 +154,21 @@ trait ValidatesExistenceInDatabase
      * @param array<int|string> $ids Array of IDs to validate
      * @param string $table Database table name
      * @param string $column Column name to check (default: 'id')
+     * @param array<string, mixed> $additionalConditions Key-value pairs for extra WHERE clauses
      * @return bool True if all IDs exist and are not deleted
      *
      * @example
+     * // Simple soft-delete check
      * $this->validateIdsExistNotDeleted([1, 2, 3], 'departments');
+     *
+     * // With additional conditions
+     * $this->validateIdsExistNotDeleted([1, 2], 'users', 'id', ['tenant_id' => 5]);
      */
     public function validateIdsExistNotDeleted(
         array $ids,
         string $table,
-        string $column = 'id'
+        string $column = 'id',
+        array $additionalConditions = []
     ): bool {
         if (empty($ids)) {
             return true;
@@ -175,13 +181,21 @@ trait ValidatesExistenceInDatabase
         }
 
         try {
-            $cacheKey = $this->buildCacheKey($table, $column, ['not_deleted' => true]);
+            $cacheKey = $this->buildCacheKey($table, $column, array_merge(['not_deleted' => true], $additionalConditions));
 
-            $validIds = $this->getCachedData($cacheKey, function () use ($table, $column) {
-                return DB::connection($this->connection)->table($table)
-                    ->whereNull('deleted_at')
-                    ->pluck($column)
-                    ->toArray();
+            $validIds = $this->getCachedData($cacheKey, function () use ($table, $column, $additionalConditions) {
+                $query = DB::connection($this->connection)->table($table)
+                    ->whereNull('deleted_at');
+
+                foreach ($additionalConditions as $col => $value) {
+                    if (is_array($value)) {
+                        $query->whereIn($col, $value);
+                    } else {
+                        $query->where($col, $value);
+                    }
+                }
+
+                return $query->pluck($column)->toArray();
             });
 
             $missingIds = array_diff($ids, $validIds);
@@ -242,6 +256,7 @@ trait ValidatesExistenceInDatabase
      * @param array<int|string> $ids Array of IDs to validate
      * @param Closure $queryCallback Callback that receives query builder and returns modified query
      * @param string $column Column name to check (default: 'id')
+     * @param array<string, mixed> $additionalConditions Key-value pairs for extra WHERE clauses applied after the callback
      * @return bool True if all IDs pass the custom validation
      *
      * @example
@@ -249,11 +264,17 @@ trait ValidatesExistenceInDatabase
      *     return $query->where('price', '>', 100)
      *                  ->where('stock', '>', 0);
      * });
+     *
+     * // With additional conditions
+     * $this->validateIdsWithCustomQuery([1, 2], function($query) {
+     *     return $query->from('products')->where('active', true);
+     * }, 'id', ['warehouse_id' => 7]);
      */
     public function validateIdsWithCustomQuery(
         array $ids,
         Closure $queryCallback,
-        string $column = 'id'
+        string $column = 'id',
+        array $additionalConditions = []
     ): bool {
         if (empty($ids)) {
             return true;
@@ -273,6 +294,14 @@ trait ValidatesExistenceInDatabase
                 throw new \InvalidArgumentException('Query callback must return a Query Builder instance');
             }
 
+            foreach ($additionalConditions as $col => $value) {
+                if (is_array($value)) {
+                    $query->whereIn($col, $value);
+                } else {
+                    $query->where($col, $value);
+                }
+            }
+
             $count = $query->whereIn($column, $ids)->count();
 
             return $count === count($ids);
@@ -289,17 +318,22 @@ trait ValidatesExistenceInDatabase
      * @param string $table Database table name
      * @param array<string> $statuses Array of acceptable status values
      * @param string $statusColumn Status column name (default: 'status')
+     * @param array<string, mixed> $additionalConditions Key-value pairs for extra WHERE clauses
      * @return bool True if all IDs exist with any of the specified statuses
      *
      * @example
      * // Validate users that are either 'active' or 'pending'
      * $this->validateIdsExistWithAnyStatus([1, 2], 'users', ['active', 'pending']);
+     *
+     * // With additional conditions
+     * $this->validateIdsExistWithAnyStatus([1, 2], 'users', ['active', 'pending'], 'status', ['tenant_id' => 3]);
      */
     public function validateIdsExistWithAnyStatus(
         array $ids,
         string $table,
         array $statuses,
-        string $statusColumn = 'status'
+        string $statusColumn = 'status',
+        array $additionalConditions = []
     ): bool {
         if (empty($ids) || empty($statuses)) {
             return empty($ids); // True if no IDs to validate
@@ -312,15 +346,24 @@ trait ValidatesExistenceInDatabase
         }
 
         try {
-            $cacheKey = $this->buildCacheKey($table, 'id', [
-                $statusColumn => $statuses
-            ]);
+            $cacheKey = $this->buildCacheKey($table, 'id', array_merge(
+                [$statusColumn => $statuses],
+                $additionalConditions
+            ));
 
-            $validIds = $this->getCachedData($cacheKey, function () use ($table, $statusColumn, $statuses) {
-                return  DB::connection($this->connection)->table($table)
-                    ->whereIn($statusColumn, $statuses)
-                    ->pluck('id')
-                    ->toArray();
+            $validIds = $this->getCachedData($cacheKey, function () use ($table, $statusColumn, $statuses, $additionalConditions) {
+                $query = DB::connection($this->connection)->table($table)
+                    ->whereIn($statusColumn, $statuses);
+
+                foreach ($additionalConditions as $col => $value) {
+                    if (is_array($value)) {
+                        $query->whereIn($col, $value);
+                    } else {
+                        $query->where($col, $value);
+                    }
+                }
+
+                return $query->pluck('id')->toArray();
             });
 
             $missingIds = array_diff($ids, $validIds);

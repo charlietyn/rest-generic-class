@@ -101,21 +101,36 @@ $this->validateIdsExistWithStatus([1, 2], 'roles');
 $this->validateIdsExistWithStatus([10, 20], 'posts', 'published', 'state');
 ```
 
-#### `validateIdsExistNotDeleted(array $ids, string $table, string $column = 'id'): bool`
+#### `validateIdsExistNotDeleted(array $ids, string $table, string $column = 'id', array $additionalConditions = []): bool`
 
-Excluye registros con `deleted_at IS NOT NULL` (soft deletes).
+Excluye registros con `deleted_at IS NOT NULL` (soft deletes). Soporta condiciones adicionales opcionales para acotar la consulta.
 
 ```php
+// Verificación simple de soft-delete
 $valid = $this->validateIdsExistNotDeleted([1, 2, 3], 'departments');
+
+// Con condiciones adicionales (ej. aislamiento por tenant)
+$valid = $this->validateIdsExistNotDeleted([1, 2], 'users', 'id', ['tenant_id' => 5]);
+
+// Múltiples condiciones adicionales
+$valid = $this->validateIdsExistNotDeleted([1, 2], 'employees', 'id', [
+    'company_id' => 10,
+    'role'       => 'manager',
+]);
 ```
 
-#### `validateIdsExistWithAnyStatus(array $ids, string $table, array $statuses, string $statusColumn = 'status'): bool`
+#### `validateIdsExistWithAnyStatus(array $ids, string $table, array $statuses, string $statusColumn = 'status', array $additionalConditions = []): bool`
 
-Acepta IDs que tengan cualquiera de los statuses especificados (condición OR).
+Acepta IDs que tengan cualquiera de los statuses especificados (condición OR). Soporta condiciones adicionales opcionales.
 
 ```php
 // Usuarios 'active' O 'pending'
 $valid = $this->validateIdsExistWithAnyStatus([1, 2], 'users', ['active', 'pending']);
+
+// Con condiciones adicionales (ej. acotar por tenant)
+$valid = $this->validateIdsExistWithAnyStatus(
+    [1, 2], 'users', ['active', 'pending'], 'status', ['tenant_id' => 3]
+);
 ```
 
 #### `validateIdsExistWithDateRange(array $ids, string $table, string $dateColumn, ?string $startDate = null, ?string $endDate = null, array $additionalConditions = []): bool`
@@ -132,9 +147,9 @@ $valid = $this->validateIdsExistWithDateRange(
 );
 ```
 
-#### `validateIdsWithCustomQuery(array $ids, Closure $queryCallback, string $column = 'id'): bool`
+#### `validateIdsWithCustomQuery(array $ids, Closure $queryCallback, string $column = 'id', array $additionalConditions = []): bool`
 
-Validación con query completamente personalizada. El callback recibe un `Query\Builder` raw y debe devolver el mismo builder (modificado).
+Validación con query completamente personalizada. El callback recibe un `Query\Builder` raw y debe devolver el mismo builder (modificado). Soporta condiciones adicionales opcionales aplicadas **después** del callback.
 
 ```php
 $valid = $this->validateIdsWithCustomQuery([1, 2], function ($query) {
@@ -142,6 +157,11 @@ $valid = $this->validateIdsWithCustomQuery([1, 2], function ($query) {
                  ->where('price', '>', 100)
                  ->where('stock', '>', 0);
 });
+
+// Con condiciones adicionales aplicadas después del callback
+$valid = $this->validateIdsWithCustomQuery([1, 2], function ($query) {
+    return $query->from('products')->where('active', true);
+}, 'id', ['warehouse_id' => 7]);
 ```
 
 #### `getMissingIds(array $ids, string $table, string $column = 'id', array $additionalConditions = []): array`
@@ -188,14 +208,15 @@ Todas las reglas están bajo el namespace `Ronu\RestGenericClass\Core\Rules` y r
 
 ### `IdsExistInTable`
 
-Verifica que todos los IDs del array existan en una tabla y columna dadas.
+Verifica que todos los IDs del array existan en una tabla y columna dadas. Soporta condiciones adicionales opcionales para acotar la consulta.
 
 **Constructor:**
 ```php
 new IdsExistInTable(
     string $connection,
     string $table,
-    string $column = 'id'
+    string $column               = 'id',
+    array  $additionalConditions = []
 )
 ```
 
@@ -214,6 +235,19 @@ public function rules(): array
 }
 ```
 
+**Con condiciones adicionales:**
+```php
+// Solo validar contra roles activos de un tenant específico
+'role_ids' => [
+    'required',
+    'array',
+    new IdsExistInTable('mysql', 'roles', 'id', [
+        'status'    => 'active',
+        'tenant_id' => auth()->user()->tenant_id,
+    ]),
+],
+```
+
 **Mensaje de error producido:**
 ```
 The following IDs do not exist: 5, 12, 99
@@ -223,14 +257,15 @@ The following IDs do not exist: 5, 12, 99
 
 ### `IdsExistNotDelete`
 
-Idéntica a `IdsExistInTable` pero excluye registros con soft delete (`deleted_at IS NOT NULL`).
+Idéntica a `IdsExistInTable` pero excluye registros con soft delete (`deleted_at IS NOT NULL`). Soporta condiciones adicionales opcionales.
 
 **Constructor:**
 ```php
 new IdsExistNotDelete(
     string $connection,
     string $table,
-    string $column = 'id'
+    string $column               = 'id',
+    array  $additionalConditions = []
 )
 ```
 
@@ -245,13 +280,24 @@ use Ronu\RestGenericClass\Core\Rules\IdsExistNotDelete;
 ],
 ```
 
+**Con condiciones adicionales (ej. multi-tenant):**
+```php
+'user_ids' => [
+    'required',
+    'array',
+    new IdsExistNotDelete('mysql', 'users', 'id', [
+        'tenant_id' => auth()->user()->tenant_id,
+    ]),
+],
+```
+
 > **Nota:** La tabla debe tener la columna `deleted_at` para que esta regla tenga efecto. Si la columna no existe, la query lanzará una excepción que se captura internamente y devuelve `false`.
 
 ---
 
 ### `IdsExistWithAnyStatus`
 
-Valida que los IDs existan con al menos uno de los statuses indicados.
+Valida que los IDs existan con al menos uno de los statuses indicados. Soporta condiciones adicionales opcionales.
 
 **Constructor:**
 ```php
@@ -259,7 +305,8 @@ new IdsExistWithAnyStatus(
     string $connection,
     string $table,
     array  $statuses,
-    string $column = 'status'
+    string $column               = 'status',
+    array  $additionalConditions = []
 )
 ```
 
@@ -279,6 +326,15 @@ use Ronu\RestGenericClass\Core\Rules\IdsExistWithAnyStatus;
     'required',
     'array',
     new IdsExistWithAnyStatus('mysql', 'products', ['available', 'preorder'], 'state'),
+],
+
+// Con condiciones adicionales (ej. acotado por región)
+'supplier_ids' => [
+    'required',
+    'array',
+    new IdsExistWithAnyStatus('mysql', 'suppliers', ['active', 'preferred'], 'status', [
+        'region' => 'LATAM',
+    ]),
 ],
 ```
 
@@ -345,14 +401,15 @@ use Ronu\RestGenericClass\Core\Rules\IdsExistWithDateRange;
 
 ### `IdsWithCustomQuery`
 
-La regla más flexible: acepta un `Closure` que recibe un `Query\Builder` raw y debe devolver el mismo builder configurado. El conteo resultante se compara con la cantidad de IDs.
+La regla más flexible: acepta un `Closure` que recibe un `Query\Builder` raw y debe devolver el mismo builder configurado. El conteo resultante se compara con la cantidad de IDs. Soporta condiciones adicionales opcionales aplicadas **después** de que el callback configure la query base.
 
 **Constructor:**
 ```php
 new IdsWithCustomQuery(
     string  $connection,
     Closure $queryCallback,
-    string  $column = 'id'
+    string  $column               = 'id',
+    array   $additionalConditions = []
 )
 ```
 
@@ -394,9 +451,19 @@ use Illuminate\Support\Facades\DB;
                      ->select('employees.id');
     }),
 ],
+
+// Con condiciones adicionales aplicadas después del callback
+'product_ids' => [
+    'required',
+    'array',
+    new IdsWithCustomQuery('mysql', function ($query) {
+        return $query->from('products')
+                     ->where('active', true);
+    }, 'id', ['warehouse_id' => 7, 'region' => 'US']),
+],
 ```
 
-> **Importante:** El callback recibe un `\Illuminate\Database\Query\Builder` (no Eloquent). El `whereIn($column, $ids)` se aplica **después** de que el callback configure la query base.
+> **Importante:** El callback recibe un `\Illuminate\Database\Query\Builder` (no Eloquent). El `whereIn($column, $ids)` se aplica **después** de que el callback configure la query base. Cuando se proporcionan `additionalConditions`, esas cláusulas WHERE se aplican entre el callback y el `whereIn`.
 
 ---
 
