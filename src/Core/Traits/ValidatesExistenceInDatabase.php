@@ -60,7 +60,7 @@ trait ValidatesExistenceInDatabase
      *     'verified' => true
      * ]);
      */
-    protected function validateIdsExistInTable(
+    public function validateIdsExistInTable(
         array $ids,
         string $table,
         string $column = 'id',
@@ -107,7 +107,7 @@ trait ValidatesExistenceInDatabase
      * // Validate published posts
      * $this->validateIdsExistWithStatus([10, 20], 'posts', 'published', 'state');
      */
-    protected function validateIdsExistWithStatus(
+    public function validateIdsExistWithStatus(
         array $ids,
         string $table,
         string $status = 'active',
@@ -132,7 +132,7 @@ trait ValidatesExistenceInDatabase
      * @example
      * $this->validateIdsExistNotDeleted([1, 2, 3], 'departments');
      */
-    protected function validateIdsExistNotDeleted(
+    public function validateIdsExistNotDeleted(
         array $ids,
         string $table,
         string $column = 'id'
@@ -183,7 +183,7 @@ trait ValidatesExistenceInDatabase
      *     $this->errorMessage = 'Invalid role IDs: ' . implode(', ', $missing);
      * }
      */
-    protected function getMissingIds(
+    public function getMissingIds(
         array $ids,
         string $table,
         string $column = 'id',
@@ -223,7 +223,7 @@ trait ValidatesExistenceInDatabase
      *                  ->where('stock', '>', 0);
      * });
      */
-    protected function validateIdsWithCustomQuery(
+    public function validateIdsWithCustomQuery(
         array $ids,
         Closure $queryCallback,
         string $column = 'id'
@@ -268,7 +268,7 @@ trait ValidatesExistenceInDatabase
      * // Validate users that are either 'active' or 'pending'
      * $this->validateIdsExistWithAnyStatus([1, 2], 'users', ['active', 'pending']);
      */
-    protected function validateIdsExistWithAnyStatus(
+    public function validateIdsExistWithAnyStatus(
         array $ids,
         string $table,
         array $statuses,
@@ -326,7 +326,7 @@ trait ValidatesExistenceInDatabase
      *     now()->toDateString()
      * );
      */
-    protected function validateIdsExistWithDateRange(
+    public function validateIdsExistWithDateRange(
         array $ids,
         string $table,
         string $dateColumn,
@@ -451,7 +451,7 @@ trait ValidatesExistenceInDatabase
      * @param string $table Table name
      * @return bool True if cache was cleared successfully
      */
-    protected function clearValidationCache(string $table): bool
+    public function clearValidationCache(string $table): bool
     {
         try {
             $pattern = sprintf('%s:%s:*', $this->cacheKeyPrefix, $table);
