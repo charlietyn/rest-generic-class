@@ -41,6 +41,7 @@ use Illuminate\Support\Str;
  * Pushing messages directly to errors()->add() bypasses that entire pipeline.
  * ──────────────────────────────────────────────────────────────────
  */
+
 class ArrayCount implements ValidationRule, ValidatorAwareRule
 {
     private Validator $validator;
