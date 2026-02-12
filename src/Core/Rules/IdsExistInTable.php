@@ -17,7 +17,8 @@ class IdsExistInTable implements ValidationRule, ValidatorAwareRule
     public function __construct(
         string           $connection,
         protected string $table,
-        protected string $column = 'id'
+        protected string $column = 'id',
+        protected array  $additionalConditions = [],
     )
     {
         $this->connection = $connection;
@@ -36,7 +37,7 @@ class IdsExistInTable implements ValidationRule, ValidatorAwareRule
             return;
         }
         $ids = array_filter($value, fn($id) => $id !== null && $id !== '');
-        $validated = $this->validateIdsExistInTable($ids, $this->table, $this->column);
+        $validated = $this->validateIdsExistInTable($ids, $this->table, $this->column, $this->additionalConditions);
         if (!$validated['success']) {
             $this->validator->errors()->add(
                 $attribute,
