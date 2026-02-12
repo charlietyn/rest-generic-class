@@ -4,6 +4,7 @@ namespace Ronu\RestGenericClass\Core\Requests;
 
 use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Validator;
 use Ronu\RestGenericClass\Core\Traits\ValidatesExistenceInDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -29,6 +30,15 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
     protected string $entity_name = "";
 
     protected bool $has_escenario = true;
+
+    /**
+     * Deferred message callbacks to run after the Validator is built.
+     *
+     * Each item is a Closure(Validator): void
+     *
+     * @var array<int, \Closure>
+     */
+    private array $pendingValidatorCallbacks = [];
 
 
     /**
@@ -333,5 +343,87 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
     public function validatedWith(array $additionalData): array
     {
         return array_merge($this->validated(), $additionalData);
+    }
+
+    /**
+     * Register a deferred validation message or callback.
+     *
+     * Accepts three shapes:
+     *
+     *   // 1. Single field + message
+     *   $this->addMessageValidator('users', 'Missing user ids: 5, 8');
+     *
+     *   // 2. Multiple fields at once
+     *   $this->addMessageValidator([
+     *       'users'   => 'Missing user ids: 5, 8',
+     *       'address' => 'Invalid address',
+     *   ]);
+     *
+     *   // 3. Full control via Closure — runs after Validator is built
+     *   $this->addMessageValidator(function (Validator $validator) {
+     *       $ids = array_column($this->input('users', []), 'id');
+     *       $missing = array_diff($ids, DB::table('users')->pluck('id')->all());
+     *       if (!empty($missing)) {
+     *           $validator->errors()->add(
+     *               'users',
+     *               'The following user ids do not exist: ' . implode(', ', $missing)
+     *           );
+     *       }
+     *   });
+     *
+     * @param string|array|\Closure $fieldOrMessages
+     * @param string|null           $message  Used only when $fieldOrMessages is a string
+     */
+    public function addMessageValidator(string|array|\Closure $fieldOrMessages, ?string $message = null): void
+    {
+        if ($fieldOrMessages instanceof \Closure) {
+            // Shape 3 — raw Closure, receives Validator instance
+            $this->pendingValidatorCallbacks[] = $fieldOrMessages;
+            return;
+        }
+
+        if (is_string($fieldOrMessages)) {
+            // Shape 1 — single field + message
+            $field = $fieldOrMessages;
+            $this->pendingValidatorCallbacks[] = static function (Validator $v) use ($field, $message): void {
+                $v->errors()->add($field, $message ?? 'Validation failed.');
+            };
+            return;
+        }
+
+        // Shape 2 — ['field' => 'message', ...] or ['field' => ['msg1', 'msg2']]
+        $map = $fieldOrMessages;
+        $this->pendingValidatorCallbacks[] = static function (Validator $v) use ($map): void {
+            foreach ($map as $field => $messages) {
+                foreach ((array) $messages as $msg) {
+                    $v->errors()->add($field, $msg);
+                }
+            }
+        };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Laravel hook — flushes all pending callbacks after Validator is built
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Hook called by Laravel after the Validator instance is created.
+     *
+     * Flushes all pending callbacks registered via addMessageValidator().
+     * Each callback receives the fully-built Validator — safe to call errors()->add().
+     */
+    public function withValidator(Validator $validator): void
+    {
+        if (empty($this->pendingValidatorCallbacks)) {
+            return;
+        }
+
+        $validator->after(function (Validator $v): void {
+            foreach ($this->pendingValidatorCallbacks as $callback) {
+                $callback($v);
+            }
+            // Clear after flush so re-validation doesn't re-apply them
+            $this->pendingValidatorCallbacks = [];
+        });
     }
 }

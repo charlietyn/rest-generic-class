@@ -45,7 +45,7 @@ trait ValidatesExistenceInDatabase
      * @param string $table Database table name
      * @param string $column Column name to check against (default: 'id')
      * @param array<string, mixed> $additionalConditions Key-value pairs for WHERE clauses
-     * @return bool True if all IDs exist, false otherwise
+     * @return array sucess=> bool, missing_ids => array, existing_ids => array
      *
      * @example
      * // Simple existence check
@@ -65,7 +65,7 @@ trait ValidatesExistenceInDatabase
         string $table,
         string $column = 'id',
         array $additionalConditions = []
-    ): bool {
+    ): array {
         // Empty array is considered valid
         if (empty($ids)) {
             return true;
@@ -83,8 +83,9 @@ trait ValidatesExistenceInDatabase
 
             // Check if all requested IDs exist in valid IDs
             $missingIds = array_diff($ids, $validIds);
-
-            return empty($missingIds);
+            $existingIds = array_intersect($ids, $validIds);
+            $success=count($ids)!==count($missingIds);
+            return ['success'=>$success,'missing_ids'=>$missingIds,'existing_ids'=>$existingIds];
         } catch (\Exception $e) {
             $this->logValidationError('validateIdsExistInTable', $table, $e);
             return false;
