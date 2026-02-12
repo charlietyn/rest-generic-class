@@ -38,12 +38,24 @@ The trait is the central piece of the system. It can be used directly in any `Fo
 
 ### Configurable properties
 
-| Property | Type | Default | Description |
-|---|---|---|---|
-| `$validationCacheTtl` | `int` | `3600` | Cache TTL in seconds |
-| `$enableValidationCache` | `bool` | `true` | Enable/disable validation cache |
-| `$cacheKeyPrefix` | `string` | `'validation'` | Cache key prefix |
-| `$connection` | `string` | `'db'` | Database connection name |
+All properties are initialized from the `rest-generic-class.validation` configuration section (which reads from `.env`). You can override them per-class by setting the property directly, or globally via environment variables.
+
+| Property | Type | Config key | Env variable | Default | Description |
+|---|---|---|---|---|---|
+| `$validationCacheTtl` | `int` | `validation.cache_ttl` | `REST_VALIDATION_CACHE_TTL` | `3600` | Cache TTL in seconds |
+| `$enableValidationCache` | `bool` | `validation.cache_enabled` | `REST_VALIDATION_CACHE_ENABLED` | `true` | Enable/disable validation cache |
+| `$cacheKeyPrefix` | `string` | `validation.cache_prefix` | `REST_VALIDATION_CACHE_PREFIX` | `'validation'` | Cache key prefix |
+| `$connection` | `string` | `validation.connection` | `REST_VALIDATION_CONNECTION` | `'db'` | Database connection name |
+
+**Priority order:** property set in the using class > config value (from `.env`) > hardcoded default.
+
+```env
+# .env example
+REST_VALIDATION_CACHE_ENABLED=true
+REST_VALIDATION_CACHE_TTL=1800
+REST_VALIDATION_CACHE_PREFIX=validation
+REST_VALIDATION_CONNECTION=mysql
+```
 
 ### Core methods
 

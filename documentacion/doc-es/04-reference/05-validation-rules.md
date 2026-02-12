@@ -38,12 +38,24 @@ El trait es la pieza central del sistema. Puede usarse directamente en cualquier
 
 ### Propiedades configurables
 
-| Propiedad | Tipo | Default | Descripción |
-|---|---|---|---|
-| `$validationCacheTtl` | `int` | `3600` | TTL del caché en segundos |
-| `$enableValidationCache` | `bool` | `true` | Activa/desactiva caché de validación |
-| `$cacheKeyPrefix` | `string` | `'validation'` | Prefijo de las claves de caché |
-| `$connection` | `string` | `'db'` | Nombre de la conexión de BD |
+Todas las propiedades se inicializan desde la sección de configuración `rest-generic-class.validation` (que lee del `.env`). Puedes sobreescribirlas por clase asignando la propiedad directamente, o globalmente mediante variables de entorno.
+
+| Propiedad | Tipo | Clave de config | Variable de entorno | Default | Descripción |
+|---|---|---|---|---|---|
+| `$validationCacheTtl` | `int` | `validation.cache_ttl` | `REST_VALIDATION_CACHE_TTL` | `3600` | TTL del caché en segundos |
+| `$enableValidationCache` | `bool` | `validation.cache_enabled` | `REST_VALIDATION_CACHE_ENABLED` | `true` | Activa/desactiva caché de validación |
+| `$cacheKeyPrefix` | `string` | `validation.cache_prefix` | `REST_VALIDATION_CACHE_PREFIX` | `'validation'` | Prefijo de las claves de caché |
+| `$connection` | `string` | `validation.connection` | `REST_VALIDATION_CONNECTION` | `'db'` | Nombre de la conexión de BD |
+
+**Orden de prioridad:** propiedad asignada en la clase > valor de config (desde `.env`) > valor por defecto hardcodeado.
+
+```env
+# Ejemplo de .env
+REST_VALIDATION_CACHE_ENABLED=true
+REST_VALIDATION_CACHE_TTL=1800
+REST_VALIDATION_CACHE_PREFIX=validation
+REST_VALIDATION_CONNECTION=mysql
+```
 
 ### Métodos principales
 
