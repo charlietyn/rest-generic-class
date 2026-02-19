@@ -428,8 +428,7 @@ class BaseService
         }
         $query = $this->modelClass->query();
         $query = $this->process_all($params, $query);
-        $value = $query->get();
-        return $toJson ? ['data' => $value->jsonSerialize()] : $value->toArray();
+        return $query instanceof LengthAwarePaginator?$query:($toJson ? ['data' => $query->get()->jsonSerialize()] : $query->get()->toArray());
     }
 
     /**

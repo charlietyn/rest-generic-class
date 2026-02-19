@@ -114,7 +114,7 @@ trait ValidatesExistenceInDatabase
             return ['success'=>$success,'missing_ids'=>$missingIds,'existing_ids'=>$existingIds];
         } catch (\Exception $e) {
             $this->logValidationError('validateIdsExistInTable', $table, $e);
-            return false;
+            throw $e;
         }
     }
 

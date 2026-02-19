@@ -4,6 +4,7 @@ namespace Ronu\RestGenericClass\Core\Middleware;
 
 use Closure;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
@@ -138,6 +139,8 @@ class TransformData
             throw $e;
         } catch (\BadMethodCallException $e) {
             throw $e;
+        } catch (QueryException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             logger()->error('TransformData: Unexpected validation error', [
                 'form_request' => $formRequestClass,
@@ -145,10 +148,9 @@ class TransformData
                 'path' => $request->path(),
                 'error' => $e->getMessage(),
             ]);
-
             throw new \RuntimeException(
                 "Validation failed unexpectedly: {$e->getMessage()}",
-                0,
+                500,
                 $e
             );
         }
