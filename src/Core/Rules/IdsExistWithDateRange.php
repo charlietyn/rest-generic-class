@@ -36,7 +36,13 @@ class IdsExistWithDateRange implements ValidationRule, ValidatorAwareRule
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
-        if (!is_array($value) || empty($value)) {
+        if ($value === null || $value === '') {
+            return;
+        }
+        if (!is_array($value)) {
+            $value = [$value];
+        }
+        if (empty($value)) {
             return;
         }
         $ids = array_filter($value, fn($id) => $id !== null && $id !== '');
