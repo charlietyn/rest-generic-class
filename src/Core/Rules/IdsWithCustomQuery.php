@@ -48,6 +48,7 @@ class IdsWithCustomQuery implements ValidationRule, ValidatorAwareRule
             $this->validator->errors()->add(
                 $attribute,
                 'The following IDs do not exist: ' . implode(', ', $ids)
+                . $this->buildConditionsMessage($this->additionalConditions)
             );
         }
     }

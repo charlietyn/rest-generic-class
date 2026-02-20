@@ -48,6 +48,7 @@ class IdsExistInTable implements ValidationRule, ValidatorAwareRule
             $this->validator->errors()->add(
                 $attribute,
                 'The following IDs do not exist: ' . implode(', ', $validated['missing_ids'])
+                . $this->buildConditionsMessage($this->additionalConditions)
             );
         }
     }

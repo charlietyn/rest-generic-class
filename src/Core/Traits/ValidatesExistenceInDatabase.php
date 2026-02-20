@@ -609,6 +609,33 @@ trait ValidatesExistenceInDatabase
     }
 
     /**
+     * Build a human-readable conditions string for error messages.
+     *
+     * Returns an empty string when no conditions are present so that
+     * existing error messages are not altered.
+     *
+     * @param array<string, mixed> $conditions Key-value pairs of additional WHERE conditions
+     * @return string  e.g. '' or ' (conditions: parent_id=5, status=active)'
+     */
+    protected function buildConditionsMessage(array $conditions): string
+    {
+        if (empty($conditions)) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($conditions as $column => $value) {
+            if (is_array($value)) {
+                $parts[] = "{$column}=[" . implode(', ', $value) . ']';
+            } else {
+                $parts[] = "{$column}={$value}";
+            }
+        }
+
+        return ' (conditions: ' . implode(', ', $parts) . ')';
+    }
+
+    /**
      * Log validation error
      *
      * @param string $method Method name where error occurred
