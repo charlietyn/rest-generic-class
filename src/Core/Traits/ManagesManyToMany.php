@@ -573,6 +573,62 @@ trait ManagesManyToMany
     }
 
     /**
+     * Validate the request payload against the related model's scenario rules.
+     *
+     * Returns null when validation passes; returns a 422 JSON response with structured
+     * errors when it fails. Integrate this at the top of any mutation action before
+     * executing the operation:
+     *
+     *   if ($error = $this->validate($request, $request->get('_scenario', 'create'))) {
+     *       return $error;
+     *   }
+     *
+     * Bulk mode is detected automatically via isBulkScenario(): each item in the
+     * payload is validated individually and all errors are indexed by position.
+     *
+     * @param  Request  $request    The incoming HTTP request.
+     * @param  string   $_scenario  Validation scenario (create, update, bulk_create, …).
+     * @return JsonResponse|null    null on success, 422 JsonResponse on failure.
+     */
+    protected function validate(Request $request, string $_scenario): ?JsonResponse
+    {
+        $config     = $this->resolveRelationConfig($request->get('_relation'));
+        $data       = $this->extractMutationData($request, $config);
+        $bulk       = $this->isBulkScenario($request);
+        $modelClass = $config['relatedModel'];
+
+        if ($bulk) {
+            $errors = [];
+
+            foreach ($data as $index => $item) {
+                /** @var \Ronu\RestGenericClass\Core\Models\BaseModel $instance */
+                $instance = new $modelClass();
+                $result   = $instance->validate_all($item, $_scenario);
+
+                if (!$result['success']) {
+                    $errors[$index] = $result['errors'];
+                }
+            }
+
+            if (!empty($errors)) {
+                return response()->json(['success' => false, 'errors' => $errors], 422);
+            }
+
+            return null;
+        }
+
+        /** @var \Ronu\RestGenericClass\Core\Models\BaseModel $instance */
+        $instance = new $modelClass();
+        $result   = $instance->validate_all($data, $_scenario);
+
+        if ($result['success']) {
+            return null;
+        }
+
+        return response()->json(['success' => false, 'errors' => $result['errors']], 422);
+    }
+
+    /**
      * Attach a single related entity with optional pivot data.
      */
     private function processSingleAttach(BelongsToMany $relationship, array $data, string $relatedKey): array
