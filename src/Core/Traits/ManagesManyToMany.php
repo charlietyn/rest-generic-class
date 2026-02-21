@@ -27,6 +27,14 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  *
  * The optional `{parent_id}` route parameter tells the trait to load a specific
  * parent; when absent the authenticated user is used (/site and /mobile channels).
+ *
+ * The `sync` and `toggle` scenarios support three pivot data input shapes:
+ *   - Flat list of scalar IDs:        [1, 2, 3]
+ *   - List of objects with pivot cols: [{"address_id": 1, "is_primary": true}, ...]
+ *   - Laravel-native assoc map:       {1: {"is_primary": true}, 2: {}}
+ *
+ * An optional `pivotColumns` whitelist in the mutation config restricts which
+ * pivot attributes are accepted across all attach scenarios.
  */
 trait ManagesManyToMany
 {
@@ -48,6 +56,7 @@ trait ManagesManyToMany
      *          'mutation' => [
      *              'dataKey'       => ['Addresses', 'addresses'], // keys to try extracting from body
      *              'deleteRelated' => true,                       // delete related model on deleteRelation?
+     *              'pivotColumns'  => ['is_primary', 'label'],    // whitelist of allowed pivot columns
      *          ],
      *      ],
      *  ];
@@ -397,15 +406,16 @@ trait ManagesManyToMany
         $data = $this->extractMutationData($request, $config);
         $scenario = $request->get('_scenario', 'attach');
         $relatedKey = $config['relatedKey'];
+        $allowedPivotCols = $config['mutation']['pivotColumns'] ?? [];
 
-        return $this->executeMutation($request, function () use ($parent, $config, $data, $scenario, $relatedKey) {
+        return $this->executeMutation($request, function () use ($parent, $config, $data, $scenario, $relatedKey, $allowedPivotCols) {
             $relationship = $parent->{$config['relationship']}();
 
             return match (true) {
-                str_contains($scenario, 'sync') => $relationship->sync($data),
-                str_contains($scenario, 'toggle') => $relationship->toggle($data),
-                str_contains($scenario, 'bulk') => $this->processBulkAttach($relationship, $data, $relatedKey),
-                default => $this->processSingleAttach($relationship, $data, $relatedKey),
+                str_contains($scenario, 'sync')   => $this->processSyncAttach($relationship, $data, $relatedKey, $allowedPivotCols),
+                str_contains($scenario, 'toggle') => $this->processToggleAttach($relationship, $data, $relatedKey, $allowedPivotCols),
+                str_contains($scenario, 'bulk')   => $this->processBulkAttach($relationship, $data, $relatedKey, $allowedPivotCols),
+                default                            => $this->processSingleAttach($relationship, $data, $relatedKey, $allowedPivotCols),
             };
         });
     }
@@ -575,11 +585,15 @@ trait ManagesManyToMany
     /**
      * Attach a single related entity with optional pivot data.
      */
-    private function processSingleAttach(BelongsToMany $relationship, array $data, string $relatedKey): array
+    private function processSingleAttach(BelongsToMany $relationship, array $data, string $relatedKey, array $allowedPivotCols = []): array
     {
         $id = $data[$relatedKey] ?? $data['id'] ?? null;
         $pivotData = $data;
         unset($pivotData[$relatedKey], $pivotData['id']);
+
+        if (!empty($allowedPivotCols)) {
+            $pivotData = array_intersect_key($pivotData, array_flip($allowedPivotCols));
+        }
 
         $relationship->attach($id, $pivotData);
         return ['attached' => [$id]];
@@ -588,7 +602,7 @@ trait ManagesManyToMany
     /**
      * Attach multiple related entities with optional pivot data.
      */
-    private function processBulkAttach(BelongsToMany $relationship, array $data, string $relatedKey): array
+    private function processBulkAttach(BelongsToMany $relationship, array $data, string $relatedKey, array $allowedPivotCols = []): array
     {
         $attachData = [];
         foreach ($data as $item) {
@@ -596,6 +610,11 @@ trait ManagesManyToMany
                 $id = $item[$relatedKey] ?? $item['id'] ?? null;
                 $pivotData = $item;
                 unset($pivotData[$relatedKey], $pivotData['id']);
+
+                if (!empty($allowedPivotCols)) {
+                    $pivotData = array_intersect_key($pivotData, array_flip($allowedPivotCols));
+                }
+
                 $attachData[$id] = $pivotData;
             } else {
                 $attachData[] = $item;
@@ -604,6 +623,100 @@ trait ManagesManyToMany
 
         $relationship->attach($attachData);
         return ['attached' => array_keys($attachData)];
+    }
+
+    /**
+     * Sync the relationship with pivot data support.
+     *
+     * Normalizes input via buildPivotMap() so sync accepts flat ID lists,
+     * objects with relatedKey + pivot columns, or Laravel-native assoc maps.
+     */
+    private function processSyncAttach(BelongsToMany $relationship, array $data, string $relatedKey, array $allowedPivotCols = []): array
+    {
+        $pivotMap = $this->buildPivotMap($data, $relatedKey, $allowedPivotCols);
+        $result = $relationship->sync($pivotMap);
+
+        return [
+            'attached' => $result['attached'],
+            'detached' => $result['detached'],
+            'updated'  => $result['updated'],
+        ];
+    }
+
+    /**
+     * Toggle the relationship with pivot data support.
+     *
+     * Normalizes input via buildPivotMap() so toggle accepts flat ID lists,
+     * objects with relatedKey + pivot columns, or Laravel-native assoc maps.
+     */
+    private function processToggleAttach(BelongsToMany $relationship, array $data, string $relatedKey, array $allowedPivotCols = []): array
+    {
+        $pivotMap = $this->buildPivotMap($data, $relatedKey, $allowedPivotCols);
+        $result = $relationship->toggle($pivotMap);
+
+        return [
+            'attached' => $result['attached'],
+            'detached' => $result['detached'],
+        ];
+    }
+
+    /**
+     * Normalize heterogeneous input into a Laravel-compatible pivot map.
+     *
+     * Supports three input shapes:
+     *   Shape 1 — flat list of scalar IDs:  [1, 2, 3]
+     *             → [1 => [], 2 => [], 3 => []]
+     *   Shape 2 — list of objects with relatedKey + pivot cols:
+     *             [["address_id" => 1, "is_primary" => true], ...]
+     *             → [1 => ["is_primary" => true], ...]
+     *   Shape 3 — already a Laravel-native assoc map:
+     *             [1 => ["is_primary" => true]]
+     *             → pass through unchanged
+     *
+     * When $allowedPivotCols is non-empty, pivot attributes are filtered
+     * through a whitelist using array_intersect_key().
+     *
+     * @param  array  $data             Raw input data
+     * @param  string $relatedKey       Name of the foreign key column (e.g. "address_id")
+     * @param  array  $allowedPivotCols Optional whitelist of allowed pivot column names
+     * @return array                    Normalized map: [id => [pivot_cols], ...]
+     */
+    private function buildPivotMap(array $data, string $relatedKey, array $allowedPivotCols = []): array
+    {
+        $whitelist = !empty($allowedPivotCols) ? array_flip($allowedPivotCols) : [];
+
+        // Shape 3: already an assoc map (non-list array with integer-like keys)
+        if (!array_is_list($data)) {
+            if (!empty($whitelist)) {
+                return array_map(
+                    fn(array $pivotCols) => array_intersect_key($pivotCols, $whitelist),
+                    $data
+                );
+            }
+            return $data;
+        }
+
+        $map = [];
+        foreach ($data as $item) {
+            // Shape 1: scalar ID
+            if (!is_array($item)) {
+                $map[$item] = [];
+                continue;
+            }
+
+            // Shape 2: object with relatedKey + optional pivot columns
+            $id = $item[$relatedKey] ?? $item['id'] ?? null;
+            $pivotData = $item;
+            unset($pivotData[$relatedKey], $pivotData['id']);
+
+            if (!empty($whitelist)) {
+                $pivotData = array_intersect_key($pivotData, $whitelist);
+            }
+
+            $map[$id] = $pivotData;
+        }
+
+        return $map;
     }
 
     // ──────────────────────────────────────────────────────────────

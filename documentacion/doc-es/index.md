@@ -37,6 +37,7 @@ Bienvenido/a a la documentación del paquete **Rest Generic Class**. Esta librer
 - [Escenarios](03-usage/02-scenarios.md)
 - [Escenarios límite y extremos](03-usage/03-edge-and-extreme-scenarios.md)
 - [Escenarios de caché](03-usage/04-cache-scenarios.md)
+- [Relaciones muchos a muchos](03-usage/05-many-to-many.md)
 
 ### Referencia
 - [API pública](04-reference/00-public-api.md)
