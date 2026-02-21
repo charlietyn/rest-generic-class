@@ -687,13 +687,19 @@ trait ManagesManyToMany
 
         // Shape 3: already an assoc map (non-list array with integer-like keys)
         if (!array_is_list($data)) {
-            if (!empty($whitelist)) {
-                return array_map(
-                    fn(array $pivotCols) => array_intersect_key($pivotCols, $whitelist),
-                    $data
-                );
-            }
-            return $data;
+            return array_map(
+                function (mixed $pivotCols) use ($whitelist): array {
+                    // Normalize scalar values (e.g. {"1": 1}) to empty pivot arrays
+                    if (!is_array($pivotCols)) {
+                        return [];
+                    }
+
+                    return !empty($whitelist)
+                        ? array_intersect_key($pivotCols, $whitelist)
+                        : $pivotCols;
+                },
+                $data
+            );
         }
 
         $map = [];
