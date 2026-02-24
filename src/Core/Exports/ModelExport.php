@@ -6,13 +6,15 @@ use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 
 /**
- * Generic Excel export class for any array-based dataset.
+ * Generic Excel export class for any dataset.
  *
  * Used by BaseService::exportExcel(), ManagesManyToMany::exportRelationExcel(),
  * and ManagesOneToMany::exportRelationExcel().
  *
- * Receives a flat array of row arrays and a column list that defines both
- * the spreadsheet headings and the key order used when mapping each row.
+ * Accepts rows as plain arrays, Eloquent model instances, or stdClass objects.
+ * Each row is normalised to an array via toArray() / (array) cast before mapping,
+ * so the class works regardless of whether the data originates from a paginator
+ * (which returns model objects) or from Collection::toArray() (which returns arrays).
  *
  * Example:
  *   $columns = ['id', 'name', 'city'];
@@ -31,12 +33,37 @@ class ModelExport implements FromArray, WithHeadings
      * Return the data rows mapped to the declared column order.
      * Keys not present in $columns are silently dropped.
      * Missing keys in a row are filled with null.
+     *
+     * Rows are normalised to arrays first so that Eloquent model objects
+     * (returned by LengthAwarePaginator::items()) are handled transparently.
      */
     public function array(): array
     {
-        return array_map(function (array $row): array {
+        return array_map(function (mixed $row): array {
+            $row = $this->normalizeRow($row);
             return array_map(fn(string $col) => $row[$col] ?? null, $this->columns);
         }, $this->data);
+    }
+
+    /**
+     * Normalise a single row to a plain associative array.
+     *
+     * Handles three input types:
+     *   - plain array            → returned as-is
+     *   - Eloquent model / any object with toArray() → converted via toArray()
+     *   - stdClass / other object → cast to array
+     */
+    private function normalizeRow(mixed $row): array
+    {
+        if (is_array($row)) {
+            return $row;
+        }
+
+        if (is_object($row) && method_exists($row, 'toArray')) {
+            return $row->toArray();
+        }
+
+        return (array) $row;
     }
 
     /**
