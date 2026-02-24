@@ -179,6 +179,141 @@ trait ManagesOneToMany
     }
 
     // ──────────────────────────────────────────────────────────────
+    //  Export entry-points
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * Export related O2M entities to Excel.
+     *
+     * Applies the same filters/ordering as listRelation but fetches ALL matching
+     * records (pagination is intentionally ignored for export operations).
+     *
+     * Request params:
+     *   - _relation  (injected by middleware, required)
+     *   - filename   (string, default 'export.xlsx')
+     *   - columns    (array|CSV) explicit spreadsheet headers; falls back to select, then getFillable()
+     *   - select, eq, attr, oper, orderby, relations — same as listRelation
+     *
+     * Requires: maatwebsite/excel and a ModelExport class accessible from the application.
+     *
+     * Route (admin):  GET /countries/{parent_id}/states/export/excel
+     * Route (site):   GET /states/export/excel
+     */
+    public function exportRelationExcel(Request $request, mixed $parentId = null): mixed
+    {
+        $config   = $this->resolveRelationConfig($request->get('_relation'));
+        $params   = $this->parseOneToManyParams($request);
+        $data     = $this->buildO2MExportData($config, $params, $parentId);
+        $columns  = $this->resolveRelationExportColumns($request, $config, $params['select']);
+        $filename = $request->get('filename', 'export.xlsx');
+
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new ModelExport($data, $columns),
+            $filename
+        );
+    }
+
+    /**
+     * Export related O2M entities to PDF.
+     *
+     * Same filtering as listRelation but fetches ALL matching records.
+     *
+     * Request params:
+     *   - _relation  (injected by middleware, required)
+     *   - filename   (string, default 'export.pdf')
+     *   - template   (string, default 'pdf') Blade view name passed to DomPDF
+     *   - columns, select, eq, attr, oper, orderby, relations — same as listRelation
+     *
+     * Requires: barryvdh/laravel-dompdf.
+     *
+     * Route (admin):  GET /countries/{parent_id}/states/export/pdf
+     * Route (site):   GET /states/export/pdf
+     */
+    public function exportRelationPdf(Request $request, mixed $parentId = null): mixed
+    {
+        $config   = $this->resolveRelationConfig($request->get('_relation'));
+        $params   = $this->parseOneToManyParams($request);
+        $data     = $this->buildO2MExportData($config, $params, $parentId);
+        $columns  = $this->resolveRelationExportColumns($request, $config, $params['select']);
+        $template = $request->get('template', 'pdf');
+        $filename = $request->get('filename', 'export.pdf');
+
+        return \Barryvdh\DomPDF\Facade\Pdf::loadView($template, [
+            'data'    => $data,
+            'columns' => $columns,
+            'model'   => new $config['relatedModel'],
+            'params'  => $params,
+        ])->download($filename);
+    }
+
+    /**
+     * Build the flat data array for a O2M export, applying all active filters and ordering.
+     * Pagination is intentionally skipped — exports always return the complete result set.
+     */
+    private function buildO2MExportData(array $config, array $params, mixed $parentId): array
+    {
+        $parent = $this->resolveParentEntity($config, $parentId);
+
+        /** @var HasMany $query */
+        $query = $parent->{$config['relationship']}();
+
+        $this->applyOneToManyEqFilters($query, $params['eq']);
+        $this->applyOneToManyOperFilters($query, $params['oper']);
+        $this->applyOneToManyOrdering($query, $params['orderby']);
+
+        if (!empty($params['relations'])) {
+            $query->with($params['relations']);
+        }
+
+        return $query->get()->toArray();
+    }
+
+    /**
+     * Resolve the column list for a relation export.
+     *
+     * Priority:
+     *   1. 'columns' query param  – explicit header list for spreadsheet/PDF
+     *   2. 'select'  query param  – DB projection reused as headers when not ['*']
+     *   3. relatedModel::getFillable() – fallback to all fillable fields
+     */
+    private function resolveRelationExportColumns(Request $request, array $config, array $select): array
+    {
+        $rawColumns = $request->get('columns');
+
+        if ($rawColumns) {
+            $normalized = $this->normalizeRelationExportColumns($rawColumns);
+            if (!empty($normalized)) {
+                return $normalized;
+            }
+        }
+
+        if ($select !== ['*']) {
+            $normalized = $this->normalizeRelationExportColumns($select);
+            if (!empty($normalized)) {
+                return $normalized;
+            }
+        }
+
+        return (new $config['relatedModel'])->getFillable();
+    }
+
+    /**
+     * Normalize a column list from CSV string or array to a clean flat array of strings.
+     */
+    private function normalizeRelationExportColumns(mixed $columns): array
+    {
+        if (is_string($columns)) {
+            $columns = array_map('trim', explode(',', $columns));
+        }
+
+        if (!is_array($columns)) {
+            return [];
+        }
+
+        return array_values(array_filter($columns, static fn($v) => $v !== ''));
+    }
+
+    // ──────────────────────────────────────────────────────────────
     //  Mutation entry-points
     // ──────────────────────────────────────────────────────────────
 
