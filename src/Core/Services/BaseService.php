@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Maatwebsite\Excel\Facades\Excel;
 use Nwidart\Modules\Facades\Module;
+use Ronu\RestGenericClass\Core\Exports\ModelExport;
 use Ronu\RestGenericClass\Core\Traits\HasDynamicFilter;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
