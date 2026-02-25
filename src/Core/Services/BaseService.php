@@ -9,6 +9,7 @@ namespace Ronu\RestGenericClass\Core\Services;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Pagination\CursorPaginator;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Cache;
@@ -429,7 +430,10 @@ class BaseService
         }
         $query = $this->modelClass->query();
         $query = $this->process_all($params, $query);
-        return $query instanceof LengthAwarePaginator?$query:($toJson ? ['data' => $query->get()->jsonSerialize()] : $query->get()->toArray());
+        if ($query instanceof CursorPaginator)
+            return $query;
+        else
+            return $query instanceof LengthAwarePaginator ? $query : ($toJson ? ['data' => $query->get()->jsonSerialize()] : $query->get()->toArray());
     }
 
     /**
@@ -463,11 +467,12 @@ class BaseService
         else {
             $cursor = isset($params['pagination']['cursor']) ? $params['pagination']['cursor'] : null;
             $items = $query->cursorPaginate($pagesize, ['*'], 'cursor', $cursor);
-            return [
-                'data' => $items->items(),
-                'next_cursor' => $items->nextCursor()?->encode(),
-                'has_more' => $items->hasMorePages(),
-            ];
+            return $items;
+//            return [
+//                'data' => $items->items(),
+//                'next_cursor' => $items->nextCursor()?->encode(),
+//                'has_more' => $items->hasMorePages(),
+//            ];
         }
     }
 

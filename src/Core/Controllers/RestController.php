@@ -9,6 +9,7 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Foundation\Bus\DispatchesJobs;
 use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Pagination\CursorPaginator;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller as BaseController;
@@ -106,7 +107,7 @@ class RestController extends BaseController
      * @param Request $request
      * @return LengthAwarePaginator|array
      */
-    public function index(Request $request): LengthAwarePaginator|array|DatabaseErrorParserException
+    public function index(Request $request): LengthAwarePaginator|array|DatabaseErrorParserException|CursorPaginator
     {
         try {
             $params = $this->process_request($request);
@@ -145,7 +146,7 @@ class RestController extends BaseController
      */
     public function actionValidate(BaseFormRequest $request): JsonResponse
     {
-        return response()->json(['success' => true], 200);;
+        return response()->json(['success' => true], 200);
     }
 
     /**
