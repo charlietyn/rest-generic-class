@@ -42,7 +42,7 @@ class IdsWithCustomQuery implements ValidationRule, ValidatorAwareRule
         if (empty($value)) {
             return;
         }
-        $ids = array_filter($value, fn($id) => $id !== null && $id !== '');
+        $ids = $this->extractIds($value, $this->column);
         $validated = $this->validateIdsWithCustomQuery($ids, $this->queryCallback, $this->column, $this->additionalConditions);
         if (!$validated) {
             $this->validator->errors()->add(
