@@ -45,8 +45,8 @@ class IdsExistWithDateRange implements ValidationRule, ValidatorAwareRule
         if (empty($value)) {
             return;
         }
-        $ids = array_filter($value, fn($id) => $id !== null && $id !== '');
-        $validated = $this->validateIdsExistWithDateRange($ids, $this->table, $this->dateColumn,$this->startDate, $this->endDate, $this->additionalConditions);
+        $ids = $this->extractIds($value);
+        $validated = $this->validateIdsExistWithDateRange($ids, $this->table, $this->dateColumn, $this->startDate, $this->endDate, $this->additionalConditions);
         if (!$validated) {
             $this->validator->errors()->add(
                 $attribute,

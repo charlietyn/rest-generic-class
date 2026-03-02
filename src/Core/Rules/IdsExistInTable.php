@@ -42,7 +42,7 @@ class IdsExistInTable implements ValidationRule, ValidatorAwareRule
         if (empty($value)) {
             return;
         }
-        $ids = array_filter($value, fn($id) => $id !== null && $id !== '');
+        $ids = $this->extractIds($value, $this->column);
         $validated = $this->validateIdsExistInTable($ids, $this->table, $this->column, $this->additionalConditions);
         if (!$validated['success']) {
             $this->validator->errors()->add(

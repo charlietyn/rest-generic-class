@@ -609,6 +609,48 @@ trait ValidatesExistenceInDatabase
     }
 
     /**
+     * Extract IDs from a mixed array that may contain:
+     * - Plain scalar values (int/string): [24, 23]
+     * - Associative arrays with an ID key: [{"id": 19, "name": "..."}, {"id": 20, "name": "..."}]
+     * - Objects with an ID property
+     *
+     * This allows validation rules to accept both formats:
+     *   "addresses": [24, 23]
+     *   "addresses": [{"id": 19, "first_name": "Miguelito", ...}, {"id": 20, ...}]
+     *
+     * Uses a single pass (array_map) — no N+1 queries involved.
+     *
+     * @param array $items The input array (scalars, arrays, or objects)
+     * @param string $key The key/property to extract when items are arrays/objects (default: 'id')
+     * @return array<int|string> Flat array of extracted IDs, deduplicated and filtered
+     */
+    public function extractIds(array $items, string $key = 'id'): array
+    {
+        if (empty($items)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter(
+            array_map(function ($item) use ($key) {
+                if (is_int($item) || is_string($item)) {
+                    return $item;
+                }
+
+                if (is_array($item) && array_key_exists($key, $item)) {
+                    return $item[$key];
+                }
+
+                if (is_object($item) && property_exists($item, $key)) {
+                    return $item->{$key};
+                }
+
+                return null;
+            }, $items),
+            fn($id) => $id !== null && $id !== ''
+        )));
+    }
+
+    /**
      * Build a human-readable conditions string for error messages.
      *
      * Returns an empty string when no conditions are present so that
