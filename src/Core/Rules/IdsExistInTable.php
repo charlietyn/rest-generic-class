@@ -19,6 +19,7 @@ class IdsExistInTable implements ValidationRule, ValidatorAwareRule
         protected string $table,
         protected string $column = 'id',
         protected array  $additionalConditions = [],
+        protected ?string $inputKey = null,
     )
     {
         $this->connection = $connection;
@@ -42,7 +43,7 @@ class IdsExistInTable implements ValidationRule, ValidatorAwareRule
         if (empty($value)) {
             return;
         }
-        $ids = $this->extractIds($value, $this->column);
+        $ids = $this->extractIds($value, $this->inputKey ?? $this->column);
         if (empty($ids)) {
             $this->validator->errors()->add(
                 $attribute,
