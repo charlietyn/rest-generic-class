@@ -44,6 +44,13 @@ class IdsExistWithAnyStatus implements ValidationRule, ValidatorAwareRule
             return;
         }
         $ids = $this->extractIds($value);
+        if (empty($ids)) {
+            $this->validator->errors()->add(
+                $attribute,
+                'Theres no IDs provided to validate.:'.$this->column
+            );
+            return;
+        }
         $validated = $this->validateIdsExistWithAnyStatus($ids, $this->table, $this->statuses, $this->column, $this->additionalConditions);
         if (!$validated) {
             $this->validator->errors()->add(

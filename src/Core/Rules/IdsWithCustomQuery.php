@@ -43,6 +43,13 @@ class IdsWithCustomQuery implements ValidationRule, ValidatorAwareRule
             return;
         }
         $ids = $this->extractIds($value, $this->column);
+        if (empty($ids)) {
+            $this->validator->errors()->add(
+                $attribute,
+                'Theres no IDs provided to validate.:'.$this->column
+            );
+            return;
+        }
         $validated = $this->validateIdsWithCustomQuery($ids, $this->queryCallback, $this->column, $this->additionalConditions);
         if (!$validated) {
             $this->validator->errors()->add(

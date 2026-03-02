@@ -92,16 +92,11 @@ trait ValidatesExistenceInDatabase
         string $column = 'id',
         array $additionalConditions = []
     ): mixed {
-        // Empty array is considered valid
-        if (empty($ids)) {
-            return true;
-        }
-
         // Remove duplicates and filter out null/empty values
         $ids = array_values(array_unique(array_filter($ids, fn($id) => $id !== null && $id !== '')));
 
         if (empty($ids)) {
-            return ['success'=>'false','error'=>'No valid IDs provided','missing_ids'=>[],'existing_ids'=>[]];
+            return ['success'=>false,'error'=>'No valid IDs provided','missing_ids'=>[],'existing_ids'=>[]];
         }
 
         try {
