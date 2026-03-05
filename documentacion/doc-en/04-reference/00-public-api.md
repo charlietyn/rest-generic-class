@@ -56,6 +56,12 @@ This package exposes classes, traits, and helpers intended for use in your Larav
 
 ## Traits
 
+- `ManagesRelations` — unified trait for one-to-many and many-to-many relationship management
+  - `listRelation()`, `showRelation()`, `createRelation()`, `updateRelation()`, `deleteRelation()`
+  - `exportRelationExcel()`, `exportRelationPdf()`
+  - M2M-only: `attachRelation()`, `detachRelation()`, `updatePivotRelation()`
+- `ManagesOneToMany` — **deprecated alias** for `ManagesRelations` (backward-compatible)
+- `ManagesManyToMany` — **deprecated alias** for `ManagesRelations` (backward-compatible)
 - `HasDynamicFilter` (query filtering)
 - `HandlesQueryExceptions`
 - `HasPermissionsController` / `HasPermissionsService`

@@ -1,10 +1,12 @@
-# Many-to-many relationships
+# Relationship management (One-to-Many & Many-to-Many)
 
-This section covers the `ManagesManyToMany` trait, which provides generic read and mutation methods for controllers that need to expose many-to-many relationships with full filtering, pagination, ordering, and configurable CRUD/pivot operations.
+This section covers the `ManagesRelations` trait, which provides unified generic read and mutation methods for controllers that need to expose **one-to-many** (`HasMany`) and **many-to-many** (`BelongsToMany`) relationships with full filtering, pagination, ordering, and configurable CRUD/pivot operations.
+
+> **Migration note:** The previous `ManagesOneToMany` and `ManagesManyToMany` traits are now thin aliases that delegate to `ManagesRelations`. Existing controllers using the old traits continue to work without changes. For new controllers, prefer `use ManagesRelations;` directly.
 
 ## Overview
 
-The trait is designed to be used in any controller that manages a `BelongsToMany` relationship. It supports:
+The trait is designed to be used in any controller that manages `HasMany` or `BelongsToMany` relationships. It supports:
 
 - **Listing** related entities with filters, ordering, pagination, and eager-loading.
 - **Showing** a single related entity.
@@ -18,15 +20,31 @@ The trait is designed to be used in any controller that manages a `BelongsToMany
 
 ### Registering the trait
 
-Add `use ManagesManyToMany;` to your controller and define the `$manyToManyConfig` property:
+Add `use ManagesRelations;` to your controller and define `$oneToManyConfig` and/or `$manyToManyConfig`:
 
 ```php
-use Ronu\RestGenericClass\Core\Traits\ManagesManyToMany;
+use Ronu\RestGenericClass\Core\Traits\ManagesRelations;
 
 class UserController extends Controller
 {
-    use ManagesManyToMany;
+    use ManagesRelations;
 
+    // One-to-many relationships
+    protected array $oneToManyConfig = [
+        'phones' => [
+            'relationship'  => 'array_phones',
+            'relatedModel'  => Phones::class,
+            'parentModel'   => Users::class,
+            'foreignKey'    => 'user_id',
+            'localKey'      => 'id',
+            'mutation' => [
+                'dataKey'       => ['Phones', 'phones'],
+                'deleteRelated' => true,
+            ],
+        ],
+    ];
+
+    // Many-to-many relationships
     protected array $manyToManyConfig = [
         'addresses' => [
             'relationship'  => 'array_address',
@@ -45,6 +63,8 @@ class UserController extends Controller
     ];
 }
 ```
+
+> **Backward compatibility:** You can still use `use ManagesOneToMany;` or `use ManagesManyToMany;` — they are aliases for `ManagesRelations`.
 
 ## Configuration reference
 
@@ -376,15 +396,14 @@ Route::prefix('users/{parent_id}/addresses')->group(function () {
 
 ## Evidence
 
-- File: `src/Core/Traits/ManagesManyToMany.php`
-  - Symbol: `ManagesManyToMany::attachRelation()`, `ManagesManyToMany::detachRelation()`, `ManagesManyToMany::updatePivotRelation()`
-  - Notes: Entry-point methods for all attach/detach/pivot-update scenarios. `attachRelation()` reads `pivotColumns` from the config and delegates to scenario-specific private methods.
-- File: `src/Core/Traits/ManagesManyToMany.php`
-  - Symbol: `ManagesManyToMany::buildPivotMap()`, `ManagesManyToMany::processSyncAttach()`, `ManagesManyToMany::processToggleAttach()`
+- File: `src/Core/Traits/ManagesRelations.php`
+  - Symbol: `ManagesRelations::attachRelation()`, `ManagesRelations::detachRelation()`, `ManagesRelations::updatePivotRelation()`
+  - Notes: Entry-point methods for all attach/detach/pivot-update scenarios (M2M only). `attachRelation()` reads `pivotColumns` from the config and delegates to scenario-specific private methods.
+- File: `src/Core/Traits/ManagesRelations.php`
+  - Symbol: `ManagesRelations::buildPivotMap()`, `ManagesRelations::processSyncAttach()`, `ManagesRelations::processToggleAttach()`
   - Notes: `buildPivotMap()` normalizes the three input shapes into a Laravel-compatible `[id => [pivot_cols]]` map. `processSyncAttach()` and `processToggleAttach()` delegate to it before calling `sync()` / `toggle()`.
-- File: `src/Core/Traits/ManagesManyToMany.php`
-  - Symbol: `ManagesManyToMany::processSingleAttach()`, `ManagesManyToMany::processBulkAttach()`
-  - Notes: Single and bulk attach helpers. Both accept an optional `$allowedPivotCols` parameter and filter pivot data through the whitelist when configured.
-- File: `src/Core/Traits/ManagesManyToMany.php`
-  - Symbol: `ManagesManyToMany::listRelation()`, `ManagesManyToMany::showRelation()`
-  - Notes: Read methods supporting filters, pagination, ordering, and eager-loading on many-to-many relationships.
+- File: `src/Core/Traits/ManagesRelations.php`
+  - Symbol: `ManagesRelations::listRelation()`, `ManagesRelations::showRelation()`, `ManagesRelations::createRelation()`, `ManagesRelations::updateRelation()`, `ManagesRelations::deleteRelation()`
+  - Notes: Unified read/write methods supporting both O2M and M2M relationships with filters, pagination, ordering, and eager-loading.
+- File: `src/Core/Traits/ManagesOneToMany.php`, `src/Core/Traits/ManagesManyToMany.php`
+  - Notes: Now deprecated thin aliases that delegate to `ManagesRelations` for backward compatibility.

@@ -56,6 +56,12 @@ Este paquete expone clases, traits y helpers pensados para su uso en tu aplicaci
 
 ## Traits
 
+- `ManagesRelations` — trait unificado para gestión de relaciones uno a muchos y muchos a muchos
+  - `listRelation()`, `showRelation()`, `createRelation()`, `updateRelation()`, `deleteRelation()`
+  - `exportRelationExcel()`, `exportRelationPdf()`
+  - Solo M2M: `attachRelation()`, `detachRelation()`, `updatePivotRelation()`
+- `ManagesOneToMany` — **alias deprecado** de `ManagesRelations` (retrocompatible)
+- `ManagesManyToMany` — **alias deprecado** de `ManagesRelations` (retrocompatible)
 - `HasDynamicFilter` (filtrado de consultas)
 - `HandlesQueryExceptions`
 - `HasPermissionsController` / `HasPermissionsService`
