@@ -169,6 +169,16 @@ class Helper
                 continue;
             }
             foreach ($row as $key => $value) {
+                // ── JSON node (nested object or array) → JSON string ──────────────
+                // json_decode with true converts both JSON objects and arrays into
+                // PHP arrays, so any nested JSON node arrives here as an array.
+                // It is serialized back to a string for json/jsonb or text columns.
+                if (is_array($value)) {
+                    $row[$key] = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    continue; // already a string; skip date detection
+                }
+
+                // ── Date coercion ─────────────────────────────────────────────────────
                 if (is_string($value) && $format = self::detectDateFormat($value)) {
                     if (Carbon::hasFormat($value, $format)) {
                         $row[$key] = Carbon::createFromFormat($format, $value)->format('Y-m-d H:i:s');
