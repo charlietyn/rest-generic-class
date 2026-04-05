@@ -1295,7 +1295,10 @@ class BaseService
      */
     private function bumpCacheVersion(): void
     {
-        if (!config('rest-generic-class.cache.enabled', false)) {
+        // Skip only when global cache is off AND this service doesn't force cache on.
+        // When $cacheable = true, this service caches even with global off,
+        // so version bumps must still happen to avoid stale entries.
+        if (!config('rest-generic-class.cache.enabled', false) && $this->cacheable !== true) {
             return;
         }
 
