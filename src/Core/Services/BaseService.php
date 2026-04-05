@@ -1223,11 +1223,11 @@ class BaseService
         $store = $this->resolveCacheStore();
 
         foreach ($normalized as $rel) {
-            // Strip field selection: "roles:id,name" → "roles"
-            $relationPath = explode(':', $rel)[0];
+            // Use the parsed relation path from normalizeRelations()
+            $relationPath = $rel['relation'];
 
             // Resolve each segment: "roles.permissions" → ["roles", "permissions"]
-            $segments = explode('.', $relationPath);
+            $segments = $rel['segments'];
             $currentModel = $this->modelClass;
 
             foreach ($segments as $i => $segment) {
@@ -1295,6 +1295,9 @@ class BaseService
      */
     private function bumpCacheVersion(): void
     {
+        // Skip only when global cache is off AND this service doesn't force cache on.
+        // When $cacheable = true, this service caches even with global off,
+        // so version bumps must still happen to avoid stale entries.
         if (!config('rest-generic-class.cache.enabled', false) && $this->cacheable !== true) {
             return;
         }
