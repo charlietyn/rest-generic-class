@@ -54,6 +54,28 @@ class BaseModel extends Model
      */
     const HIERARCHY_FIELD_ID = null;
 
+    /**
+     * Models whose cache should be invalidated when this model is written.
+     *
+     * When a write operation (create/update/delete) succeeds on this model,
+     * the cache version of every model listed here will also be bumped.
+     * This solves the cross-entity staleness problem: if a User caches
+     * its Role data and the Role changes, the User cache must be invalidated.
+     *
+     * Only needed for edge cases where the related data is included
+     * without an explicit `relations` parameter (e.g., via $appends accessors).
+     * For explicit eager-loaded relations, the composite version key
+     * in buildCacheKey() handles invalidation automatically.
+     *
+     * Format: array of fully qualified model class names.
+     *
+     * Example:
+     *   const CACHE_INVALIDATES = [\App\Models\User::class];
+     *
+     * @var array<int, class-string>
+     */
+    const CACHE_INVALIDATES = [];
+
     // =========================================================================
     // Role-Based Field Restriction
     // =========================================================================
