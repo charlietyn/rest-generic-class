@@ -20,6 +20,10 @@ class RestGenericClassServiceProvider extends ServiceProvider
             $this->configPath() => config_path('rest-generic-class.php'),
         ], 'rest-generic-class-config');
 
+        if (config('rest-generic-class.permissions.routes.enabled', false)) {
+            $this->loadRoutesFrom($this->routesPath());
+        }
+
         if (!config()->has('logging.channels.rest-generic-class')) {
             config([
                 'logging.channels.rest-generic-class' => [
@@ -34,5 +38,10 @@ class RestGenericClassServiceProvider extends ServiceProvider
     private function configPath(): string
     {
         return __DIR__ . '/../../../config/rest-generic-class.php';
+    }
+
+    private function routesPath(): string
+    {
+        return __DIR__ . '/../../../routes/permissions.php';
     }
 }

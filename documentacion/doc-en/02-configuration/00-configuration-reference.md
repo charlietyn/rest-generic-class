@@ -35,6 +35,27 @@ The package publishes a single configuration file: `config/rest-generic-class.ph
 | `validation.cache_prefix` | string | `'validation'` | Prefix used for validation cache keys. |
 | `validation.connection` | string | `'db'` | Database connection name used by validation queries. |
 
+## Optional permission routes
+
+The package can register reusable permission read routes. They are disabled by default so existing applications keep full control over their route table.
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `permissions.routes.enabled` | bool | `false` | When true, loads the package permission routes. |
+| `permissions.routes.prefix` | string | `permissions` | Route prefix. Add your app prefix such as `/api` in your route group or HTTP kernel, not here. |
+| `permissions.routes.middleware` | array | `['api', 'auth:api']` | Middleware applied to the package routes. |
+| `permissions.routes.guard` | string | `api` | Guard used to resolve the authenticated user in the optional package route. It does not filter the payload unless the request also sends `guard`. |
+
+Registered routes when enabled:
+
+```http
+GET /permissions
+GET /permissions/by-roles
+GET /permissions/by-users
+```
+
+If the consuming app also defines `apiResource('permissions')`, register the specific routes above before the resource route.
+
 **Next:** [Environment variables](01-env-vars.md)
 
 [Back to documentation index](../index.md)

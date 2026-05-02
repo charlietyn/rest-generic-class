@@ -100,17 +100,23 @@ Los traits de permisos exponen compresion opt-in para lecturas grandes de permis
 
 - `HasPermissionsService::getPermissionsByRolesCompressed(array $roles, string $by = 'id', ?string $guard = null, ?array $modules = null, ?array $entities = null, array $compressOptions = [])`
 - `HasPermissionsService::getPermissionsByUsersCompressed(array $users, $userModelClass, string $by = 'id', ?string $guard = null, ?array $modules = null, ?array $entities = null, array $compressOptions = [])`
+- `HasReadableUserPermissions::effectivePermissionsCompressed(?string $guard = null, ?array $modules = null, ?array $entities = null, array $compressOptions = [])`
+- `HasReadableUserPermissions::permissionsPayload(Request $request, $context = null)`
 
-Los metodos existentes `getPermissionsByRoles()` y `getPermissionsByUsers()` siguen devolviendo la lista plana de objetos con `count`.
+Los metodos existentes `getPermissionsByRoles()` y `getPermissionsByUsers()` siguen devolviendo la lista plana de objetos con `count`. `permissionsPayload()` tambien devuelve la lista plana salvo que la solicitud incluya `compress=true`.
 
 ### Metodos de controlador
 
 El paquete no registra rutas de permisos automaticamente. Mapea estos metodos desde las rutas de tu aplicacion cuando uses `HasPermissionsController`:
 
 ```php
-Route::get('/permissions/roles', [PermissionController::class, 'get_permissions_by_roles']);
-Route::get('/permissions/users', [PermissionController::class, 'get_permissions_by_users']);
+Route::get('/permissions', [PermissionController::class, 'get_authenticated_permissions']);
+Route::get('/permissions/by-roles', [PermissionController::class, 'get_permissions_by_roles']);
+Route::get('/permissions/by-users', [PermissionController::class, 'get_permissions_by_users']);
+Route::apiResource('permissions', PermissionCrudController::class); // mantener despues de rutas especificas
 ```
+
+Si `rest-generic-class.permissions.routes.enabled=true`, el paquete registra las mismas tres rutas con el `prefix` y `middleware` configurados.
 
 Parametros aceptados:
 
@@ -143,6 +149,29 @@ Forma de respuesta comprimida:
       }
     }
   ]
+}
+```
+
+Payload de permisos autenticado:
+
+```http
+GET /permissions?guard=api&compress=true&expand=true
+```
+
+```json
+{
+  "ok": true,
+  "data": {
+    "user": {"id": 10, "email": "admin@example.com", "name": "Admin"},
+    "guard": "api",
+    "permissions": ["security.*", "sales.order.*"],
+    "stats": {
+      "original_count": 18,
+      "compressed_count": 2,
+      "compression_ratio": 9
+    },
+    "expanded": ["security.user.index", "security.user.show"]
+  }
 }
 ```
 

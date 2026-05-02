@@ -148,8 +148,10 @@ Devolver payloads de permisos legibles para pantallas admin senior, reportes o a
 - Mapea los endpoints de lectura desde las rutas de tu aplicacion:
 
 ```php
-Route::get('/api/permissions/roles', [PermissionController::class, 'get_permissions_by_roles']);
-Route::get('/api/permissions/users', [PermissionController::class, 'get_permissions_by_users']);
+Route::get('/api/permissions', [PermissionController::class, 'get_authenticated_permissions']);
+Route::get('/api/permissions/by-roles', [PermissionController::class, 'get_permissions_by_roles']);
+Route::get('/api/permissions/by-users', [PermissionController::class, 'get_permissions_by_users']);
+Route::apiResource('permissions', PermissionCrudController::class); // mantener despues de rutas especificas
 ```
 
 **Pasos**
@@ -159,7 +161,7 @@ Route::get('/api/permissions/users', [PermissionController::class, 'get_permissi
 
 **Codigo de ejemplo**
 ```http
-GET /api/permissions/roles?roles[]=admin&by=name&guard=api&compress=true
+GET /api/permissions/by-roles?roles[]=admin&by=name&guard=api&compress=true
 ```
 
 ```json
@@ -187,7 +189,13 @@ GET /api/permissions/roles?roles[]=admin&by=name&guard=api&compress=true
 Con `expand=true`, la misma respuesta comprimida incluye los nombres expandidos:
 
 ```http
-GET /api/permissions/users?users[]=alice@example.com&by=email&guard=api&compress=true&expand=true
+GET /api/permissions/by-users?users[]=alice@example.com&by=email&guard=api&compress=true&expand=true
+```
+
+Para el usuario autenticado, expone `get_authenticated_permissions()` o llama `permissionsPayload($request)` desde tu propio auth controller:
+
+```http
+GET /api/permissions?guard=api&compress=true&expand=true
 ```
 
 **Notas**

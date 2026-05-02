@@ -50,4 +50,16 @@ return [
             'headers' => ['Accept-Language', 'X-Tenant-Id'],
         ],
     ],
+
+    'permissions' => [
+        'routes' => [
+            'enabled' => env('REST_PERMISSIONS_ROUTES_ENABLED', false),
+            'prefix' => env('REST_PERMISSIONS_ROUTES_PREFIX', 'permissions'),
+            'middleware' => array_values(array_filter(array_map(
+                'trim',
+                explode(',', env('REST_PERMISSIONS_ROUTES_MIDDLEWARE', 'api,auth:api'))
+            ))),
+            'guard' => env('REST_PERMISSIONS_ROUTES_GUARD', 'api'),
+        ],
+    ],
 ];

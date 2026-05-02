@@ -151,7 +151,7 @@ trait HasPermissionsController
     }
 
     /**
-     * GET /api/permissions/roles
+     * GET /api/permissions/by-roles
      *
      * Query params:
      * - roles[]: role identifiers
@@ -205,7 +205,7 @@ trait HasPermissionsController
     }
 
     /**
-     * GET /api/permissions/users
+     * GET /api/permissions/by-users
      *
      * Query params mirror get_permissions_by_roles, with users[] and by=id|email|name.
      */
@@ -254,6 +254,54 @@ trait HasPermissionsController
             );
 
         return response()->json(['ok' => true, 'data' => $result], 200);
+    }
+
+    /**
+     * GET /api/permissions
+     *
+     * Returns the authenticated user's permissions. The flat response remains the default;
+     * wildcard compression is enabled only with ?compress=true.
+     */
+    public function get_authenticated_permissions(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $validated = $request->validate([
+            'guard' => ['nullable', 'string'],
+            'modules' => ['nullable'],
+            'entities' => ['nullable'],
+            'compress' => ['nullable', 'boolean'],
+            'expand' => ['nullable', 'boolean'],
+            'compress_global' => ['nullable', 'boolean'],
+        ]);
+
+        $guard = $validated['guard'] ?? config('rest-generic-class.permissions.routes.guard');
+        $user = $request->user($guard) ?: $request->user();
+
+        if (!$user) {
+            return response()->json(['ok' => false, 'message' => 'Unauthenticated.'], 401);
+        }
+
+        if (!method_exists($user, 'permissionsPayload')) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'The authenticated user model must use HasReadableUserPermissions.',
+            ], 500);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'data' => $user->permissionsPayload($request, [
+                'user' => $this->authenticatedPermissionsUserContext($user),
+            ]),
+        ], 200);
+    }
+
+    private function authenticatedPermissionsUserContext($user): array
+    {
+        return [
+            'id' => method_exists($user, 'getKey') ? $user->getKey() : ($user->id ?? null),
+            'email' => $user->email ?? null,
+            'name' => $user->name ?? null,
+        ];
     }
 
 }

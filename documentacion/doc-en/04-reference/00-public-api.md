@@ -89,17 +89,23 @@ The permissions traits expose opt-in read compression for large Spatie permissio
 
 - `HasPermissionsService::getPermissionsByRolesCompressed(array $roles, string $by = 'id', ?string $guard = null, ?array $modules = null, ?array $entities = null, array $compressOptions = [])`
 - `HasPermissionsService::getPermissionsByUsersCompressed(array $users, $userModelClass, string $by = 'id', ?string $guard = null, ?array $modules = null, ?array $entities = null, array $compressOptions = [])`
+- `HasReadableUserPermissions::effectivePermissionsCompressed(?string $guard = null, ?array $modules = null, ?array $entities = null, array $compressOptions = [])`
+- `HasReadableUserPermissions::permissionsPayload(Request $request, $context = null)`
 
-The existing `getPermissionsByRoles()` and `getPermissionsByUsers()` methods keep returning the flat object list with `count`.
+The existing `getPermissionsByRoles()` and `getPermissionsByUsers()` methods keep returning the flat object list with `count`. `permissionsPayload()` also returns the flat list unless the request includes `compress=true`.
 
 ### Controller methods
 
 The package does not register permission routes automatically. Map these methods from your application routes when you use `HasPermissionsController`:
 
 ```php
-Route::get('/permissions/roles', [PermissionController::class, 'get_permissions_by_roles']);
-Route::get('/permissions/users', [PermissionController::class, 'get_permissions_by_users']);
+Route::get('/permissions', [PermissionController::class, 'get_authenticated_permissions']);
+Route::get('/permissions/by-roles', [PermissionController::class, 'get_permissions_by_roles']);
+Route::get('/permissions/by-users', [PermissionController::class, 'get_permissions_by_users']);
+Route::apiResource('permissions', PermissionCrudController::class); // keep after specific routes
 ```
+
+If `rest-generic-class.permissions.routes.enabled=true`, the package registers the same three routes with the configured `prefix` and `middleware`.
 
 Accepted query parameters:
 
@@ -132,6 +138,29 @@ Compressed response shape:
       }
     }
   ]
+}
+```
+
+Authenticated permission payload:
+
+```http
+GET /permissions?guard=api&compress=true&expand=true
+```
+
+```json
+{
+  "ok": true,
+  "data": {
+    "user": {"id": 10, "email": "admin@example.com", "name": "Admin"},
+    "guard": "api",
+    "permissions": ["security.*", "sales.order.*"],
+    "stats": {
+      "original_count": 18,
+      "compressed_count": 2,
+      "compression_ratio": 9
+    },
+    "expanded": ["security.user.index", "security.user.show"]
+  }
 }
 ```
 

@@ -377,7 +377,7 @@ trait HasPermissionsService
         array $compressOptions = []
     ): array {
         $raw = $this->getPermissionsByRoles($roleIdsOrNames, $by, $guard, $modules, $entities);
-        $allSystemPerms = $this->getAllSystemPermissionsForCompression($guard);
+        $allSystemPerms = $this->getAllSystemPermissionsForCompression($guard, $modules, $entities);
         $compressor = app(PermissionCompressorContract::class);
 
         return array_map(function (array $roleData) use ($allSystemPerms, $compressor, $compressOptions) {
@@ -460,7 +460,7 @@ trait HasPermissionsService
         array $compressOptions = []
     ): array {
         $raw = $this->getPermissionsByUsers($userSearchValues, $userModelClass, $by, $guard, $modules, $entities);
-        $allSystemPerms = $this->getAllSystemPermissionsForCompression($guard);
+        $allSystemPerms = $this->getAllSystemPermissionsForCompression($guard, $modules, $entities);
         $compressor = app(PermissionCompressorContract::class);
 
         return array_map(function (array $userData) use ($allSystemPerms, $compressor, $compressOptions) {
@@ -493,12 +493,35 @@ trait HasPermissionsService
         return $sets->flatten()->unique()->values();
     }
 
-    private function getAllSystemPermissionsForCompression(?string $guard = null): Collection
+    private function getAllSystemPermissionsForCompression(?string $guard = null, ?array $modules = null, ?array $entities = null): Collection
     {
         $permissionClass = app(config('permission.models.permission'));
 
         return $permissionClass::query()
             ->when($guard, fn($q) => $q->where('guard_name', $guard))
+            ->when($modules && count($modules) > 0, fn($q) => $q->whereIn('module', $modules))
+            ->when($entities && count($entities) > 0, function ($query) use ($entities) {
+                $query->where(function (Builder $outer) use ($entities) {
+                    foreach ($entities as $raw) {
+                        $raw = trim((string)$raw);
+                        $module = null;
+                        $entity = $raw;
+
+                        if (Str::contains($raw, '.')) {
+                            $module = Str::before($raw, '.');
+                            $entity = Str::after($raw, '.');
+                        }
+
+                        $outer->orWhere(function (Builder $sub) use ($entity, $module) {
+                            $sub->whereRaw('LOWER(model) = ?', [strtolower($entity)]);
+
+                            if (!empty($module)) {
+                                $sub->whereRaw('LOWER(module) = ?', [strtolower($module)]);
+                            }
+                        });
+                    }
+                });
+            })
             ->get();
     }
 

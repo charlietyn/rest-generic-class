@@ -3,7 +3,9 @@
 namespace Ronu\RestGenericClass\Core\Traits;
 
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\PermissionCompressorContract;
 use Spatie\Permission\Contracts\Permission;
 use Spatie\Permission\Contracts\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -87,6 +89,61 @@ trait HasReadableUserPermissions
     }
 
     /**
+     * Effective permissions compressed into wildcard presentation strings.
+     */
+    public function effectivePermissionsCompressed(
+        ?string $guard = null,
+        ?array $modules = null,
+        ?array $entities = null,
+        array $compressOptions = []
+    ): array {
+        $permissions = $this->permissionsFiltered($guard, $modules, $entities);
+        $allSystemPerms = $this->permissionCompressionUniverse($guard, $modules, $entities);
+        $compressor = app(PermissionCompressorContract::class);
+
+        return $compressor
+            ->compress($permissions, $allSystemPerms, $compressOptions)
+            ->toArray();
+    }
+
+    /**
+     * Build the authenticated user's permission payload from request flags.
+     */
+    public function permissionsPayload(Request $request, $context = null): array
+    {
+        $guard = $request->query('guard');
+        $guard = is_string($guard) && $guard !== '' ? $guard : null;
+        $modules = $this->permissionPayloadList($request->query('modules'));
+        $entities = $this->permissionPayloadList($request->query('entities'));
+        $base = $this->permissionPayloadContext($context);
+
+        if ($guard !== null) {
+            $base['guard'] = $guard;
+        }
+
+        if (!$request->boolean('compress', false)) {
+            $permissions = $this->permissionsFiltered($guard, $modules, $entities);
+
+            return array_merge($base, [
+                'count' => $permissions->count(),
+                'permissions' => $this->permissionPayloadRows($permissions),
+            ]);
+        }
+
+        return array_merge($base, $this->effectivePermissionsCompressed(
+            $guard,
+            $modules,
+            $entities,
+            [
+                'module_wildcard' => true,
+                'table_wildcard' => true,
+                'global_wildcard' => $request->boolean('compress_global', false),
+                'include_expanded' => $request->boolean('expand', false),
+            ]
+        ));
+    }
+
+    /**
      * Filters over effective permissions (guard/module/entity).
      */
     public function permissionsFiltered(?string $guard = null, ?array $modules = null, ?array $entities = null): Collection
@@ -113,4 +170,75 @@ trait HasReadableUserPermissions
             return true;
         })->values();
     }
+
+    private function permissionCompressionUniverse(?string $guard = null, ?array $modules = null, ?array $entities = null): Collection
+    {
+        $permissionClass = app(config('permission.models.permission'));
+
+        return $permissionClass::query()
+            ->when($guard, fn($q) => $q->where('guard_name', $guard))
+            ->when($modules && count($modules) > 0, fn($q) => $q->whereIn('module', $modules))
+            ->when($entities && count($entities) > 0, function ($query) use ($entities) {
+                $query->where(function ($outer) use ($entities) {
+                    foreach ($entities as $raw) {
+                        $module = null;
+                        $entity = $raw;
+
+                        if (str_contains($raw, '.')) {
+                            [$module, $entity] = explode('.', $raw, 2);
+                        }
+
+                        $outer->orWhere(function ($sub) use ($module, $entity) {
+                            $sub->whereRaw('LOWER(model) = ?', [strtolower($entity)]);
+
+                            if ($module !== null && $module !== '') {
+                                $sub->whereRaw('LOWER(module) = ?', [strtolower($module)]);
+                            }
+                        });
+                    }
+                });
+            })
+            ->get();
+    }
+
+    private function permissionPayloadList($value): ?array
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $values = is_array($value) ? $value : explode(',', (string)$value);
+        $values = collect($values)
+            ->flatMap(fn($item) => is_array($item) ? $item : explode(',', (string)$item))
+            ->map(fn($item) => trim((string)$item))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        return $values === [] ? null : $values;
+    }
+
+    private function permissionPayloadContext($context): array
+    {
+        if ($context === null) {
+            return [];
+        }
+
+        return is_array($context) ? $context : ['context' => $context];
+    }
+
+    private function permissionPayloadRows(Collection $permissions): array
+    {
+        return $permissions
+            ->map(fn($permission) => [
+                'id' => $permission->id ?? null,
+                'name' => $permission->name,
+                'module' => $permission->module ?? null,
+                'guard' => $permission->guard_name ?? null,
+            ])
+            ->values()
+            ->all();
+    }
+
 }
