@@ -82,6 +82,70 @@ Este paquete expone clases, traits y helpers pensados para su uso en tu aplicaci
 
 Ver referencia completa → [05-validation-rules.md](./05-validation-rules.md)
 
+## Compresion wildcard de permisos
+
+Los traits de permisos exponen compresion opt-in para lecturas grandes de permisos Spatie. La compresion es solo de presentacion: no escribe permisos wildcard en la base de datos y no cambia las comprobaciones de autorizacion.
+
+### Clases de soporte
+
+- `Ronu\RestGenericClass\Core\Support\Permissions\Contracts\PermissionCompressorContract`
+  - `compress(Collection $permissions, Collection $allSystemPerms, array $options = []): PermissionCompressedResult`
+- `Ronu\RestGenericClass\Core\Support\Permissions\PermissionCompressor`
+  - Implementacion stateless registrada como singleton en el service container.
+- `Ronu\RestGenericClass\Core\Support\Permissions\PermissionCompressedResult`
+  - `all()` devuelve primero wildcards y despues permisos individuales.
+  - `toArray()` devuelve `permissions`, `stats` y `expanded` opcional.
+
+### Metodos de servicio
+
+- `HasPermissionsService::getPermissionsByRolesCompressed(array $roles, string $by = 'id', ?string $guard = null, ?array $modules = null, ?array $entities = null, array $compressOptions = [])`
+- `HasPermissionsService::getPermissionsByUsersCompressed(array $users, $userModelClass, string $by = 'id', ?string $guard = null, ?array $modules = null, ?array $entities = null, array $compressOptions = [])`
+
+Los metodos existentes `getPermissionsByRoles()` y `getPermissionsByUsers()` siguen devolviendo la lista plana de objetos con `count`.
+
+### Metodos de controlador
+
+El paquete no registra rutas de permisos automaticamente. Mapea estos metodos desde las rutas de tu aplicacion cuando uses `HasPermissionsController`:
+
+```php
+Route::get('/permissions/roles', [PermissionController::class, 'get_permissions_by_roles']);
+Route::get('/permissions/users', [PermissionController::class, 'get_permissions_by_users']);
+```
+
+Parametros aceptados:
+
+| Parametro | Aplica a | Notas |
+| --- | --- | --- |
+| `roles[]` | endpoint de roles | IDs o nombres de roles. Requerido. |
+| `users[]` | endpoint de usuarios | IDs, emails o nombres de usuarios. Requerido. |
+| `by` | ambos | Roles: `id` o `name`. Usuarios: `id`, `email` o `name`. |
+| `guard` | ambos | Filtro opcional por guard Spatie. |
+| `modules[]` | ambos | Filtro opcional por modulo, delegado a los filtros existentes. |
+| `entities[]` | ambos | Filtro opcional por entidad o `module.entity`. |
+| `compress` | ambos | `false` por defecto. Usa `true` para devolver strings wildcard. |
+| `expand` | ambos | Incluye nombres expandidos cuando `compress=true`. |
+| `compress_global` | ambos | Habilita `*`. Esta deshabilitado por defecto y debe usarse solo en clientes de auditoria confiables. |
+
+Forma de respuesta comprimida:
+
+```json
+{
+  "ok": true,
+  "data": [
+    {
+      "role": "admin",
+      "guard": "api",
+      "permissions": ["security.*", "sales.order.*", "reports.dashboard.index"],
+      "stats": {
+        "original_count": 24,
+        "compressed_count": 3,
+        "compression_ratio": 8
+      }
+    }
+  ]
+}
+```
+
 ## Helpers
 
 - `RequestBody` para leer parámetros del body en distintos métodos HTTP.
@@ -109,6 +173,9 @@ Ver referencia completa → [05-validation-rules.md](./05-validation-rules.md)
 - Archivo: src/Core/Traits/HasDynamicFilter.php
   - Símbolo: HasDynamicFilter::scopeWithFilters()
   - Notas: Trait de filtrado usado por BaseService.
+- Archivo: src/Core/Support/Permissions/
+  - Simbolo: PermissionCompressor, PermissionCompressedResult, PermissionCompressorContract
+  - Notas: Soporte de compresion wildcard de permisos usado por HasPermissionsService.
 - Archivo: src/Core/Traits/ValidatesExistenceInDatabase.php
   - Símbolo: ValidatesExistenceInDatabase
   - Notas: Trait base para validación de IDs contra BD con caché.

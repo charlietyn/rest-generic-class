@@ -1,0 +1,24 @@
+{
+  "changelists": [
+    {
+      "name": "Default",
+      "files": [
+        ".gitignore",
+        "composer.json",
+        "documentacion/doc-en/03-usage/02-scenarios.md",
+        "documentacion/doc-en/04-reference/00-public-api.md",
+        "documentacion/doc-es/03-usage/02-scenarios.md",
+        "documentacion/doc-es/04-reference/00-public-api.md",
+        "src/Core/Providers/RestGenericClassServiceProvider.php",
+        "src/Core/Traits/HasPermissionsController.php",
+        "src/Core/Traits/HasPermissionsService.php",
+        "phpunit.xml.dist",
+        "src/Core/Support/Permissions/Contracts/PermissionCompressorContract.php",
+        "src/Core/Support/Permissions/PermissionCompressedResult.php",
+        "src/Core/Support/Permissions/PermissionCompressor.php",
+        "tests/Unit/PermissionCompressorTest.php"
+      ]
+    }
+  ],
+  "active": "Default"
+}

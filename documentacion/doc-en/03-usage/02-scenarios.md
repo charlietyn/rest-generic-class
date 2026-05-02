@@ -136,6 +136,69 @@ Content-Type: application/json
 **Common mistakes**
 - Calling the endpoint without installing Spatie permissions.
 
+---
+
+## Scenario 5: Audit large permission sets with wildcard compression
+
+**Goal**
+Return readable permission payloads for senior admin screens, reports, or audit tooling without changing the real permissions stored by Spatie.
+
+**Setup**
+- Use `HasPermissionsController` in your permission controller.
+- Map the read endpoints from your application routes:
+
+```php
+Route::get('/api/permissions/roles', [PermissionController::class, 'get_permissions_by_roles']);
+Route::get('/api/permissions/users', [PermissionController::class, 'get_permissions_by_users']);
+```
+
+**Steps**
+1. Call the read endpoint with `compress=true`.
+2. Use `roles[]` or `users[]` and choose `by` according to your identifiers.
+3. Add `expand=true` only when the client needs the expanded names for drill-down or export.
+
+**Example code**
+```http
+GET /api/permissions/roles?roles[]=admin&by=name&guard=api&compress=true
+```
+
+```json
+{
+  "ok": true,
+  "data": [
+    {
+      "role": "admin",
+      "guard": "api",
+      "permissions": [
+        "security.*",
+        "sales.order.*",
+        "reports.dashboard.index"
+      ],
+      "stats": {
+        "original_count": 24,
+        "compressed_count": 3,
+        "compression_ratio": 8
+      }
+    }
+  ]
+}
+```
+
+With `expand=true`, the same compressed response includes the expanded permission names:
+
+```http
+GET /api/permissions/users?users[]=alice@example.com&by=email&guard=api&compress=true&expand=true
+```
+
+**Notes**
+- `security.*` means the subject has every permission in the current system universe for the `security` module.
+- `security.user.*` means every known action for `security.user`, not an authorization rule stored in the database.
+- `compress_global=true` enables `*`; keep it disabled unless the client is trusted and explicitly expects global audit summaries.
+
+**Common mistakes**
+- Treating compressed strings as permissions to write back to Spatie.
+- Enabling `compress_global=true` in broad client-facing responses without a product reason.
+
 [Back to documentation index](../index.md)
 
 ## Evidence
@@ -149,5 +212,8 @@ Content-Type: application/json
   - Symbol: BaseModel::MODEL, BaseModel::HIERARCHY_FIELD_ID
   - Notes: Defines model key and hierarchy capability.
 - File: src/Core/Traits/HasPermissionsController.php
-  - Symbol: HasPermissionsController::assign_roles()
-  - Notes: Provides permission assignment endpoint used in the scenario.
+  - Symbol: HasPermissionsController::assign_roles(), HasPermissionsController::get_permissions_by_roles(), HasPermissionsController::get_permissions_by_users()
+  - Notes: Provides permission assignment and compressed read endpoints used in the scenarios.
+- File: src/Core/Support/Permissions/
+  - Symbol: PermissionCompressor
+  - Notes: Compresses flat permission names into wildcard presentation strings.

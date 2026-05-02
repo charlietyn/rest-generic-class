@@ -1,7 +1,7 @@
 {
     "name": "ronu/rest-generic-class",
     "description": "Base Class for generic restfull api in laravel",
-    "version": "2.2.0",
+    "version": "2.2.1",
     "type": "vcs",
     "license": "MIT",
     "autoload": {
@@ -31,6 +31,14 @@
         "barryvdh/laravel-dompdf": "Required for exportPdf()",
         "nwidart/laravel-modules": "Required for module-aware permissions",
         "spatie/laravel-permission": "Required for permission models and traits"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.6"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Ronu\\RestGenericClass\\Tests\\": "tests/"
+        }
     },
     "extra": {
         "laravel": {

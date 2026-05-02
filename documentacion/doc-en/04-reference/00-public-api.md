@@ -71,6 +71,70 @@ This package exposes classes, traits, and helpers intended for use in your Larav
   - `validateIdsExistWithAnyStatus()`, `validateIdsExistWithDateRange()`, `validateIdsWithCustomQuery()`
   - `getMissingIds()`, `clearValidationCache()`
 
+## Permission wildcard compression
+
+The permissions traits expose opt-in read compression for large Spatie permission sets. Compression is presentation-only: it never writes wildcard permissions to the database and does not change authorization checks.
+
+### Support classes
+
+- `Ronu\RestGenericClass\Core\Support\Permissions\Contracts\PermissionCompressorContract`
+  - `compress(Collection $permissions, Collection $allSystemPerms, array $options = []): PermissionCompressedResult`
+- `Ronu\RestGenericClass\Core\Support\Permissions\PermissionCompressor`
+  - Stateless implementation registered as a singleton in the service container.
+- `Ronu\RestGenericClass\Core\Support\Permissions\PermissionCompressedResult`
+  - `all()` returns wildcard entries first and individual permission names after them.
+  - `toArray()` returns `permissions`, `stats`, and optional `expanded`.
+
+### Service methods
+
+- `HasPermissionsService::getPermissionsByRolesCompressed(array $roles, string $by = 'id', ?string $guard = null, ?array $modules = null, ?array $entities = null, array $compressOptions = [])`
+- `HasPermissionsService::getPermissionsByUsersCompressed(array $users, $userModelClass, string $by = 'id', ?string $guard = null, ?array $modules = null, ?array $entities = null, array $compressOptions = [])`
+
+The existing `getPermissionsByRoles()` and `getPermissionsByUsers()` methods keep returning the flat object list with `count`.
+
+### Controller methods
+
+The package does not register permission routes automatically. Map these methods from your application routes when you use `HasPermissionsController`:
+
+```php
+Route::get('/permissions/roles', [PermissionController::class, 'get_permissions_by_roles']);
+Route::get('/permissions/users', [PermissionController::class, 'get_permissions_by_users']);
+```
+
+Accepted query parameters:
+
+| Parameter | Applies to | Notes |
+| --- | --- | --- |
+| `roles[]` | roles endpoint | Required role IDs or names. |
+| `users[]` | users endpoint | Required user IDs, emails, or names. |
+| `by` | both | Roles: `id` or `name`. Users: `id`, `email`, or `name`. |
+| `guard` | both | Optional Spatie guard filter. |
+| `modules[]` | both | Optional module filter passed to the existing permission filters. |
+| `entities[]` | both | Optional entity or `module.entity` filter. |
+| `compress` | both | `false` by default. Set `true` to return wildcard strings. |
+| `expand` | both | Includes expanded permission names when `compress=true`. |
+| `compress_global` | both | Enables `*`. Disabled by default and should be used only for trusted audit clients. |
+
+Compressed response shape:
+
+```json
+{
+  "ok": true,
+  "data": [
+    {
+      "role": "admin",
+      "guard": "api",
+      "permissions": ["security.*", "sales.order.*", "reports.dashboard.index"],
+      "stats": {
+        "original_count": 24,
+        "compressed_count": 3,
+        "compression_ratio": 8
+      }
+    }
+  ]
+}
+```
+
 ## Validation Rules
 
 - `Ronu\RestGenericClass\Core\Rules\IdsExistInTable` — ID existence in an arbitrary table and column
@@ -109,6 +173,9 @@ Full reference → [05-validation-rules.md](./05-validation-rules.md)
 - File: src/Core/Traits/HasDynamicFilter.php
   - Symbol: HasDynamicFilter::scopeWithFilters()
   - Notes: Filter trait used by BaseService.
+- File: src/Core/Support/Permissions/
+  - Symbol: PermissionCompressor, PermissionCompressedResult, PermissionCompressorContract
+  - Notes: Wildcard permission compression support used by HasPermissionsService.
 - File: src/Core/Traits/ValidatesExistenceInDatabase.php
   - Symbol: ValidatesExistenceInDatabase
   - Notes: Base trait for ID validation against the database with caching.

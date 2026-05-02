@@ -150,4 +150,110 @@ trait HasPermissionsController
         ], 200);
     }
 
+    /**
+     * GET /api/permissions/roles
+     *
+     * Query params:
+     * - roles[]: role identifiers
+     * - by: id|name
+     * - compress: opt-in wildcard compression
+     * - expand: include expanded permission names alongside compressed output
+     * - compress_global: allow the global * wildcard
+     */
+    public function get_permissions_by_roles(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $validated = $request->validate([
+            'roles' => ['required', 'array'],
+            'roles.*' => ['required'],
+            'by' => ['nullable', Rule::in(['id', 'name'])],
+            'guard' => ['nullable', 'string'],
+            'modules' => ['nullable', 'array'],
+            'modules.*' => ['string'],
+            'entities' => ['nullable', 'array'],
+            'entities.*' => ['string'],
+            'compress' => ['nullable', 'boolean'],
+            'expand' => ['nullable', 'boolean'],
+            'compress_global' => ['nullable', 'boolean'],
+        ]);
+
+        $compress = $request->boolean('compress', false);
+        $options = [
+            'module_wildcard' => true,
+            'table_wildcard' => true,
+            'global_wildcard' => $request->boolean('compress_global', false),
+            'include_expanded' => $request->boolean('expand', false),
+        ];
+
+        $result = $compress
+            ? $this->getPermissionsByRolesCompressed(
+                $validated['roles'],
+                $validated['by'] ?? 'id',
+                $validated['guard'] ?? null,
+                $validated['modules'] ?? null,
+                $validated['entities'] ?? null,
+                $options
+            )
+            : $this->getPermissionsByRoles(
+                $validated['roles'],
+                $validated['by'] ?? 'id',
+                $validated['guard'] ?? null,
+                $validated['modules'] ?? null,
+                $validated['entities'] ?? null
+            );
+
+        return response()->json(['ok' => true, 'data' => $result], 200);
+    }
+
+    /**
+     * GET /api/permissions/users
+     *
+     * Query params mirror get_permissions_by_roles, with users[] and by=id|email|name.
+     */
+    public function get_permissions_by_users(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $validated = $request->validate([
+            'users' => ['required', 'array'],
+            'users.*' => ['required'],
+            'by' => ['nullable', Rule::in(['id', 'email', 'name'])],
+            'guard' => ['nullable', 'string'],
+            'modules' => ['nullable', 'array'],
+            'modules.*' => ['string'],
+            'entities' => ['nullable', 'array'],
+            'entities.*' => ['string'],
+            'compress' => ['nullable', 'boolean'],
+            'expand' => ['nullable', 'boolean'],
+            'compress_global' => ['nullable', 'boolean'],
+        ]);
+
+        $userModelClass = config('auth.providers.users.model');
+        $compress = $request->boolean('compress', false);
+        $options = [
+            'module_wildcard' => true,
+            'table_wildcard' => true,
+            'global_wildcard' => $request->boolean('compress_global', false),
+            'include_expanded' => $request->boolean('expand', false),
+        ];
+
+        $result = $compress
+            ? $this->getPermissionsByUsersCompressed(
+                $validated['users'],
+                $userModelClass,
+                $validated['by'] ?? 'id',
+                $validated['guard'] ?? null,
+                $validated['modules'] ?? null,
+                $validated['entities'] ?? null,
+                $options
+            )
+            : $this->getPermissionsByUsers(
+                $validated['users'],
+                $userModelClass,
+                $validated['by'] ?? 'id',
+                $validated['guard'] ?? null,
+                $validated['modules'] ?? null,
+                $validated['entities'] ?? null
+            );
+
+        return response()->json(['ok' => true, 'data' => $result], 200);
+    }
+
 }

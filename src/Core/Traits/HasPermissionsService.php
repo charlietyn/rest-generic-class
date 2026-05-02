@@ -10,6 +10,7 @@ use Illuminate\Support\Collection;
 use MongoDB\Laravel\Eloquent\Model;
 use Nwidart\Modules\Facades\Module;
 use Ronu\RestGenericClass\Core\Resolvers\RouteMetaResolver;
+use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\PermissionCompressorContract;
 use Symfony\Component\Translation\Exception\NotFoundResourceException;
 
 /**
@@ -365,6 +366,32 @@ trait HasPermissionsService
     }
 
     /**
+     * Retrieves permissions for roles using wildcard compression.
+     */
+    public function getPermissionsByRolesCompressed(
+        array $roleIdsOrNames,
+        string $by = 'id',
+        ?string $guard = null,
+        ?array $modules = null,
+        ?array $entities = null,
+        array $compressOptions = []
+    ): array {
+        $raw = $this->getPermissionsByRoles($roleIdsOrNames, $by, $guard, $modules, $entities);
+        $allSystemPerms = $this->getAllSystemPermissionsForCompression($guard);
+        $compressor = app(PermissionCompressorContract::class);
+
+        return array_map(function (array $roleData) use ($allSystemPerms, $compressor, $compressOptions) {
+            $compressed = $compressor
+                ->compress(collect($roleData['permissions'] ?? []), $allSystemPerms, $compressOptions)
+                ->toArray();
+
+            unset($roleData['permissions'], $roleData['count']);
+
+            return array_merge($roleData, $compressed);
+        }, $raw);
+    }
+
+    /**
      * Retrieves permissions for a list of users based on their identifiers.
      *
      * @param array $userSearchValues An array of user identifiers (IDs, emails, or names).
@@ -421,6 +448,33 @@ trait HasPermissionsService
     }
 
     /**
+     * Retrieves permissions for users using wildcard compression.
+     */
+    public function getPermissionsByUsersCompressed(
+        array $userSearchValues,
+        $userModelClass,
+        string $by = 'id',
+        ?string $guard = null,
+        ?array $modules = null,
+        ?array $entities = null,
+        array $compressOptions = []
+    ): array {
+        $raw = $this->getPermissionsByUsers($userSearchValues, $userModelClass, $by, $guard, $modules, $entities);
+        $allSystemPerms = $this->getAllSystemPermissionsForCompression($guard);
+        $compressor = app(PermissionCompressorContract::class);
+
+        return array_map(function (array $userData) use ($allSystemPerms, $compressor, $compressOptions) {
+            $compressed = $compressor
+                ->compress(collect($userData['permissions'] ?? []), $allSystemPerms, $compressOptions)
+                ->toArray();
+
+            unset($userData['permissions'], $userData['count']);
+
+            return array_merge($userData, $compressed);
+        }, $raw);
+    }
+
+    /**
      * Aggregates a list of permissions by performing either a union or intersection operation.
      *
      * @param array $lists An array of lists, where each list contains permissions to aggregate.
@@ -437,6 +491,15 @@ trait HasPermissionsService
             return $sets->reduce(fn($carry, $set) => $carry ? $carry->intersect($set) : $set, null) ?? collect();
         }
         return $sets->flatten()->unique()->values();
+    }
+
+    private function getAllSystemPermissionsForCompression(?string $guard = null): Collection
+    {
+        $permissionClass = app(config('permission.models.permission'));
+
+        return $permissionClass::query()
+            ->when($guard, fn($q) => $q->where('guard_name', $guard))
+            ->get();
     }
 
     // ----------------- Helpers (private) -----------------

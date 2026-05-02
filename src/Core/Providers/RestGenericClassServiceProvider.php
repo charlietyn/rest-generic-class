@@ -3,12 +3,15 @@
 namespace Ronu\RestGenericClass\Core\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\PermissionCompressorContract;
+use Ronu\RestGenericClass\Core\Support\Permissions\PermissionCompressor;
 
 class RestGenericClassServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
         $this->mergeConfigFrom($this->configPath(), 'rest-generic-class');
+        $this->app->singleton(PermissionCompressorContract::class, PermissionCompressor::class);
     }
 
     public function boot(): void
