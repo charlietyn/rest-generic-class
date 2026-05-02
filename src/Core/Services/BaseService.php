@@ -41,6 +41,40 @@ class BaseService
     private string $cachePrefix = 'rgc:v1';
 
     /**
+     * Per-service cache toggle.
+     *
+     * - null  → defers to the global config (REST_CACHE_ENABLED). Default.
+     * - true  → forces cache ON for this service, even if global is off.
+     * - false → forces cache OFF for this service, even if global is on.
+     *
+     * Override in child services:
+     *   protected ?bool $cacheable = false; // never cache orders
+     */
+    protected ?bool $cacheable = null;
+
+    /**
+     * Per-service TTL override (seconds).
+     *
+     * When set, takes precedence over the global ttl and ttl_by_method config.
+     * Request-level cache_ttl still overrides this value.
+     *
+     * Override in child services:
+     *   protected ?int $cacheTtl = 300; // 5 minutes for products
+     */
+    protected ?int $cacheTtl = null;
+
+    /**
+     * Per-service cacheable operations override.
+     *
+     * When non-empty, only these operations are cached for this service.
+     * When empty (default), defers to config cacheable_methods.
+     *
+     * Override in child services:
+     *   protected array $cacheableOperations = ['list_all']; // only cache listings
+     */
+    protected array $cacheableOperations = [];
+
+    /**
      * @var int Depth counter for recursive nested queries
      */
     private int $currentDepth = 0;
@@ -1089,16 +1123,29 @@ class BaseService
      */
     private function shouldUseCache(string $operation, array $params): bool
     {
-        $cacheConfig = config('rest-generic-class.cache', []);
-        if (!($cacheConfig['enabled'] ?? false)) {
+        // 1. Service-level override has highest priority
+        if ($this->cacheable === false) {
             return false;
         }
 
-        $cacheableMethods = $cacheConfig['cacheable_methods'] ?? [];
+        // 2. If service doesn't declare, defer to global config
+        if ($this->cacheable === null) {
+            $cacheConfig = config('rest-generic-class.cache', []);
+            if (!($cacheConfig['enabled'] ?? false)) {
+                return false;
+            }
+        }
+
+        // 3. Cacheable operations: service-level > config-level
+        $cacheableMethods = !empty($this->cacheableOperations)
+            ? $this->cacheableOperations
+            : (config('rest-generic-class.cache.cacheable_methods') ?? []);
+
         if (!in_array($operation, $cacheableMethods, true)) {
             return false;
         }
 
+        // 4. Request-level override (cache=false)
         if (array_key_exists('cache', $params) && $params['cache'] === false) {
             return false;
         }
@@ -1145,9 +1192,59 @@ class BaseService
             'user' => auth()->id(),
             'params' => $params,
             'version' => $this->getCacheVersion(),
+            'rel_versions' => $this->getRelationVersions($params),
         ];
 
         return $this->cachePrefix . ':' . sha1(json_encode($fingerprint));
+    }
+
+    /**
+     * Collects cache versions for all eagerly loaded relations in this request.
+     *
+     * When relations are requested (e.g., relations=["roles", "roles.permissions"]),
+     * this method resolves each relation's model and fetches its cache version.
+     * Including these versions in the cache key fingerprint ensures automatic
+     * invalidation when a related model is written — without requiring manual
+     * CACHE_INVALIDATES declarations.
+     *
+     * Supports nested dot-notation relations by walking the Eloquent chain.
+     *
+     * @param array $params Request parameters (must contain 'relations' key)
+     * @return array<string, int> Map of relation path → cache version
+     */
+    private function getRelationVersions(array $params): array
+    {
+        $versions = [];
+        if (!isset($params['relations'])) {
+            return $versions;
+        }
+
+        $normalized = $this->normalizeRelations($params['relations']);
+        $store = $this->resolveCacheStore();
+
+        foreach ($normalized as $rel) {
+            // Use the parsed relation path from normalizeRelations()
+            $relationPath = $rel['relation'];
+
+            // Resolve each segment: "roles.permissions" → ["roles", "permissions"]
+            $segments = $rel['segments'];
+            $currentModel = $this->modelClass;
+
+            foreach ($segments as $i => $segment) {
+                try {
+                    // getRelatedModel() returns FQCN string, not an instance
+                    $relatedClass = $this->getRelatedModel($currentModel, $segment);
+                    $segmentPath = implode('.', array_slice($segments, 0, $i + 1));
+                    $relKey = $this->cachePrefix . ':version:' . $relatedClass;
+                    $versions[$segmentPath] = (int)$store->get($relKey, 1);
+                    $currentModel = $relatedClass;
+                } catch (\Throwable $e) {
+                    break;
+                }
+            }
+        }
+
+        return $versions;
     }
 
     /**
@@ -1166,12 +1263,17 @@ class BaseService
      */
     private function resolveCacheTtl(string $operation, array $params)
     {
-        $defaultTtl = (int)config('rest-generic-class.cache.ttl', 60);
-        $ttlByMethod = (int)config('rest-generic-class.cache.ttl_by_method.' . $operation, $defaultTtl);
-
+        // Priority: request-level > service-level > config method-level > config global
         if (isset($params['cache_ttl']) && is_numeric($params['cache_ttl'])) {
             return now()->addSeconds((int)$params['cache_ttl']);
         }
+
+        if ($this->cacheTtl !== null) {
+            return now()->addSeconds($this->cacheTtl);
+        }
+
+        $defaultTtl = (int)config('rest-generic-class.cache.ttl', 60);
+        $ttlByMethod = (int)config('rest-generic-class.cache.ttl_by_method.' . $operation, $defaultTtl);
 
         return now()->addSeconds($ttlByMethod);
     }
@@ -1193,13 +1295,29 @@ class BaseService
      */
     private function bumpCacheVersion(): void
     {
-        if (!config('rest-generic-class.cache.enabled', false)) {
+        // Skip only when global cache is off AND this service doesn't force cache on.
+        // When $cacheable = true, this service caches even with global off,
+        // so version bumps must still happen to avoid stale entries.
+        if (!config('rest-generic-class.cache.enabled', false) && $this->cacheable !== true) {
             return;
         }
 
         $store = $this->resolveCacheStore();
+
+        // 1. Bump this model's version
         $currentVersion = $store->get($this->cacheVersionKey(), 1);
         $store->forever($this->cacheVersionKey(), ((int)$currentVersion) + 1);
+
+        // 2. Propagate to dependent models declared in CACHE_INVALIDATES
+        $invalidates = defined(get_class($this->modelClass) . '::CACHE_INVALIDATES')
+            ? $this->modelClass::CACHE_INVALIDATES
+            : [];
+
+        foreach ($invalidates as $relatedModelClass) {
+            $relatedKey = $this->cachePrefix . ':version:' . $relatedModelClass;
+            $relatedVersion = $store->get($relatedKey, 1);
+            $store->forever($relatedKey, ((int)$relatedVersion) + 1);
+        }
     }
 
     /**
