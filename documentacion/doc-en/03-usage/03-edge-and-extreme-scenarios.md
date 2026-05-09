@@ -143,7 +143,35 @@ Measure response time and request counts under load.
 
 ---
 
-## 8) Failure modes from invalid relation/operator
+## 8) `orderby` on related fields — semantic and limit edge cases
+
+**Symptom**
+- `orderby` over a dotted path (`user.role.name`) silently picks one row when the relation is `*-to-many`.
+- A request returns 400 with `Maximum orderby relation depth (...) exceeded` or `Relation '...' is not allowed for ordering`.
+- A literal `"table.column"` entry without a JOIN renders unexpected SQL.
+
+**Cause**
+- `orderby` uses a scalar subquery with `LIMIT 1`. For `hasMany` and `belongsToMany`, the engine deterministically picks the first matching child row (default ordering by the related model's primary key). It does not aggregate.
+- Relation paths must resolve to methods declared in `const RELATIONS`; depth is bounded by `rest-generic-class.filtering.max_depth` (default `5`).
+- When the first segment of a dotted entry is **not** a method on the model, the value is passed through verbatim for backward compatibility with consumers that pre-JOIN a table.
+
+**Mitigation**
+- For "sort by aggregate of children" (e.g., max review rating, count of posts), expose a precomputed/computed column on the parent or apply ordering inside an `oper`-aware view.
+- Whitelist intended relations in `const RELATIONS` and keep paths shallow.
+- For literal `"table.column"` ordering, ensure the query carries the corresponding JOIN; otherwise rely on the supported dot-notation form.
+- Polymorphic relations are handled automatically — the `*_type` predicate is added by Eloquent when building the subquery.
+
+**How to reproduce**
+1. Order users by `posts.title` and observe deterministic but not-aggregated ordering.
+2. Send `orderby=[{"a.b.c.d.e.f.g":"asc"}]` and observe the depth error.
+3. Send `orderby=[{"role.name":"asc"}]` against a model where `role()` exists but `'role'` is not in `RELATIONS` and observe the 400.
+
+**How to test**
+Assert generated SQL contains the expected scalar subquery (one `limit 1` per segment), and that result set size for `*-to-many` ordering matches the parent count (no duplicates).
+
+---
+
+## 9) Failure modes from invalid relation/operator
 
 **Symptom**
 Requests return a 400 error stating relation or operator is invalid.

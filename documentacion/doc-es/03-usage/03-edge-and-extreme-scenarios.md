@@ -143,7 +143,35 @@ Mide tiempo de respuesta y cantidad de requests bajo carga.
 
 ---
 
-## 8) Errores por relación/operador inválido
+## 8) `orderby` por campos de relaciones — casos extremos de semántica y límites
+
+**Síntoma**
+- `orderby` sobre una ruta con punto (`user.role.name`) elige silenciosamente una sola fila cuando la relación es `*-to-many`.
+- Una solicitud devuelve 400 con `Maximum orderby relation depth (...) exceeded` o `Relation '...' is not allowed for ordering`.
+- Una entrada literal `"tabla.columna"` sin un JOIN renderiza SQL inesperado.
+
+**Causa**
+- `orderby` usa un subquery escalar con `LIMIT 1`. Para `hasMany` y `belongsToMany`, el motor toma de forma determinista la primera fila hija que coincida (orden por defecto: la PK de la relación). No agrega.
+- Las rutas de relación deben resolver a métodos declarados en `const RELATIONS`; la profundidad está acotada por `rest-generic-class.filtering.max_depth` (default `5`).
+- Cuando el primer segmento de una entrada con punto **no** es un método del modelo, el valor se pasa al builder tal cual, por retrocompatibilidad con consumidores que pre-ensamblan un JOIN.
+
+**Mitigación**
+- Para "ordenar por agregado de hijos" (p. ej., máximo rating de reviews, conteo de posts), expone una columna precomputada/computada en el padre, o aplica el orden dentro de una vista con conciencia de `oper`.
+- Declara las relaciones permitidas en `const RELATIONS` y mantén las rutas poco profundas.
+- Para ordenamiento literal `"tabla.columna"`, asegúrate de que la consulta lleve el JOIN correspondiente; en caso contrario, usa la forma con notación de punto soportada.
+- Las relaciones polimórficas se manejan automáticamente — el predicado `*_type` lo agrega Eloquent al construir el subquery.
+
+**Cómo reproducir**
+1. Ordena usuarios por `posts.title` y observa orden determinista pero no agregado.
+2. Envía `orderby=[{"a.b.c.d.e.f.g":"asc"}]` y observa el error de profundidad.
+3. Envía `orderby=[{"role.name":"asc"}]` contra un modelo donde `role()` existe pero `'role'` no está en `RELATIONS` y observa el 400.
+
+**Cómo probar**
+Verifica que el SQL generado contenga el subquery escalar esperado (un `limit 1` por segmento) y que el tamaño del resultado para ordenar por `*-to-many` coincida con el conteo de filas padre (sin duplicados).
+
+---
+
+## 9) Errores por relación/operador inválido
 
 **Síntoma**
 Las solicitudes devuelven error 400 indicando que la relación u operador es inválido.

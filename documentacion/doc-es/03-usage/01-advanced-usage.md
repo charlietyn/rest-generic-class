@@ -31,6 +31,88 @@ Cuando `_nested` es true, los filtros de relaciones se aplican tanto a las relac
 }
 ```
 
+## Ordenamiento por campos de relaciones
+
+El parámetro `orderby` acepta notación de punto para ordenar por columnas de entidades relacionadas. Cada segmento previo al último es un método de relación que **debe estar declarado en `const RELATIONS`** del modelo. El último segmento es la columna por la que se ordena en la relación hoja.
+
+```json
+{
+  "orderby": [
+    {"user.name": "asc"},
+    {"category.parent.name": "desc"},
+    {"created_at": "desc"}
+  ]
+}
+```
+
+### Cómo se traduce
+
+Cada entrada con punto se convierte en un **subquery escalar de ordenamiento** en el SQL — no se agregan JOINs a la consulta principal. Por ejemplo, para ordenar clientes por el nombre del usuario asociado:
+
+```sql
+SELECT clients.*
+FROM clients
+ORDER BY (
+  SELECT users.name
+  FROM users
+  WHERE users.id = clients.user_id
+  LIMIT 1
+) ASC
+```
+
+Para rutas anidadas (`user.role.name`) los subqueries se anidan:
+
+```sql
+ORDER BY (
+  SELECT (
+    SELECT roles.name
+    FROM roles
+    WHERE roles.id = users.role_id
+    LIMIT 1
+  ) AS value
+  FROM users
+  WHERE users.id = clients.user_id
+  LIMIT 1
+) ASC
+```
+
+### Por qué subquery (y no JOIN)
+
+- Funciona uniformemente para `belongsTo`, `hasOne`, `hasMany`, `belongsToMany`, `MorphTo`, `MorphOne`, `MorphMany` y `HasManyThrough` — `getRelationExistenceQuery` de Eloquent construye los `WHERE` correctos (claves foráneas, claves de propietario, filtro de tipo polimórfico, vínculo con la tabla pivote).
+- Sin filas duplicadas en relaciones `*-to-many`, así que no hace falta `DISTINCT`/`GROUP BY`.
+- No colisiona con filtros `whereHas` que apunten a la misma relación.
+- No requiere alias para relaciones auto-referenciales.
+- Soft deletes y scopes globales del modelo relacionado se aplican automáticamente.
+
+### Combinar filtro y orden sobre la misma relación
+
+`oper` (whereHas) y `orderby` (subquery) son independientes y se componen sin conflicto:
+
+```json
+{
+  "oper": {
+    "user": { "and": ["name|like|%a%"] }
+  },
+  "orderby": [
+    {"user.name": "desc"}
+  ]
+}
+```
+
+### Las columnas locales se prefijan automáticamente
+
+Cuando una entrada `orderby` no tiene punto, la columna se prefija automáticamente con el nombre de la tabla del modelo. Esto evita ambigüedad cuando la consulta lleva un JOIN o un subquery `whereHas` que referencia una columna con el mismo nombre en una tabla relacionada.
+
+### Validación y límites
+
+- Cada segmento de relación se valida contra `const RELATIONS` del modelo correspondiente. Segmentos desconocidos o no permitidos producen HTTP 400.
+- La profundidad de la ruta está acotada por `rest-generic-class.filtering.max_depth` (por defecto `5`), compartida con el motor de `oper`.
+- La dirección se normaliza: `desc` solo cuando se solicita explícitamente; cualquier otro valor cae a `asc`.
+
+### Retrocompatibilidad
+
+Si el primer segmento de una entrada con punto **no** es un método del modelo, el valor se pasa al query builder tal cual. Esto preserva el uso existente donde los consumidores proveen un literal `"tabla.columna"` después de un JOIN manual.
+
 ## Paginación por cursor
 
 ```json
@@ -115,11 +197,14 @@ Ambos helpers usan el **mismo pipeline de filtrado** que `list_all()`, así que 
 
 ## Evidencia
 - Archivo: src/Core/Services/BaseService.php
-  - Símbolo: BaseService::applyOperTree(), BaseService::relations(), BaseService::list_all(), BaseService::show(), BaseService::listHierarchy(), BaseService::showHierarchy(), BaseService::paginateHierarchyRoots(), BaseService::exportExcel(), BaseService::exportPdf()
-  - Notas: Demuestra filtrado anidado, carga de relaciones, jerarquía, paginación por cursor y helpers de exportación.
+  - Símbolo: BaseService::applyOperTree(), BaseService::relations(), BaseService::list_all(), BaseService::show(), BaseService::listHierarchy(), BaseService::showHierarchy(), BaseService::paginateHierarchyRoots(), BaseService::exportExcel(), BaseService::exportPdf(), BaseService::order_by()
+  - Notas: Demuestra filtrado anidado, carga de relaciones, jerarquía, paginación por cursor, helpers de exportación y ordenamiento con relaciones.
+- Archivo: src/Core/Traits/HasDynamicOrderBy.php
+  - Símbolo: HasDynamicOrderBy::applyDynamicOrderBy(), HasDynamicOrderBy::buildOrderingSubquery()
+  - Notas: Implementa el parser de notación de punto y el generador de subqueries escalares de ordenamiento usado por `order_by` y `applyOrdering`.
 - Archivo: src/Core/Models/BaseModel.php
-  - Símbolo: BaseModel::HIERARCHY_FIELD_ID, BaseModel::hasHierarchyField()
-  - Notas: Muestra el contrato del modelo requerido para habilitar funciones de jerarquía.
+  - Símbolo: BaseModel::HIERARCHY_FIELD_ID, BaseModel::hasHierarchyField(), BaseModel::RELATIONS
+  - Notas: Muestra el contrato del modelo requerido para jerarquía y la lista blanca de relaciones consultada por filtrado y ordenamiento.
 
 ## Validación de arrays de IDs con reglas personalizadas
 

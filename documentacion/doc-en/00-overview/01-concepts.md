@@ -14,7 +14,7 @@ The controller parses query and body parameters into a single parameter map. The
 - `select`: Select columns for the main model.
 - `relations`: Eager-load relations (with optional field selection like `relation:id,name`).
 - `oper`: Structured filtering that supports nested relations and many operators.
-- `orderby`: Sorting instructions.
+- `orderby`: Sorting instructions. Supports dot notation for related-entity fields (e.g. `{"user.name":"asc"}`); relation segments are validated against `const RELATIONS` and translated to scalar ordering subqueries.
 - `pagination`: Offset or cursor pagination (with `infinity`).
 - `_nested`: When true, `oper` filters are applied to relations as well as the root query.
 - `attr`/`eq`: Legacy equality filters.

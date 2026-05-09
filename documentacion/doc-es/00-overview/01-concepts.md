@@ -14,7 +14,7 @@ El controlador parsea parámetros de query y body en un único mapa. El servicio
 - `select`: Seleccionar columnas del modelo principal.
 - `relations`: Cargar relaciones (con selección opcional de campos como `relation:id,name`).
 - `oper`: Filtrado estructurado que soporta relaciones anidadas y muchos operadores.
-- `orderby`: Instrucciones de ordenamiento.
+- `orderby`: Instrucciones de ordenamiento. Soporta notación de punto para campos de entidades relacionadas (p. ej., `{"user.name":"asc"}`); los segmentos de relación se validan contra `const RELATIONS` y se traducen a subqueries escalares de ordenamiento.
 - `pagination`: Paginación por offset o por cursor (con `infinity`).
 - `_nested`: Cuando es true, los filtros de `oper` se aplican a relaciones y a la consulta raíz.
 - `attr`/`eq`: Filtros de igualdad heredados.

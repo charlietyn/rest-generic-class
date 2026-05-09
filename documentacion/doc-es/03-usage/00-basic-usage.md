@@ -43,6 +43,19 @@ GET /api/v1/products?select=["id","name"]&relations=["category:id,name"]
 }
 ```
 
+También puedes ordenar por **campos de entidades relacionadas** usando notación de punto. La relación debe estar declarada en `const RELATIONS` del modelo:
+
+```json
+{
+  "orderby": [
+    {"user.name": "asc"},
+    {"category.parent.name": "desc"}
+  ]
+}
+```
+
+El paquete traduce cada entrada con punto en un subquery escalar de ordenamiento, por lo que funciona uniformemente para `belongsTo`, `hasOne`, `hasMany`, `belongsToMany`, polimórficas y `hasManyThrough` sin generar filas duplicadas. Ver [Ordenamiento por campos de relaciones](01-advanced-usage.md#ordenamiento-por-campos-de-relaciones) para detalles y casos extremos.
+
 ## Paginación
 
 ```json

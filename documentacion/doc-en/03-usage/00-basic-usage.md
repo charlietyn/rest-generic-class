@@ -43,6 +43,19 @@ GET /api/v1/products?select=["id","name"]&relations=["category:id,name"]
 }
 ```
 
+You can also sort by **fields of related entities** using dot notation. The relation must be declared in `const RELATIONS` on the model:
+
+```json
+{
+  "orderby": [
+    {"user.name": "asc"},
+    {"category.parent.name": "desc"}
+  ]
+}
+```
+
+The package translates each dotted entry into a scalar ordering subquery, so it works for `belongsTo`, `hasOne`, `hasMany`, `belongsToMany`, polymorphic and `hasManyThrough` relations without producing duplicate rows. See [Sorting by related fields](01-advanced-usage.md#sorting-by-related-fields) for details and edge cases.
+
 ## Pagination
 
 ```json

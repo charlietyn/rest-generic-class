@@ -63,6 +63,7 @@ Este paquete expone clases, traits y helpers pensados para su uso en tu aplicaci
 - `ManagesOneToMany` — **alias deprecado** de `ManagesRelations` (retrocompatible)
 - `ManagesManyToMany` — **alias deprecado** de `ManagesRelations` (retrocompatible)
 - `HasDynamicFilter` (filtrado de consultas)
+- `HasDynamicOrderBy` (ordenamiento con relaciones — soporta notación de punto en `orderby`, valida contra `const RELATIONS`, genera subqueries escalares de ordenamiento)
 - `HandlesQueryExceptions`
 - `HasPermissionsController` / `HasPermissionsService`
 - `HasReadableUserPermissions` / `HasReadableRolePermissions`
@@ -202,6 +203,9 @@ GET /permissions?guard=api&compress=true&expand=true
 - Archivo: src/Core/Traits/HasDynamicFilter.php
   - Símbolo: HasDynamicFilter::scopeWithFilters()
   - Notas: Trait de filtrado usado por BaseService.
+- Archivo: src/Core/Traits/HasDynamicOrderBy.php
+  - Símbolo: HasDynamicOrderBy::applyDynamicOrderBy(), HasDynamicOrderBy::buildOrderingSubquery()
+  - Notas: Trait de ordenamiento con relaciones usado por BaseService::order_by() y ManagesRelations::applyOrdering().
 - Archivo: src/Core/Support/Permissions/
   - Simbolo: PermissionCompressor, PermissionCompressedResult, PermissionCompressorContract
   - Notas: Soporte de compresion wildcard de permisos usado por HasPermissionsService.

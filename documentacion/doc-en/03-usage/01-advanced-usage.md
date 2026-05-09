@@ -31,6 +31,88 @@ When `_nested` is true, relation filters are applied to eager-loaded relations a
 }
 ```
 
+## Sorting by related fields
+
+The `orderby` parameter accepts dot notation to sort by columns of related entities. Each segment before the last is a relation method that **must be declared in the model's `const RELATIONS`** whitelist. The last segment is the column to sort by on the leaf relation.
+
+```json
+{
+  "orderby": [
+    {"user.name": "asc"},
+    {"category.parent.name": "desc"},
+    {"created_at": "desc"}
+  ]
+}
+```
+
+### How it is translated
+
+Each dotted entry becomes a **scalar ordering subquery** in the SQL — no JOINs are added to the main query. For example, sorting clients by their user's name:
+
+```sql
+SELECT clients.*
+FROM clients
+ORDER BY (
+  SELECT users.name
+  FROM users
+  WHERE users.id = clients.user_id
+  LIMIT 1
+) ASC
+```
+
+For nested paths (`user.role.name`), the subqueries are nested:
+
+```sql
+ORDER BY (
+  SELECT (
+    SELECT roles.name
+    FROM roles
+    WHERE roles.id = users.role_id
+    LIMIT 1
+  ) AS value
+  FROM users
+  WHERE users.id = clients.user_id
+  LIMIT 1
+) ASC
+```
+
+### Why a subquery (and not a JOIN)?
+
+- Works uniformly for `belongsTo`, `hasOne`, `hasMany`, `belongsToMany`, `MorphTo`, `MorphOne`, `MorphMany` and `HasManyThrough` — Eloquent's `getRelationExistenceQuery` builds the correct `WHERE` (foreign keys, owner keys, polymorphic type filter, pivot link).
+- No duplicate rows for `*-to-many` relations, so `DISTINCT`/`GROUP BY` are not needed.
+- Does not collide with `whereHas` filters that may target the same relation.
+- No table-alias bookkeeping for self-referencing relations.
+- Soft deletes and global scopes of the related model apply automatically.
+
+### Combining sort and filter on the same relation
+
+`oper` (whereHas) and `orderby` (subquery) are independent and compose cleanly:
+
+```json
+{
+  "oper": {
+    "user": { "and": ["name|like|%a%"] }
+  },
+  "orderby": [
+    {"user.name": "desc"}
+  ]
+}
+```
+
+### Local fields are auto-prefixed
+
+When an `orderby` entry has no dot, the column is automatically prefixed with the model's table name. This avoids ambiguity when the query carries a JOIN or `whereHas`-driven subquery referencing a column with the same name in a related table.
+
+### Validation and limits
+
+- Each relation segment is checked against `const RELATIONS` of the corresponding model. Unknown or non-whitelisted segments produce HTTP 400.
+- Path depth is bounded by `rest-generic-class.filtering.max_depth` (default `5`), shared with the `oper` engine.
+- Direction is normalized: `desc` only when explicitly requested; any other value falls back to `asc`.
+
+### Backward compatibility
+
+If the first segment of a dotted entry is **not** a method on the model, the value is passed to the query builder verbatim. This preserves existing usage where consumers provide a literal `"table.column"` after a manual JOIN.
+
 ## Cursor pagination
 
 ```json
@@ -196,8 +278,11 @@ Full rule and trait reference → [04-reference/05-validation-rules.md](../04-re
 
 ## Evidence
 - File: src/Core/Services/BaseService.php
-  - Symbol: BaseService::applyOperTree(), BaseService::relations(), BaseService::list_all(), BaseService::show(), BaseService::listHierarchy(), BaseService::showHierarchy(), BaseService::paginateHierarchyRoots(), BaseService::exportExcel(), BaseService::exportPdf()
-  - Notes: Demonstrates nested filtering, relation loading, hierarchy handling, cursor pagination, and export helpers.
+  - Symbol: BaseService::applyOperTree(), BaseService::relations(), BaseService::list_all(), BaseService::show(), BaseService::listHierarchy(), BaseService::showHierarchy(), BaseService::paginateHierarchyRoots(), BaseService::exportExcel(), BaseService::exportPdf(), BaseService::order_by()
+  - Notes: Demonstrates nested filtering, relation loading, hierarchy handling, cursor pagination, export helpers, and relation-aware ordering.
+- File: src/Core/Traits/HasDynamicOrderBy.php
+  - Symbol: HasDynamicOrderBy::applyDynamicOrderBy(), HasDynamicOrderBy::buildOrderingSubquery()
+  - Notes: Implements the dot-notation parser and the scalar ordering subquery generator used by `order_by` and `applyOrdering`.
 - File: src/Core/Models/BaseModel.php
-  - Symbol: BaseModel::HIERARCHY_FIELD_ID, BaseModel::hasHierarchyField()
-  - Notes: Shows the model contract required to enable hierarchy features.
+  - Symbol: BaseModel::HIERARCHY_FIELD_ID, BaseModel::hasHierarchyField(), BaseModel::RELATIONS
+  - Notes: Shows the model contract required to enable hierarchy features and the relation whitelist consulted by ordering and filtering.

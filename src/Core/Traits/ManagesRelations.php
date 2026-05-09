@@ -75,6 +75,8 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  */
 trait ManagesRelations
 {
+    use HasDynamicOrderBy;
+
     // ──────────────────────────────────────────────────────────────
     //  Read entry-points
     // ──────────────────────────────────────────────────────────────
@@ -1013,17 +1015,15 @@ trait ManagesRelations
 
     /**
      * Apply ordering: [{"field":"asc"}, {"field2":"desc"}]
+     *
+     * Supports dot notation for related-entity fields (e.g. "user.name") on
+     * the related model of the relationship being listed. Delegates to the
+     * HasDynamicOrderBy trait so behavior matches the main listing endpoint.
      */
     protected function applyOrdering(Relation $query, array $orderby): void
     {
-        foreach ($orderby as $item) {
-            if (is_array($item)) {
-                foreach ($item as $column => $direction) {
-                    $direction = strtolower($direction) === 'desc' ? 'desc' : 'asc';
-                    $query->orderBy($column, $direction);
-                }
-            }
-        }
+        $relatedModel = $query->getRelated();
+        $this->applyDynamicOrderBy($query, $orderby, $relatedModel);
     }
 
     // ──────────────────────────────────────────────────────────────

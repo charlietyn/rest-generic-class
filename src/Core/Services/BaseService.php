@@ -19,6 +19,7 @@ use Maatwebsite\Excel\Facades\Excel;
 use Nwidart\Modules\Facades\Module;
 use Ronu\RestGenericClass\Core\Exports\ModelExport;
 use Ronu\RestGenericClass\Core\Traits\HasDynamicFilter;
+use Ronu\RestGenericClass\Core\Traits\HasDynamicOrderBy;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
@@ -28,6 +29,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 class BaseService
 {
     use HasDynamicFilter;
+    use HasDynamicOrderBy;
 
     /** @var BaseModel|string $modelClass */
     public string|BaseModel|Model $modelClass = '';
@@ -307,9 +309,16 @@ class BaseService
     /**
      * Apply ordering to the query based on given parameters.
      *
-     * The method accepts an array of elements where each element can be a JSON string
-     * or an array that contains column and direction pairs. The query will be ordered
-     * according to the specified columns and directions.
+     * Supports dot notation for related-entity fields (e.g. "user.name",
+     * "user.role.name"). Relation segments are validated against the model's
+     * const RELATIONS whitelist and translated to scalar ordering subqueries
+     * via the HasDynamicOrderBy trait — no manual JOINs are added, so result
+     * sets are not duplicated for *-to-many relations.
+     *
+     * Local columns (no dot) are prefixed with the model's table name to
+     * avoid ambiguity. Literal "table.column" entries where the first segment
+     * is not a declared relation are passed through verbatim for backward
+     * compatibility.
      *
      * @param Builder $query The query builder instance to apply the ordering on.
      * @param array|string $params The parameters for ordering, can be a JSON string
@@ -318,15 +327,7 @@ class BaseService
      */
     private function order_by(Builder $query, array|string $params): Builder
     {
-        foreach ($params as $elements) {
-            if (is_string($elements)) {
-                $elements = json_decode($elements, true);
-            }
-            foreach ($elements as $index => $parameter) {
-                $query = $query->orderBy($index, $parameter);
-            }
-        }
-        return $query;
+        return $this->applyDynamicOrderBy($query, $params, $this->modelClass);
     }
 
 

@@ -63,6 +63,7 @@ This package exposes classes, traits, and helpers intended for use in your Larav
 - `ManagesOneToMany` — **deprecated alias** for `ManagesRelations` (backward-compatible)
 - `ManagesManyToMany` — **deprecated alias** for `ManagesRelations` (backward-compatible)
 - `HasDynamicFilter` (query filtering)
+- `HasDynamicOrderBy` (relation-aware ordering — supports dot notation in `orderby`, validates against `const RELATIONS`, builds scalar ordering subqueries)
 - `HandlesQueryExceptions`
 - `HasPermissionsController` / `HasPermissionsService`
 - `HasReadableUserPermissions` / `HasReadableRolePermissions`
@@ -202,6 +203,9 @@ Full reference → [05-validation-rules.md](./05-validation-rules.md)
 - File: src/Core/Traits/HasDynamicFilter.php
   - Symbol: HasDynamicFilter::scopeWithFilters()
   - Notes: Filter trait used by BaseService.
+- File: src/Core/Traits/HasDynamicOrderBy.php
+  - Symbol: HasDynamicOrderBy::applyDynamicOrderBy(), HasDynamicOrderBy::buildOrderingSubquery()
+  - Notes: Relation-aware ordering trait used by BaseService::order_by() and ManagesRelations::applyOrdering().
 - File: src/Core/Support/Permissions/
   - Symbol: PermissionCompressor, PermissionCompressedResult, PermissionCompressorContract
   - Notes: Wildcard permission compression support used by HasPermissionsService.
