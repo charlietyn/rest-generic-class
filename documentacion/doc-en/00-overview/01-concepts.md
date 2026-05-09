@@ -32,6 +32,10 @@ The filtering system enforces:
 
 The package includes middleware and traits that integrate with **spatie/laravel-permission**. These utilities derive permissions from route metadata and help manage role/user permissions when used in your application.
 
+Starting in 3.0.0, **role resolution** is contract-based: your `User` model must implement `ProvidesRoles` and your `Role` model must implement `ProvidesRolePermissions`. The library no longer infers the relation name; you declare it yourself inside `provideRoles()`. This decouples the library from any specific relation name (Spatie or otherwise), centralizes resolution behind an injectable `UserRolesResolver`, and leverages PHP's native class-loader fail-fast.
+
+> Recommended reading: [Permissions: architecture, contracts, and scenarios](../03-usage/06-permissions.md).
+
 **Next:** [Requirements](../01-getting-started/00-requirements.md)
 
 [Back to documentation index](../index.md)

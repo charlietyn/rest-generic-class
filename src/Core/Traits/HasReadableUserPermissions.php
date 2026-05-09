@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\PermissionCompressorContract;
+use Ronu\RestGenericClass\Core\Support\Permissions\UserRolesResolver;
 use Spatie\Permission\Contracts\Permission;
 use Spatie\Permission\Contracts\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -61,6 +62,9 @@ trait HasReadableUserPermissions
 
     /**
      * Return all the permissions the model has via roles.
+     *
+     * Delegates to UserRolesResolver, which enforces the ProvidesRoles /
+     * ProvidesRolePermissions contracts and centralizes the resolution path.
      */
     public function getEnabledPermissionsViaRoles(): Collection
     {
@@ -68,9 +72,7 @@ trait HasReadableUserPermissions
             return collect();
         }
 
-        return $this->loadMissing('roles', 'roles.enabled_permissions')
-            ->roles->flatMap(fn($role) => $role->enabled_permissions)
-            ->sort()->values();
+        return app(UserRolesResolver::class)->permissionsViaRoles($this);
     }
 
     /**

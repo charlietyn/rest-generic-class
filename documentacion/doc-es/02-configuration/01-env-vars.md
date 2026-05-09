@@ -16,6 +16,8 @@ El paquete lee variables de entorno unicamente desde el archivo de configuracion
 | `REST_PERMISSIONS_ROUTES_PREFIX` | `permissions` | Prefijo para las rutas opcionales de permisos. |
 | `REST_PERMISSIONS_ROUTES_MIDDLEWARE` | `api,auth:api` | Lista de middleware separada por comas para las rutas opcionales. |
 | `REST_PERMISSIONS_ROUTES_GUARD` | `api` | Guard usado para resolver el usuario autenticado en rutas opcionales de permisos. |
+| `REST_PERMISSIONS_USER_MODEL` | _(no definida)_ | FQCN del modelo User para validacion temprana del contrato `ProvidesRoles` en boot. Opcional; si esta vacia la validacion ocurre en runtime. |
+| `REST_PERMISSIONS_ROLE_MODEL` | _(no definida)_ | FQCN del modelo Role para validacion temprana del contrato `ProvidesRolePermissions` en boot. Opcional; si esta vacia la validacion ocurre en runtime. |
 
 **Siguiente:** [Estrategia de cache](03-cache-strategy.md)
 

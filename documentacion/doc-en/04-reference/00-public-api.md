@@ -71,6 +71,44 @@ This package exposes classes, traits, and helpers intended for use in your Larav
   - `validateIdsExistWithAnyStatus()`, `validateIdsExistWithDateRange()`, `validateIdsWithCustomQuery()`
   - `getMissingIds()`, `clearValidationCache()`
 
+## Permissions: contracts and resolver
+
+Starting in 3.0.0 the user's effective permissions are resolved through a pair of **formal contracts** and an **injectable resolver** (see the [detailed guide](../03-usage/06-permissions.md)). This section documents the public surface only.
+
+### Contracts
+
+- `Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRoles`
+  - `provideRoles(): \Illuminate\Support\Collection` — must be implemented by the User model. Returns a collection whose elements implement `ProvidesRolePermissions`.
+- `Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRolePermissions`
+  - `provideRolePermissions(): \Illuminate\Support\Collection` — must be implemented by the Role model. Returns the role's effective permissions.
+
+### Resolver
+
+- `Ronu\RestGenericClass\Core\Support\Permissions\UserRolesResolver`
+  - `rolesOf(object $user): Collection` — validates and returns the user's role collection.
+  - `permissionsViaRoles(object $user): Collection` — `flatMap` of permissions reachable through those roles, deduplicated by `id`.
+  - Registered as a **singleton** in the container; inject it into any service or middleware (`__construct(UserRolesResolver $resolver)`).
+
+### Dedicated exception
+
+- `Ronu\RestGenericClass\Core\Support\Permissions\Exceptions\RolesContractViolationException`
+  - `::userMissingContract($userOrClass)` — User model does not implement `ProvidesRoles`.
+  - `::roleMissingContract($roleOrClass)` — a role returned by `provideRoles()` does not implement `ProvidesRolePermissions`.
+
+### Optional declarative configuration
+
+```php
+// config/rest-generic-class.php
+'permissions' => [
+    'contracts' => [
+        'user_model' => \App\Models\User::class,
+        'role_model' => \App\Models\Role::class,
+    ],
+],
+```
+
+When these FQCNs are declared, `RestGenericClassServiceProvider::boot()` validates at startup that the classes implement the interfaces. If they are not declared, the contracts are still enforced lazily on the first use of the resolver.
+
 ## Permission wildcard compression
 
 The permissions traits expose opt-in read compression for large Spatie permission sets. Compression is presentation-only: it never writes wildcard permissions to the database and does not change authorization checks.
@@ -205,6 +243,15 @@ Full reference → [05-validation-rules.md](./05-validation-rules.md)
 - File: src/Core/Support/Permissions/
   - Symbol: PermissionCompressor, PermissionCompressedResult, PermissionCompressorContract
   - Notes: Wildcard permission compression support used by HasPermissionsService.
+- File: src/Core/Support/Permissions/Contracts/
+  - Symbol: ProvidesRoles, ProvidesRolePermissions
+  - Notes: Formal contracts the integrator must implement on their User and Role models, respectively.
+- File: src/Core/Support/Permissions/UserRolesResolver.php
+  - Symbol: UserRolesResolver::rolesOf(), UserRolesResolver::permissionsViaRoles()
+  - Notes: Single resolution point for the user's roles; enforces the contracts via `instanceof`.
+- File: src/Core/Support/Permissions/Exceptions/RolesContractViolationException.php
+  - Symbol: RolesContractViolationException::userMissingContract(), ::roleMissingContract()
+  - Notes: Exception raised when a model fails to implement the expected contract.
 - File: src/Core/Traits/ValidatesExistenceInDatabase.php
   - Symbol: ValidatesExistenceInDatabase
   - Notes: Base trait for ID validation against the database with caching.

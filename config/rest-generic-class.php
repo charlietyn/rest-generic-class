@@ -61,5 +61,16 @@ return [
             ))),
             'guard' => env('REST_PERMISSIONS_ROUTES_GUARD', 'api'),
         ],
+
+        // Optional declarative contract enforcement.
+        // If declared, the service provider verifies at boot that the FQCN implements the
+        // required contract (fail-fast at startup). If left null, contracts are still
+        // enforced lazily by UserRolesResolver on first use.
+        // - user_model MUST implement Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRoles
+        // - role_model MUST implement Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRolePermissions
+        'contracts' => [
+            'user_model' => env('REST_PERMISSIONS_USER_MODEL'),
+            'role_model' => env('REST_PERMISSIONS_ROLE_MODEL'),
+        ],
     ],
 ];

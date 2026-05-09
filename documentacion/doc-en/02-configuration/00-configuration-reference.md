@@ -56,6 +56,27 @@ GET /permissions/by-users
 
 If the consuming app also defines `apiResource('permissions')`, register the specific routes above before the resource route.
 
+## Permission contracts (User and Role)
+
+Starting in 3.0.0 the package requires the integrator to declare **formal contracts** on their User and Role models (see the [detailed guide](../03-usage/06-permissions.md)). This config section is **optional** and only enables the early boot-time validation; the contracts are always enforced at runtime, even if these keys are left empty.
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `permissions.contracts.user_model` | string\|null | `null` | FQCN of the User model. When set, the `ServiceProvider` verifies in `boot()` that the class implements `Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRoles`. |
+| `permissions.contracts.role_model` | string\|null | `null` | FQCN of the Role model. When set, the `ServiceProvider` verifies in `boot()` that the class implements `Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRolePermissions`. |
+
+If any of these classes does not implement the expected interface, the application fails to boot with a `RolesContractViolationException` (actionable message stating exactly which class must implement which interface).
+
+```php
+// Example
+'permissions' => [
+    'contracts' => [
+        'user_model' => \App\Models\User::class,
+        'role_model' => \App\Models\Role::class,
+    ],
+],
+```
+
 **Next:** [Environment variables](01-env-vars.md)
 
 [Back to documentation index](../index.md)

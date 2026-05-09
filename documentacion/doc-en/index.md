@@ -38,6 +38,7 @@ Welcome to the **Rest Generic Class** package documentation. This library provid
 - [Edge and extreme scenarios](03-usage/03-edge-and-extreme-scenarios.md)
 - [Cache scenarios](03-usage/04-cache-scenarios.md)
 - [Many-to-many relationships](03-usage/05-many-to-many.md)
+- [Permissions: architecture, contracts, and scenarios](03-usage/06-permissions.md)
 
 ### Reference
 - [Public API](04-reference/00-public-api.md)

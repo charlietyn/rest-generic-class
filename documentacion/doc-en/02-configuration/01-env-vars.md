@@ -16,6 +16,8 @@ The package reads environment variables only from the configuration file. This i
 | `REST_PERMISSIONS_ROUTES_PREFIX` | `permissions` | Prefix for optional permission routes. |
 | `REST_PERMISSIONS_ROUTES_MIDDLEWARE` | `api,auth:api` | Comma-separated middleware list for optional permission routes. |
 | `REST_PERMISSIONS_ROUTES_GUARD` | `api` | Guard used to resolve the authenticated user in optional permission routes. |
+| `REST_PERMISSIONS_USER_MODEL` | _(unset)_ | User model FQCN used for early boot validation of the `ProvidesRoles` contract. Optional; when unset the validation runs lazily at runtime. |
+| `REST_PERMISSIONS_ROLE_MODEL` | _(unset)_ | Role model FQCN used for early boot validation of the `ProvidesRolePermissions` contract. Optional; when unset the validation runs lazily at runtime. |
 
 **Next:** [Cache strategy](03-cache-strategy.md)
 
