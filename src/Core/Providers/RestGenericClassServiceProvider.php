@@ -4,7 +4,11 @@ namespace Ronu\RestGenericClass\Core\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\PermissionCompressorContract;
+use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRolePermissions;
+use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRoles;
+use Ronu\RestGenericClass\Core\Support\Permissions\Exceptions\RolesContractViolationException;
 use Ronu\RestGenericClass\Core\Support\Permissions\PermissionCompressor;
+use Ronu\RestGenericClass\Core\Support\Permissions\UserRolesResolver;
 
 class RestGenericClassServiceProvider extends ServiceProvider
 {
@@ -12,6 +16,7 @@ class RestGenericClassServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom($this->configPath(), 'rest-generic-class');
         $this->app->singleton(PermissionCompressorContract::class, PermissionCompressor::class);
+        $this->app->singleton(UserRolesResolver::class);
     }
 
     public function boot(): void
@@ -32,6 +37,26 @@ class RestGenericClassServiceProvider extends ServiceProvider
                     'level' => config('rest-generic-class.logging.channel.level', 'debug'),
                 ],
             ]);
+        }
+
+        $this->assertContractsIfDeclared();
+    }
+
+    /**
+     * Optional fail-fast validation. If the integrator declared the user/role model FQCNs
+     * in config, verify they implement the required contracts at boot time.
+     * Otherwise the contracts are still enforced lazily by UserRolesResolver on first use.
+     */
+    private function assertContractsIfDeclared(): void
+    {
+        $userModel = config('rest-generic-class.permissions.contracts.user_model');
+        if ($userModel && !is_subclass_of($userModel, ProvidesRoles::class)) {
+            throw RolesContractViolationException::userMissingContract($userModel);
+        }
+
+        $roleModel = config('rest-generic-class.permissions.contracts.role_model');
+        if ($roleModel && !is_subclass_of($roleModel, ProvidesRolePermissions::class)) {
+            throw RolesContractViolationException::roleMissingContract($roleModel);
         }
     }
 

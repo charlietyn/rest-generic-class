@@ -83,6 +83,44 @@ Este paquete expone clases, traits y helpers pensados para su uso en tu aplicaci
 
 Ver referencia completa → [05-validation-rules.md](./05-validation-rules.md)
 
+## Permisos: contratos y resolver
+
+A partir de 3.0.0 los permisos efectivos del usuario se resuelven a traves de un par de **contratos formales** y un **resolver inyectable** (ver [guia detallada](../03-usage/06-permissions.md)). Esta seccion documenta solo la superficie publica.
+
+### Contratos
+
+- `Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRoles`
+  - `provideRoles(): \Illuminate\Support\Collection` — debe ser implementado por el modelo User. Retorna una coleccion cuyos elementos implementan `ProvidesRolePermissions`.
+- `Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRolePermissions`
+  - `provideRolePermissions(): \Illuminate\Support\Collection` — debe ser implementado por el modelo Role. Retorna los permisos efectivos del rol.
+
+### Resolver
+
+- `Ronu\RestGenericClass\Core\Support\Permissions\UserRolesResolver`
+  - `rolesOf(object $user): Collection` — valida y devuelve la coleccion de roles del usuario.
+  - `permissionsViaRoles(object $user): Collection` — devuelve `flatMap` de permisos vinculados a esos roles, deduplicados por `id`.
+  - Registrado como **singleton** en el contenedor; puedes inyectarlo en cualquier servicio o middleware (`__construct(UserRolesResolver $resolver)`).
+
+### Excepcion dedicada
+
+- `Ronu\RestGenericClass\Core\Support\Permissions\Exceptions\RolesContractViolationException`
+  - `::userMissingContract($userOrClass)` — el modelo User no implementa `ProvidesRoles`.
+  - `::roleMissingContract($roleOrClass)` — un rol devuelto por `provideRoles()` no implementa `ProvidesRolePermissions`.
+
+### Configuracion declarativa opcional
+
+```php
+// config/rest-generic-class.php
+'permissions' => [
+    'contracts' => [
+        'user_model' => \App\Models\User::class,
+        'role_model' => \App\Models\Role::class,
+    ],
+],
+```
+
+Cuando estos FQCN estan declarados, el `RestGenericClassServiceProvider::boot()` valida en arranque que las clases implementen las interfaces. Si no estan declarados, el contrato se sigue aplicando perezosamente en el primer uso del resolver.
+
 ## Compresion wildcard de permisos
 
 Los traits de permisos exponen compresion opt-in para lecturas grandes de permisos Spatie. La compresion es solo de presentacion: no escribe permisos wildcard en la base de datos y no cambia las comprobaciones de autorizacion.
@@ -209,6 +247,15 @@ GET /permissions?guard=api&compress=true&expand=true
 - Archivo: src/Core/Support/Permissions/
   - Simbolo: PermissionCompressor, PermissionCompressedResult, PermissionCompressorContract
   - Notas: Soporte de compresion wildcard de permisos usado por HasPermissionsService.
+- Archivo: src/Core/Support/Permissions/Contracts/
+  - Simbolo: ProvidesRoles, ProvidesRolePermissions
+  - Notas: Contratos formales que el integrador debe implementar en sus modelos User y Role respectivamente.
+- Archivo: src/Core/Support/Permissions/UserRolesResolver.php
+  - Simbolo: UserRolesResolver::rolesOf(), UserRolesResolver::permissionsViaRoles()
+  - Notas: Punto unico de resolucion de roles del usuario; aplica los contratos via `instanceof`.
+- Archivo: src/Core/Support/Permissions/Exceptions/RolesContractViolationException.php
+  - Simbolo: RolesContractViolationException::userMissingContract(), ::roleMissingContract()
+  - Notas: Excepcion lanzada cuando un modelo no implementa el contrato esperado.
 - Archivo: src/Core/Traits/ValidatesExistenceInDatabase.php
   - Símbolo: ValidatesExistenceInDatabase
   - Notas: Trait base para validación de IDs contra BD con caché.

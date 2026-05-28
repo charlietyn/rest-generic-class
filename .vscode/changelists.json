@@ -4,6 +4,7 @@
       "name": "Default",
       "files": [
         ".gitignore",
+        ".vscode/changelists.json",
         "composer.json",
         "documentacion/doc-en/04-reference/00-public-api.md",
         "documentacion/doc-es/04-reference/00-public-api.md",
@@ -17,7 +18,6 @@
         "documentacion/doc-es/03-usage/03-edge-and-extreme-scenarios.md",
         "src/Core/Services/BaseService.php",
         "src/Core/Traits/ManagesRelations.php",
-        ".phpunit.result.cache",
         "src/Core/Traits/HasDynamicOrderBy.php",
         "tests/Unit/Fixtures/OrderByApplier.php",
         "tests/Unit/Fixtures/OrderTestClient.php",

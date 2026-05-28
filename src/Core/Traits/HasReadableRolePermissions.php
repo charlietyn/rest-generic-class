@@ -7,7 +7,21 @@ use Illuminate\Support\Collection;
 trait HasReadableRolePermissions
 {
     /**
-     * Get all permissions for this role (already provided by Spatie as relation).
+     * Default implementation of ProvidesRolePermissions.
+     *
+     * Returns the role's enabled permissions. Implementers should declare
+     * 'implements ProvidesRolePermissions' on their Role class; they may override
+     * this method if their role exposes permissions through a different relation.
+     */
+    public function provideRolePermissions(): Collection
+    {
+        $perms = $this->enabled_permissions;
+
+        return $perms instanceof Collection ? $perms : collect($perms);
+    }
+
+    /**
+     * Get all permissions for this role, merged with non-restricted global permissions.
      */
     public function allPermissions(): Collection
     {
@@ -15,7 +29,7 @@ trait HasReadableRolePermissions
         /** @var \Illuminate\Database\Eloquent\Collection $globalPerms */
         $globalPerms = $permissionClass::query()
             ->notRestricted()
-            ->when($guard, fn($q) => $q->where('guard_name', $this->guard_name))
+            ->where('guard_name', $this->guard_name)
             ->get();
         $this->setRelation(
             'permissions',

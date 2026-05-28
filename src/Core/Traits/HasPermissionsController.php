@@ -7,6 +7,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Nwidart\Modules\Facades\Module;
 use Ronu\RestGenericClass\Core\Requests\BaseFormRequest;
+use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRoles;
 
 trait HasPermissionsController
 {
@@ -280,10 +281,12 @@ trait HasPermissionsController
             return response()->json(['ok' => false, 'message' => 'Unauthenticated.'], 401);
         }
 
-        if (!method_exists($user, 'permissionsPayload')) {
+        if (!$user instanceof ProvidesRoles) {
             return response()->json([
                 'ok' => false,
-                'message' => 'The authenticated user model must use HasReadableUserPermissions.',
+                'message' => 'The authenticated user model must implement '
+                    . ProvidesRoles::class
+                    . ' (use HasReadableUserPermissions and add the implements clause). See package README for migration.',
             ], 500);
         }
 

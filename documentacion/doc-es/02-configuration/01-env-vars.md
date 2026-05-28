@@ -12,10 +12,13 @@ El paquete lee variables de entorno unicamente desde el archivo de configuracion
 | `REST_VALIDATION_CACHE_TTL` | `3600` | TTL del cache en segundos para queries de validacion. |
 | `REST_VALIDATION_CACHE_PREFIX` | `'validation'` | Prefijo para las claves de cache de validacion. |
 | `REST_VALIDATION_CONNECTION` | `'db'` | Nombre de la conexion de BD usada por las queries de validacion. |
+| `REST_PERMISSIONS_ROLES_RELATION` | `roles` | Nombre por defecto de la relacion del modelo User que devuelve sus roles. Cada modelo puede sobreescribirlo con `const ROLES_RELATION`. |
 | `REST_PERMISSIONS_ROUTES_ENABLED` | `false` | Habilita las rutas de lectura de permisos provistas por el paquete. |
 | `REST_PERMISSIONS_ROUTES_PREFIX` | `permissions` | Prefijo para las rutas opcionales de permisos. |
 | `REST_PERMISSIONS_ROUTES_MIDDLEWARE` | `api,auth:api` | Lista de middleware separada por comas para las rutas opcionales. |
 | `REST_PERMISSIONS_ROUTES_GUARD` | `api` | Guard usado para resolver el usuario autenticado en rutas opcionales de permisos. |
+| `REST_PERMISSIONS_USER_MODEL` | _(no definida)_ | FQCN del modelo User para validacion temprana del contrato `ProvidesRoles` en boot. Opcional; si esta vacia la validacion ocurre en runtime. |
+| `REST_PERMISSIONS_ROLE_MODEL` | _(no definida)_ | FQCN del modelo Role para validacion temprana del contrato `ProvidesRolePermissions` en boot. Opcional; si esta vacia la validacion ocurre en runtime. |
 
 **Siguiente:** [Estrategia de cache](03-cache-strategy.md)
 
