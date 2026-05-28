@@ -41,6 +41,7 @@ El paquete puede registrar rutas reutilizables de lectura de permisos. Estan des
 
 | Clave | Tipo | Default | Descripcion |
 | --- | --- | --- | --- |
+| `permissions.roles_relation` | string | `roles` | Nombre de la relacion Eloquent del modelo User que devuelve sus roles. Fallback global; cada modelo puede sobreescribirlo con `const ROLES_RELATION`. Soporta cardinalidad uno-a-muchos (un rol) y muchos-a-muchos (varios roles). |
 | `permissions.routes.enabled` | bool | `false` | Cuando es true, carga las rutas de permisos del paquete. |
 | `permissions.routes.prefix` | string | `permissions` | Prefijo de rutas. Agrega prefijos de app como `/api` en tu grupo de rutas o kernel HTTP, no aqui. |
 | `permissions.routes.middleware` | array | `['api', 'auth:api']` | Middleware aplicado a las rutas del paquete. |

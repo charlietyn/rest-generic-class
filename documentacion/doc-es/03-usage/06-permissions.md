@@ -27,7 +27,9 @@ Si un integrador llamaba a su relación `groups`, tenía un wrapper `getRoles()`
 
 A partir de 3.0.0 se introduce un par de **contratos formales** y un **resolver inyectable** que centraliza la resolución. La librería deja de saber *cómo* se cargan los roles; el integrador lo declara explícitamente en su modelo.
 
-**Principios aplicados.** SOLID en sus cinco letras: el resolver tiene una sola responsabilidad (SRP), depende de abstracciones —las interfaces— y no de implementaciones concretas (DIP), las interfaces son pequeñas y enfocadas (ISP), cualquier modelo que las cumpla es sustituible (LSP), y agregar un nuevo origen de roles no requiere modificar la librería (OCP). Sumado a DRY (una única ruta de resolución) y KISS (un método fijo por interface, sin strings configurables ni reflection).
+**Principios aplicados.** SOLID en sus cinco letras: el resolver tiene una sola responsabilidad (SRP), depende de abstracciones —las interfaces— y no de implementaciones concretas (DIP), las interfaces son pequeñas y enfocadas (ISP), cualquier modelo que las cumpla es sustituible (LSP), y agregar un nuevo origen de roles no requiere modificar la librería (OCP). Sumado a DRY (una única ruta de resolución) y KISS (un método fijo por interface).
+
+> **Nota (≥ 2.2.x).** El contrato `provideRoles()` se mantiene como punto de extensión, pero el trait `HasReadableUserPermissions` ahora ofrece una **implementación por defecto opt-in**: declaras el nombre de la relación con `const ROLES_RELATION` (o la config `roles_relation`) y el trait la resuelve y normaliza la cardinalidad por ti, sin escribir `provideRoles()`. El override explícito sigue siendo la vía "pura" para fuentes no triviales. Ver [Escenario B-bis](#escenario-b-bis--relación-configurable-sin-escribir-provideroles).
 
 ---
 
@@ -250,6 +252,74 @@ class User extends Authenticatable implements ProvidesRoles
 
 **Errores comunes.**
 - Que `Group` no implemente `ProvidesRolePermissions` → `RolesContractViolationException::roleMissingContract`.
+
+---
+
+### Escenario B-bis — Relación configurable sin escribir `provideRoles()`
+
+**Objetivo.** Lograr lo mismo que el Escenario B (relación con otro nombre, p. ej. `array_role` en
+modelos generados) **sin** tener que escribir el cuerpo de `provideRoles()` en cada modelo.
+
+**Cómo funciona.** El trait `HasReadableUserPermissions` ahora provee una implementación **por
+defecto** de `provideRoles()`. Esa implementación resuelve el nombre de la relación con esta
+prioridad:
+
+1. Constante por modelo `ROLES_RELATION` (lo más específico).
+2. Config global `rest-generic-class.permissions.roles_relation` (env `REST_PERMISSIONS_ROLES_RELATION`).
+3. Default `'roles'` (retrocompatible).
+
+Luego eager-carga `<relación>.enabled_permissions` y **normaliza la cardinalidad** a una `Collection`.
+
+**Configuración (declarativa).**
+```php
+class User extends Authenticatable implements ProvidesRoles
+{
+    use HasReadableUserPermissions;
+
+    // Basta con declarar el nombre de la relación; no se escribe provideRoles().
+    const ROLES_RELATION = 'array_role';
+
+    public function array_role(): BelongsToMany
+    {
+        return $this->belongsToMany(Role::class, 'role_users', 'user_id', 'role_id');
+    }
+}
+```
+
+**Soporte de cardinalidad.** La misma implementación por defecto sirve para ambos modelos de datos:
+
+| Cardinalidad rol↔usuario | Relación Eloquent | Devuelve | Normalización |
+| --- | --- | --- | --- |
+| Muchos-a-muchos (usuario con varios roles) | `BelongsToMany` / `HasMany` | `Collection<Role>` | se usa tal cual (filtra nulos) |
+| Uno-a-muchos (usuario con un único rol) | `BelongsTo` / `HasOne` | `Role` (un modelo) o `null` | se envuelve en `Collection` de 1 (o vacía) |
+
+```php
+// Ejemplo uno-a-muchos: cada usuario pertenece a un rol vía role_id.
+class User extends Authenticatable implements ProvidesRoles
+{
+    use HasReadableUserPermissions;
+
+    const ROLES_RELATION = 'role';
+
+    public function role(): BelongsTo
+    {
+        return $this->belongsTo(Role::class, 'role_id');
+    }
+}
+```
+
+**Pasos.**
+1. Declarar `const ROLES_RELATION` (o la config global) con el nombre de tu relación.
+2. Asegurar que el modelo Role implementa `ProvidesRolePermissions`.
+3. Listo: no hace falta `provideRoles()`.
+
+**Notas.** Sigue siendo obligatorio `implements ProvidesRoles` (el `UserRolesResolver` valida con
+`instanceof`). Si necesitas lógica a medida (fuente externa, roles calculados, filtrado por tenant),
+**escribe tu propio `provideRoles()`**: un método de clase siempre gana sobre el del trait — es la vía
+de los Escenarios C y D.
+
+**Errores comunes.**
+- Nombre de relación mal configurado o relación inexistente → `RolesContractViolationException::missingRolesRelation`, con el nombre buscado y cómo corregirlo.
 
 ---
 

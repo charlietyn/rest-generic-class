@@ -52,6 +52,14 @@ return [
     ],
 
     'permissions' => [
+        // Name of the Eloquent relation on the User model that returns its roles.
+        // This is the global fallback; each User model may override it by declaring
+        // `const ROLES_RELATION = '...'`. Default 'roles' keeps backward compatibility.
+        // The relation may be one-to-many (BelongsTo/HasOne -> single Role) or
+        // many-to-many (BelongsToMany/HasMany -> Collection of Roles); the trait
+        // HasReadableUserPermissions normalizes either into a Collection.
+        'roles_relation' => env('REST_PERMISSIONS_ROLES_RELATION', 'roles'),
+
         'routes' => [
             'enabled' => env('REST_PERMISSIONS_ROUTES_ENABLED', false),
             'prefix' => env('REST_PERMISSIONS_ROUTES_PREFIX', 'permissions'),

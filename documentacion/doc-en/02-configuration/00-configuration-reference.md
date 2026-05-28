@@ -41,6 +41,7 @@ The package can register reusable permission read routes. They are disabled by d
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
+| `permissions.roles_relation` | string | `roles` | Name of the Eloquent relation on the User model that returns its roles. Global fallback; each model can override it with `const ROLES_RELATION`. Supports one-to-many (single role) and many-to-many (several roles) cardinality. |
 | `permissions.routes.enabled` | bool | `false` | When true, loads the package permission routes. |
 | `permissions.routes.prefix` | string | `permissions` | Route prefix. Add your app prefix such as `/api` in your route group or HTTP kernel, not here. |
 | `permissions.routes.middleware` | array | `['api', 'auth:api']` | Middleware applied to the package routes. |

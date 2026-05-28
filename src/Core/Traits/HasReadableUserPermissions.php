@@ -2,10 +2,12 @@
 
 namespace Ronu\RestGenericClass\Core\Traits;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\PermissionCompressorContract;
+use Ronu\RestGenericClass\Core\Support\Permissions\Exceptions\RolesContractViolationException;
 use Ronu\RestGenericClass\Core\Support\Permissions\UserRolesResolver;
 use Spatie\Permission\Contracts\Permission;
 use Spatie\Permission\Contracts\Role;
@@ -59,6 +61,66 @@ trait HasReadableUserPermissions
         return $relation;
     }
 
+
+    /**
+     * Resolve the name of the relation/"functionality" that returns this user's roles.
+     *
+     * Resolution priority (most specific wins):
+     *   1. Per-model constant `ROLES_RELATION` (e.g. const ROLES_RELATION = 'array_role';)
+     *   2. Global config 'rest-generic-class.permissions.roles_relation'
+     *   3. Hardcoded default 'roles' (backward compatible)
+     */
+    protected function rolesRelationName(): string
+    {
+        if (defined(static::class . '::ROLES_RELATION') && !empty(static::ROLES_RELATION)) {
+            return static::ROLES_RELATION;
+        }
+
+        return config('rest-generic-class.permissions.roles_relation', 'roles') ?: 'roles';
+    }
+
+    /**
+     * Default implementation of the ProvidesRoles contract.
+     *
+     * Reads the configurable roles relation (see rolesRelationName()), eager-loads it
+     * together with each role's enabled_permissions, and normalizes whatever Eloquent
+     * returns into a Collection — supporting BOTH cardinalities:
+     *   - one-to-many  (BelongsTo/HasOne)      → a single Model wrapped into a Collection
+     *   - many-to-many (BelongsToMany/HasMany)  → the Collection as-is
+     *
+     * A model that needs custom logic (external source, computed roles) can still
+     * override provideRoles() — a class method always wins over this trait default.
+     */
+    public function provideRoles(): Collection
+    {
+        $relation = $this->rolesRelationName();
+
+        if (!method_exists($this, $relation)) {
+            throw RolesContractViolationException::missingRolesRelation(static::class, $relation);
+        }
+
+        $this->loadMissing($relation . '.enabled_permissions');
+
+        return $this->normalizeRolesValue($this->getRelationValue($relation));
+    }
+
+    /**
+     * Normalize the value of a roles relation into a Collection, regardless of cardinality.
+     *
+     * @param mixed $value The eager-loaded relation value (Collection, Model or null).
+     */
+    protected function normalizeRolesValue($value): Collection
+    {
+        if ($value instanceof Collection) {
+            return $value->filter()->values();
+        }
+
+        if ($value instanceof Model) {
+            return collect([$value]);
+        }
+
+        return collect();
+    }
 
     /**
      * Return all the permissions the model has via roles.

@@ -27,7 +27,9 @@ If an integrator named the relation `groups`, wrapped it in `getRoles()`, or pul
 
 Starting in 3.0.0, a pair of **formal contracts** plus an **injectable resolver** centralize the resolution. The library no longer knows *how* roles are loaded; the integrator declares it explicitly on their model.
 
-**Principles applied.** SOLID across the board: the resolver has a single responsibility (SRP), depends on abstractions —the interfaces— rather than concrete implementations (DIP), the interfaces are small and focused (ISP), any model that satisfies them is substitutable (LSP), and adding a new role source requires no change inside the library (OCP). On top of that, DRY (one resolution path) and KISS (a fixed method per interface, no configurable strings, no reflection).
+**Principles applied.** SOLID across the board: the resolver has a single responsibility (SRP), depends on abstractions —the interfaces— rather than concrete implementations (DIP), the interfaces are small and focused (ISP), any model that satisfies them is substitutable (LSP), and adding a new role source requires no change inside the library (OCP). On top of that, DRY (one resolution path) and KISS (a fixed method per interface).
+
+> **Note (≥ 2.2.x).** The `provideRoles()` contract remains the extension point, but the `HasReadableUserPermissions` trait now offers an **opt-in default implementation**: you declare the relation name via `const ROLES_RELATION` (or the `roles_relation` config) and the trait resolves it and normalizes the cardinality for you, without writing `provideRoles()`. The explicit override stays the "pure" path for non-trivial sources. See [Scenario B-bis](#scenario-b-bis--configurable-relation-without-writing-provideroles).
 
 ---
 
@@ -250,6 +252,72 @@ class User extends Authenticatable implements ProvidesRoles
 
 **Common pitfalls.**
 - `Group` not implementing `ProvidesRolePermissions` → `RolesContractViolationException::roleMissingContract`.
+
+---
+
+### Scenario B-bis — Configurable relation without writing `provideRoles()`
+
+**Goal.** Achieve the same as Scenario B (relation under a different name, e.g. `array_role` in
+generated models) **without** writing the body of `provideRoles()` on every model.
+
+**How it works.** The `HasReadableUserPermissions` trait now ships a **default** implementation of
+`provideRoles()`. It resolves the relation name with this priority:
+
+1. Per-model constant `ROLES_RELATION` (most specific).
+2. Global config `rest-generic-class.permissions.roles_relation` (env `REST_PERMISSIONS_ROLES_RELATION`).
+3. Default `'roles'` (backward compatible).
+
+It then eager-loads `<relation>.enabled_permissions` and **normalizes the cardinality** into a `Collection`.
+
+**Setup (declarative).**
+```php
+class User extends Authenticatable implements ProvidesRoles
+{
+    use HasReadableUserPermissions;
+
+    // Just declare the relation name; no provideRoles() needed.
+    const ROLES_RELATION = 'array_role';
+
+    public function array_role(): BelongsToMany
+    {
+        return $this->belongsToMany(Role::class, 'role_users', 'user_id', 'role_id');
+    }
+}
+```
+
+**Cardinality support.** The same default implementation covers both data models:
+
+| Role↔User cardinality | Eloquent relation | Returns | Normalization |
+| --- | --- | --- | --- |
+| Many-to-many (user with several roles) | `BelongsToMany` / `HasMany` | `Collection<Role>` | used as-is (nulls filtered) |
+| One-to-many (user with a single role) | `BelongsTo` / `HasOne` | single `Role` model or `null` | wrapped into a 1-item `Collection` (or empty) |
+
+```php
+// One-to-many example: each user belongs to a single role via role_id.
+class User extends Authenticatable implements ProvidesRoles
+{
+    use HasReadableUserPermissions;
+
+    const ROLES_RELATION = 'role';
+
+    public function role(): BelongsTo
+    {
+        return $this->belongsTo(Role::class, 'role_id');
+    }
+}
+```
+
+**Steps.**
+1. Declare `const ROLES_RELATION` (or the global config) with your relation name.
+2. Make sure the Role model implements `ProvidesRolePermissions`.
+3. Done — no `provideRoles()` required.
+
+**Notes.** `implements ProvidesRoles` is still required (the `UserRolesResolver` checks `instanceof`).
+For custom logic (external source, computed roles, tenant filtering), **write your own `provideRoles()`**:
+a class method always wins over the trait default — that is the path of Scenarios C and D.
+
+**Common pitfalls.**
+- Misconfigured relation name or missing relation → `RolesContractViolationException::missingRolesRelation`, telling you the looked-up name and how to fix it.
 
 ---
 

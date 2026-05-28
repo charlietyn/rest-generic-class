@@ -22,6 +22,20 @@ class RolesContractViolationException extends RuntimeException
         ));
     }
 
+    public static function missingRolesRelation(string|object $userOrClass, string $relation): self
+    {
+        $class = is_object($userOrClass) ? $userOrClass::class : $userOrClass;
+
+        return new self(sprintf(
+            "User model [%s] has no roles relation named '%s'. Define the relation method, "
+                . "or declare 'const ROLES_RELATION = \\'<your_relation>\\';' on the model "
+                . "(or set 'rest-generic-class.permissions.roles_relation' in config) to point "
+                . "the permission engine at the correct relation.",
+            $class,
+            $relation
+        ));
+    }
+
     public static function roleMissingContract(string|object $roleOrClass): self
     {
         $class = is_object($roleOrClass) ? $roleOrClass::class : $roleOrClass;
