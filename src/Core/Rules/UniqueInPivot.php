@@ -105,6 +105,8 @@ final class UniqueInPivot implements ValidationRule
         private readonly string  $column,
         private readonly string  $mainTablePk  = 'id',
         private readonly mixed   $ignoreValue  = null,
+        private readonly ?string $softDeleteColumn = null,
+        private readonly ?string $pivotSoftDeleteColumn = null,
     ) {}
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
@@ -130,6 +132,15 @@ final class UniqueInPivot implements ValidationRule
             )
             ->where("_main.{$this->column}", $value)
             ->where("_pivot.{$this->pivotOwnerKey}", $this->ownerValue);
+
+        // Respect soft delete on the main table and/or the pivot so memberships
+        // / values freed by a soft delete are not counted as conflicts.
+        if ($this->softDeleteColumn !== null) {
+            $query->whereNull("_main.{$this->softDeleteColumn}");
+        }
+        if ($this->pivotSoftDeleteColumn !== null) {
+            $query->whereNull("_pivot.{$this->pivotSoftDeleteColumn}");
+        }
 
         if ($this->ignoreValue !== null) {
             $query->where("_main.{$this->mainTablePk}", '!=', $this->ignoreValue);

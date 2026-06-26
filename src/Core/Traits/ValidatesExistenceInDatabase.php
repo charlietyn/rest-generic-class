@@ -150,6 +150,10 @@ trait ValidatesExistenceInDatabase
      * @param string $table Database table name
      * @param string $column Column name to check (default: 'id')
      * @param array<string, mixed> $additionalConditions Key-value pairs for extra WHERE clauses
+     * @param string|null $deletedAtColumn Soft-delete column to filter on. Defaults
+     *        to 'deleted_at'. Pass the model's resolved column for custom columns
+     *        (e.g. 'archived_at'), or null to skip soft-delete filtering entirely
+     *        (e.g. when the target table is not soft-deletable).
      * @return bool True if all IDs exist and are not deleted
      *
      * @example
@@ -158,12 +162,16 @@ trait ValidatesExistenceInDatabase
      *
      * // With additional conditions
      * $this->validateIdsExistNotDeleted([1, 2], 'users', 'id', ['tenant_id' => 5]);
+     *
+     * // Custom soft-delete column
+     * $this->validateIdsExistNotDeleted([1, 2], 'documents', 'id', [], 'archived_at');
      */
     public function validateIdsExistNotDeleted(
         array $ids,
         string $table,
         string $column = 'id',
-        array $additionalConditions = []
+        array $additionalConditions = [],
+        ?string $deletedAtColumn = 'deleted_at'
     ): bool {
         if (empty($ids)) {
             return true;
@@ -176,11 +184,17 @@ trait ValidatesExistenceInDatabase
         }
 
         try {
-            $cacheKey = $this->buildCacheKey($table, $column, array_merge(['not_deleted' => true], $additionalConditions));
+            $cacheKey = $this->buildCacheKey($table, $column, array_merge(
+                ['not_deleted' => $deletedAtColumn ?? false],
+                $additionalConditions
+            ));
 
-            $validIds = $this->getCachedData($cacheKey, function () use ($table, $column, $additionalConditions) {
-                $query = DB::connection($this->connection)->table($table)
-                    ->whereNull('deleted_at');
+            $validIds = $this->getCachedData($cacheKey, function () use ($table, $column, $additionalConditions, $deletedAtColumn) {
+                $query = DB::connection($this->connection)->table($table);
+
+                if ($deletedAtColumn !== null) {
+                    $query->whereNull($deletedAtColumn);
+                }
 
                 foreach ($additionalConditions as $col => $value) {
                     if (is_array($value)) {

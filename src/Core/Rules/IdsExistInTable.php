@@ -20,6 +20,7 @@ class IdsExistInTable implements ValidationRule, ValidatorAwareRule
         protected string $column = 'id',
         protected array  $additionalConditions = [],
         protected ?string $inputKey = null,
+        protected ?string $softDeleteColumn = null,
     )
     {
         $this->connection = $connection;
@@ -51,6 +52,22 @@ class IdsExistInTable implements ValidationRule, ValidatorAwareRule
             );
             return;
         }
+        // When a soft-delete column is provided, exclude soft-deleted rows so
+        // a value belonging to a deleted row is treated as non-existent.
+        if ($this->softDeleteColumn !== null) {
+            $valid = $this->validateIdsExistNotDeleted(
+                $ids, $this->table, $this->column, $this->additionalConditions, $this->softDeleteColumn
+            );
+            if (!$valid) {
+                $this->validator->errors()->add(
+                    $attribute,
+                    'The following IDs do not exist: ' . implode(', ', $ids)
+                    . $this->buildConditionsMessage($this->additionalConditions)
+                );
+            }
+            return;
+        }
+
         $validated = $this->validateIdsExistInTable($ids, $this->table, $this->column, $this->additionalConditions);
         if (!$validated['success']) {
             $this->validator->errors()->add(

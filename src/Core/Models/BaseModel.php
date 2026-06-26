@@ -39,6 +39,26 @@ class BaseModel extends Model
     protected string|int|null $fieldKeyUpdate = null;
 
     /**
+     * Soft-delete column for this model — the single source of truth.
+     *
+     * A model is considered soft-deletable when this resolves to a non-null
+     * column name. Soft-deletable models must also `use InteractsWithSoftDelete`
+     * (the canonical mechanism), which makes Laravel's native SoftDeletes
+     * column-aware against this value. Models that leave this null keep the
+     * historic physical-delete behaviour (full backward compatibility).
+     *
+     * The column is assumed to be a `timestamp NULL` (deleted_at style). A
+     * boolean flag is NOT supported by this mechanism — that is a different
+     * strategy and must not be wired through $softDeleteColumn.
+     *
+     * The generator declares this per soft-deletable model, e.g.:
+     *   protected ?string $softDeleteColumn = 'deleted_at';   // or 'archived_at'
+     *
+     * @see \Ronu\RestGenericClass\Core\Traits\InteractsWithSoftDelete
+     */
+    protected ?string $softDeleteColumn = null;
+
+    /**
      * Relations of entity.
      */
     const RELATIONS = [];
@@ -177,6 +197,35 @@ class BaseModel extends Model
     {
         return $this->scenario;
     }
+
+    // =========================================================================
+    // Soft Delete Contract
+    // =========================================================================
+
+    /**
+     * The soft-delete column declared on this model, or null when the model is
+     * not soft-deletable. This is the single source of truth consumed by the
+     * service write-path, the column-aware InteractsWithSoftDelete trait, and
+     * the soft-aware validation rules.
+     */
+    public function getSoftDeleteColumn(): ?string
+    {
+        return $this->softDeleteColumn;
+    }
+
+    /**
+     * Whether this model participates in the soft-delete lifecycle.
+     *
+     * NOTE: the boolean check itself is Laravel's native static
+     * Model::isSoftDeletable() — it returns true exactly when the class uses the
+     * SoftDeletes trait, which the canonical InteractsWithSoftDelete brings in.
+     * It is therefore equivalent to "declared a soft-delete column" and is not
+     * redeclared here (the parent method is static and final-compatible).
+     * Callers may invoke it on an instance: $model->isSoftDeletable().
+     *
+     * @see \Illuminate\Database\Eloquent\Model::isSoftDeletable()
+     * @see getSoftDeleteColumn()
+     */
 
     public function setScenario(string $scenario): void
     {
@@ -495,10 +544,12 @@ class BaseModel extends Model
 
     static public function destroy_model(mixed $id): array
     {
-        $model  = self::query()->findOrFail($id);
+        $model  = static::query()->findOrFail($id);
         $result = ['success' => true, 'model' => $model];
 
-        if (!$model->destroy($id)) {
+        // delete() honours soft delete when the model uses InteractsWithSoftDelete
+        // (sets the soft-delete column); otherwise it performs a physical delete.
+        if (!$model->delete()) {
             $result['success'] = false;
         }
 

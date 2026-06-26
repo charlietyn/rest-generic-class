@@ -1095,7 +1095,9 @@ class BaseService
         $result = [];
         $result['success'] = true;
         $result['model'] = $this->modelClass;
-        if (!$this->modelClass->destroy($id))
+        // delete() is soft when the model uses InteractsWithSoftDelete (sets the
+        // soft-delete column), physical otherwise — fully backward compatible.
+        if (!$this->modelClass->delete())
             $result['success'] = false;
         if ($result['success']) {
             $this->bumpCacheVersion();
@@ -1109,6 +1111,109 @@ class BaseService
         $result['success'] = $response > 0;
         if ($result['success']) {
             $this->bumpCacheVersion();
+        }
+        return $result;
+    }
+
+    /**
+     * Restore a single soft-deleted record by id.
+     *
+     * Resolves the record WITH trashed rows (so the lookup does not 404 on an
+     * already soft-deleted row) and restores it, firing the restoring/restored
+     * events. Only valid for soft-deletable models; for non-soft models this is
+     * a no-op reported as an error so callers can surface a clear 422.
+     *
+     * @param mixed $id
+     * @return array{success: bool, ...}
+     */
+    public function restore($id): array
+    {
+        if (!$this->modelClass->isSoftDeletable()) {
+            return ['success' => false, 'message' => 'Model is not soft-deletable; nothing to restore.'];
+        }
+
+        $this->modelClass = $this->modelClass->newQuery()->withTrashed()->findOrFail($id);
+        $result = ['success' => true, 'model' => $this->modelClass];
+
+        if (!$this->modelClass->trashed()) {
+            // Already active — nothing to do, but report it explicitly.
+            $result['message'] = 'Record is not deleted.';
+            return $result;
+        }
+
+        if (!$this->modelClass->restore()) {
+            $result['success'] = false;
+            return $result;
+        }
+
+        $this->bumpCacheVersion();
+        return $result;
+    }
+
+    /**
+     * Restore multiple soft-deleted records by id.
+     *
+     * @param array|mixed $ids
+     * @return array{success: bool, models: array}
+     */
+    public function restoreById($ids): array
+    {
+        $ids = is_array($ids) ? $ids : [$ids];
+        $result = ['success' => true, 'models' => []];
+        foreach ($ids as $id) {
+            $res = $this->restore($id);
+            $result['models'][] = $res;
+            if (!$res['success']) {
+                $result['success'] = false;
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * Permanently delete a record by id, bypassing soft delete.
+     *
+     * For soft-deletable models the row is resolved WITH trashed rows so an
+     * already soft-deleted record can be purged. For non-soft models this is
+     * equivalent to a normal physical delete.
+     *
+     * @param mixed $id
+     * @return array{success: bool, ...}
+     */
+    public function forceDelete($id): array
+    {
+        $query = $this->modelClass->newQuery();
+        if ($this->modelClass->isSoftDeletable()) {
+            $query->withTrashed();
+        }
+        $this->modelClass = $query->findOrFail($id);
+        $result = ['success' => true, 'model' => $this->modelClass];
+
+        if (!$this->modelClass->forceDelete()) {
+            $result['success'] = false;
+            return $result;
+        }
+
+        $this->bumpCacheVersion();
+        return $result;
+    }
+
+    /**
+     * Permanently delete multiple records by id.
+     *
+     * @param array|mixed $ids
+     * @return array{success: bool, models: array}
+     */
+    public function forceDeleteById($ids): array
+    {
+        $ids = is_array($ids) ? $ids : [$ids];
+        $result = ['success' => true, 'models' => []];
+        foreach ($ids as $id) {
+            $res = $this->forceDelete($id);
+            $result['models'][] = $res;
+            if (!$res['success']) {
+                $result['success'] = false;
+            }
         }
         return $result;
     }

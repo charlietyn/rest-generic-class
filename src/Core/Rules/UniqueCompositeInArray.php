@@ -42,6 +42,7 @@ final class UniqueCompositeInArray implements DataAwareRule, ValidationRule
         private readonly string  $arrayKey,
         private readonly array   $conditions  = [],
         private readonly ?string $ignoreField = null,
+        private readonly ?string $softDeleteColumn = null,
     ) {}
 
     /** Injected automatically by Laravel's validator. */
@@ -102,6 +103,12 @@ final class UniqueCompositeInArray implements DataAwareRule, ValidationRule
         $query = DB::connection($this->connection)
             ->table($this->table)
             ->where($this->column, $value);
+
+        // Ignore soft-deleted rows so a unique value freed by a deleted row can
+        // be reused.
+        if ($this->softDeleteColumn !== null) {
+            $query->whereNull($this->softDeleteColumn);
+        }
 
         foreach ($this->conditions as $column => $conditionValue) {
             $query->where($column, $conditionValue);

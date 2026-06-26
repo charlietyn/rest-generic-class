@@ -165,6 +165,8 @@ final class UniqueInPivotArray implements DataAwareRule, ValidationRule
         private readonly string  $arrayKey,
         private readonly string  $mainTablePk  = 'id',
         private readonly ?string $ignoreField  = null,
+        private readonly ?string $softDeleteColumn = null,
+        private readonly ?string $pivotSoftDeleteColumn = null,
     ) {}
 
     /** Injected automatically by Laravel's validator. */
@@ -238,6 +240,15 @@ final class UniqueInPivotArray implements DataAwareRule, ValidationRule
             )
             ->where("_main.{$this->column}", $value)
             ->where("_pivot.{$this->pivotOwnerKey}", $this->ownerValue);
+
+        // Respect soft delete on the main table and/or the pivot so memberships
+        // / values freed by a soft delete are not counted as conflicts.
+        if ($this->softDeleteColumn !== null) {
+            $query->whereNull("_main.{$this->softDeleteColumn}");
+        }
+        if ($this->pivotSoftDeleteColumn !== null) {
+            $query->whereNull("_pivot.{$this->pivotSoftDeleteColumn}");
+        }
 
         if ($this->ignoreField !== null) {
             $ignoreValue = $this->resolveIgnoreValue($attribute, $items);

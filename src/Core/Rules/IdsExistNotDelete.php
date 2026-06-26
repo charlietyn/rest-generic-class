@@ -20,6 +20,7 @@ class IdsExistNotDelete implements ValidationRule, ValidatorAwareRule
         protected string $column = 'id',
         protected array  $additionalConditions = [],
         protected ?string $inputKey = null,
+        protected ?string $deletedAtColumn = 'deleted_at',
     )
     {
         $this->connection = $connection;
@@ -51,7 +52,7 @@ class IdsExistNotDelete implements ValidationRule, ValidatorAwareRule
             );
             return;
         }
-        $validated = $this->validateIdsExistNotDeleted($ids, $this->table, $this->column, $this->additionalConditions);
+        $validated = $this->validateIdsExistNotDeleted($ids, $this->table, $this->column, $this->additionalConditions, $this->deletedAtColumn);
         if (!$validated) {
             $this->validator->errors()->add(
                 $attribute,

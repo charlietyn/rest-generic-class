@@ -294,6 +294,137 @@ class RestController extends BaseController
 
 
     /**
+     * Restores a soft-deleted resource by ID.
+     *
+     * The id is resolved inside the service WITH trashed rows, so no
+     * withTrashed() route-model binding is required to avoid a 404.
+     *
+     * @param int $id
+     * @return array
+     */
+    public function restore($id): array
+    {
+        DB::beginTransaction();
+        try {
+            $result = $this->service->restore($id);
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::channel('rest-generic-class')->error('Restore failed', [
+                'controller' => static::class,
+                'method' => __FUNCTION__,
+                'id' => $id,
+                'exception' => $e,
+            ]);
+            throw $e;
+        }
+        return $result;
+    }
+
+    /**
+     * Restores multiple soft-deleted resources by IDs.
+     *
+     * Accepts a raw array of ids, a { "ids": [...] } body, or the entity-keyed
+     * payload — mirroring the flexibility of deleteById().
+     *
+     * @param Request $request
+     * @return array
+     */
+    public function restoreMultiple(Request $request): array
+    {
+        $ids = $this->resolveBulkIds($request);
+        DB::beginTransaction();
+        try {
+            $result = $this->service->restoreById($ids);
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::channel('rest-generic-class')->error('Restore multiple failed', [
+                'controller' => static::class,
+                'method' => __FUNCTION__,
+                'exception' => $e,
+            ]);
+            throw $e;
+        }
+        return $result;
+    }
+
+    /**
+     * Permanently deletes a resource by ID, bypassing soft delete.
+     *
+     * @param int $id
+     * @return array
+     */
+    public function forceDelete($id): array
+    {
+        DB::beginTransaction();
+        try {
+            $result = $this->service->forceDelete($id);
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::channel('rest-generic-class')->error('Force delete failed', [
+                'controller' => static::class,
+                'method' => __FUNCTION__,
+                'id' => $id,
+                'exception' => $e,
+            ]);
+            throw $e;
+        }
+        return $result;
+    }
+
+    /**
+     * Permanently deletes multiple resources by IDs, bypassing soft delete.
+     *
+     * @param Request $request
+     * @return array
+     */
+    public function forceDeleteMultiple(Request $request): array
+    {
+        $ids = $this->resolveBulkIds($request);
+        DB::beginTransaction();
+        try {
+            $result = $this->service->forceDeleteById($ids);
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::channel('rest-generic-class')->error('Force delete multiple failed', [
+                'controller' => static::class,
+                'method' => __FUNCTION__,
+                'exception' => $e,
+            ]);
+            throw $e;
+        }
+        return $result;
+    }
+
+    /**
+     * Normalize a bulk-id request body into a flat array of ids.
+     *
+     * Supports: a raw JSON array, a { "ids": [...] } object, or an
+     * entity-keyed payload ({ "<model>": [...] }). Falls back to the raw body.
+     *
+     * @param Request $request
+     * @return array
+     */
+    protected function resolveBulkIds(Request $request): array
+    {
+        $body = count($request->all()) != 0 ? $request->all() : (json_decode($request->getContent(), true) ?? []);
+
+        if (isset($body['ids']) && is_array($body['ids'])) {
+            return $body['ids'];
+        }
+
+        $entity = strtolower($this->modelClass::MODEL);
+        if ($entity !== '' && isset($body[$entity]) && is_array($body[$entity])) {
+            return $body[$entity];
+        }
+
+        return is_array($body) ? $body : [$body];
+    }
+
+    /**
      * Exports data to an Excel file.
      *
      * @param Request $request
