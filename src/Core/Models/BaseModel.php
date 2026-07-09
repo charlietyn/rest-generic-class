@@ -10,10 +10,14 @@ use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
+use Ronu\RestGenericClass\Core\Contracts\HasRestCache;
+use Ronu\RestGenericClass\Core\Contracts\HasRestFieldPermissions;
+use Ronu\RestGenericClass\Core\Contracts\HasRestRelations;
+use Ronu\RestGenericClass\Core\Contracts\HasRestSoftDeletes;
 use Ronu\RestGenericClass\Core\Extension\Eloquent\Relations\MongoBelongTo;
 use Ronu\RestGenericClass\Core\Extension\Eloquent\Relations\MongoHasMany;
 
-class BaseModel extends Model
+class BaseModel extends Model implements HasRestCache, HasRestFieldPermissions, HasRestRelations, HasRestSoftDeletes
 {
     use ValidatesRequests, HasFactory, Notifiable;
 
@@ -196,6 +200,16 @@ class BaseModel extends Model
     public function getScenario(): string
     {
         return $this->scenario;
+    }
+
+    public function getRestRelations(): array
+    {
+        return static::RELATIONS;
+    }
+
+    public function getCacheInvalidates(): array
+    {
+        return static::CACHE_INVALIDATES;
     }
 
     // =========================================================================

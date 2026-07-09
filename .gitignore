@@ -3,3 +3,6 @@
 composer.lock
 /.claude
 .phpunit.result.cache
+.claude
+.codex
+/**/graphify-out/

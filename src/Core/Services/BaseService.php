@@ -12,12 +12,15 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\CursorPaginator;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Maatwebsite\Excel\Facades\Excel;
 use Nwidart\Modules\Facades\Module;
+use Ronu\RestGenericClass\Core\Contracts\HasRestRelations;
 use Ronu\RestGenericClass\Core\Exports\ModelExport;
+use Ronu\RestGenericClass\Core\Services\Support\CacheCoordinator;
+use Ronu\RestGenericClass\Core\Services\Support\OperFilterPipeline;
+use Ronu\RestGenericClass\Core\Services\Support\QueryBuilderPipeline;
+use Ronu\RestGenericClass\Core\Services\Support\RelationResolver;
 use Ronu\RestGenericClass\Core\Traits\HasDynamicFilter;
 use Ronu\RestGenericClass\Core\Traits\HasDynamicOrderBy;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -95,6 +98,54 @@ class BaseService
         $this->modelClass = new $modelClass;
     }
 
+    private function cacheCoordinator(): CacheCoordinator
+    {
+        $model = $this->modelClass instanceof Model
+            ? $this->modelClass
+            : new $this->modelClass;
+
+        return new CacheCoordinator(
+            $model,
+            $this->cachePrefix,
+            $this->cacheable,
+            $this->cacheTtl,
+            $this->cacheableOperations,
+            fn (array $params): array => $this->getRelationVersions($params)
+        );
+    }
+
+    private function relationResolver(): RelationResolver
+    {
+        return new RelationResolver();
+    }
+
+    private function operFilterPipeline(): OperFilterPipeline
+    {
+        return new OperFilterPipeline(
+            $this->relationResolver(),
+            fn (Builder $query, array $params, string $condition, $modelClass): Builder => $this->applyFilters($query, $params, $condition, $modelClass),
+            fn (): int => $this->currentDepth,
+            fn (int $depth): int => $this->currentDepth = $depth,
+            fn (int $count): int => $this->conditionCount += $count,
+            fn (): int => $this->conditionCount
+        );
+    }
+
+    private function queryBuilderPipeline(): QueryBuilderPipeline
+    {
+        $model = $this->modelClass instanceof Model
+            ? $this->modelClass
+            : new $this->modelClass;
+
+        return new QueryBuilderPipeline(
+            $model,
+            fn (Builder $query, array|string $params): Builder => $this->eq_attr($query, $params),
+            fn (Builder $query, mixed $oper, string $boolean = 'and', $modelClass = null): Builder => $this->applyOperTree($query, $oper, $boolean, $modelClass),
+            fn (Builder $query, mixed $relations, mixed $oper = []): Builder => $this->relations($query, $relations, $oper),
+            fn (Builder $query, array|string $params): Builder => $this->order_by($query, $params)
+        );
+    }
+
 
     private function pagination($query, $pagination): LengthAwarePaginator
     {
@@ -127,8 +178,12 @@ class BaseService
      */
     private function getModelRelations(): array
     {
+        if ($this->modelClass instanceof HasRestRelations) {
+            return $this->modelClass->getRestRelations();
+        }
+
         $staticClass = $this->getStaticClass();
-        return $staticClass::RELATIONS;
+        return defined($staticClass . '::RELATIONS') ? $staticClass::RELATIONS : [];
     }
 
     /**
@@ -221,42 +276,7 @@ class BaseService
      */
     private function normalizeRelations(mixed $relations): array
     {
-        if (!$relations) {
-            return [];
-        }
-
-        // Parse JSON string
-        if (is_string($relations)) {
-            $decoded = json_decode($relations, true);
-            if (json_last_error() === JSON_ERROR_NONE) {
-                $relations = $decoded;
-            } elseif ($relations !== 'all') {
-                $relations = [$relations];
-            }
-        }
-
-        if (!is_array($relations)) {
-            return [];
-        }
-
-        // Handle "all" shortcut
-        if (in_array('all', $relations, true)) {
-            $allowedRelations = $this->getRelationsForModel($this->modelClass);
-            $relations = $allowedRelations;
-        }
-
-        $normalized = [];
-
-        foreach ($relations as $relationString) {
-            if (!is_string($relationString)) {
-                continue;
-            }
-
-            $parsed = $this->parseRelationWithFields($relationString);
-            $normalized[] = $parsed;
-        }
-
-        return $normalized;
+        return $this->relationResolver()->normalize($relations, $this->modelClass);
     }
 
     /**
@@ -384,52 +404,10 @@ class BaseService
      **/
     public function process_query($params, $query): Builder
     {
-        // Reset counters
         $this->currentDepth = 0;
         $this->conditionCount = 0;
 
-        $nested = isset($params['_nested']) ? $params['_nested'] : false;
-
-        // 1. Apply equality filters (legacy attr/eq)
-        if (isset($params["attr"])) {
-            $query = $this->eq_attr($query, $params['attr']);
-        }
-
-        // 2. Parse oper
-        $oper = $params['oper'] ?? null;
-        if (is_string($oper)) {
-            $decoded = json_decode($oper, true);
-            if (json_last_error() === JSON_ERROR_NONE) {
-                $oper = $decoded;
-            }
-        }
-
-        // 3. Apply oper tree (includes whereHas for relations)
-        // This filters the ROOT dataset based on related records
-        if (!empty($oper)) {
-            $query = $this->applyOperTree($query, $oper, 'and', $this->modelClass);
-        }
-
-        // 4. Eager load relations with field selection
-        // This loads the related records (optionally filtered if _nested=true)
-        // IMPORTANT: This respects the "relation:field1,field2" syntax
-        if (isset($params['relations'])) {
-            $query = $this->relations($query, $params['relations'], $nested ? $oper : null);
-        }
-
-        // 5. Select clause for main model
-        if (isset($params['select'])) {
-            $query = $query->select($params['select']);
-        } else {
-            $query = $query->select($this->modelClass->getTable() . '.*');
-        }
-
-        // 6. Order by
-        if (isset($params['orderby'])) {
-            $query = $this->order_by($query, $params['orderby']);
-        }
-
-        return $query;
+        return $this->queryBuilderPipeline()->process($params, $query);
     }
 
     private function stripRelationFilters($oper): mixed
@@ -480,11 +458,14 @@ class BaseService
 
     public function process_all($params, $query): mixed
     {
-        $query = $this->process_query($params, $query);
-        if (isset($params['pagination'])) {
-            return $this->process_pagination($params, $query);
-        }
-        return $query;
+        $this->currentDepth = 0;
+        $this->conditionCount = 0;
+
+        return $this->queryBuilderPipeline()->processAll(
+            $params,
+            $query,
+            fn ($params, Builder $query): mixed => $this->process_pagination($params, $query)
+        );
     }
 
     /**
@@ -1229,34 +1210,7 @@ class BaseService
      */
     private function shouldUseCache(string $operation, array $params): bool
     {
-        // 1. Service-level override has highest priority
-        if ($this->cacheable === false) {
-            return false;
-        }
-
-        // 2. If service doesn't declare, defer to global config
-        if ($this->cacheable === null) {
-            $cacheConfig = config('rest-generic-class.cache', []);
-            if (!($cacheConfig['enabled'] ?? false)) {
-                return false;
-            }
-        }
-
-        // 3. Cacheable operations: service-level > config-level
-        $cacheableMethods = !empty($this->cacheableOperations)
-            ? $this->cacheableOperations
-            : (config('rest-generic-class.cache.cacheable_methods') ?? []);
-
-        if (!in_array($operation, $cacheableMethods, true)) {
-            return false;
-        }
-
-        // 4. Request-level override (cache=false)
-        if (array_key_exists('cache', $params) && $params['cache'] === false) {
-            return false;
-        }
-
-        return true;
+        return $this->cacheCoordinator()->shouldUse($operation, $params);
     }
 
     /**
@@ -1264,11 +1218,7 @@ class BaseService
      */
     private function rememberWithCache(string $operation, array $params, callable $callback): mixed
     {
-        $store = $this->resolveCacheStore();
-        $ttl = $this->resolveCacheTtl($operation, $params);
-        $key = $this->buildCacheKey($operation, $params);
-
-        return $store->remember($key, $ttl, $callback);
+        return $this->cacheCoordinator()->remember($operation, $params, $callback);
     }
 
     /**
@@ -1279,29 +1229,7 @@ class BaseService
      */
     private function buildCacheKey(string $operation, array $params): string
     {
-        $request = request();
-        $route = $request?->route();
-        $headersToVary = config('rest-generic-class.cache.vary.headers', []);
-        $varyHeaders = [];
-
-        foreach ($headersToVary as $header) {
-            $varyHeaders[$header] = $request?->header($header);
-        }
-
-        $fingerprint = [
-            'op' => $operation,
-            'model' => get_class($this->modelClass),
-            'route' => $route?->getName() ?? $request?->path() ?? 'cli',
-            'method' => $request?->method(),
-            'query' => $request?->query(),
-            'headers' => $varyHeaders,
-            'user' => auth()->id(),
-            'params' => $params,
-            'version' => $this->getCacheVersion(),
-            'rel_versions' => $this->getRelationVersions($params),
-        ];
-
-        return $this->cachePrefix . ':' . sha1(json_encode($fingerprint));
+        return $this->cacheCoordinator()->key($operation, $params);
     }
 
     /**
@@ -1359,8 +1287,7 @@ class BaseService
      */
     private function resolveCacheStore()
     {
-        $store = config('rest-generic-class.cache.store');
-        return $store ? Cache::store($store) : Cache::store();
+        return $this->cacheCoordinator()->store();
     }
 
     /**
@@ -1369,19 +1296,7 @@ class BaseService
      */
     private function resolveCacheTtl(string $operation, array $params)
     {
-        // Priority: request-level > service-level > config method-level > config global
-        if (isset($params['cache_ttl']) && is_numeric($params['cache_ttl'])) {
-            return now()->addSeconds((int)$params['cache_ttl']);
-        }
-
-        if ($this->cacheTtl !== null) {
-            return now()->addSeconds($this->cacheTtl);
-        }
-
-        $defaultTtl = (int)config('rest-generic-class.cache.ttl', 60);
-        $ttlByMethod = (int)config('rest-generic-class.cache.ttl_by_method.' . $operation, $defaultTtl);
-
-        return now()->addSeconds($ttlByMethod);
+        return $this->cacheCoordinator()->ttl($operation, $params);
     }
 
     /**
@@ -1391,9 +1306,7 @@ class BaseService
      */
     private function getCacheVersion(): int
     {
-        $store = $this->resolveCacheStore();
-        $version = $store->get($this->cacheVersionKey(), 1);
-        return is_numeric($version) ? (int)$version : 1;
+        return $this->cacheCoordinator()->modelVersion();
     }
 
     /**
@@ -1401,29 +1314,7 @@ class BaseService
      */
     private function bumpCacheVersion(): void
     {
-        // Skip only when global cache is off AND this service doesn't force cache on.
-        // When $cacheable = true, this service caches even with global off,
-        // so version bumps must still happen to avoid stale entries.
-        if (!config('rest-generic-class.cache.enabled', false) && $this->cacheable !== true) {
-            return;
-        }
-
-        $store = $this->resolveCacheStore();
-
-        // 1. Bump this model's version
-        $currentVersion = $store->get($this->cacheVersionKey(), 1);
-        $store->forever($this->cacheVersionKey(), ((int)$currentVersion) + 1);
-
-        // 2. Propagate to dependent models declared in CACHE_INVALIDATES
-        $invalidates = defined(get_class($this->modelClass) . '::CACHE_INVALIDATES')
-            ? $this->modelClass::CACHE_INVALIDATES
-            : [];
-
-        foreach ($invalidates as $relatedModelClass) {
-            $relatedKey = $this->cachePrefix . ':version:' . $relatedModelClass;
-            $relatedVersion = $store->get($relatedKey, 1);
-            $store->forever($relatedKey, ((int)$relatedVersion) + 1);
-        }
+        $this->cacheCoordinator()->bumpVersion();
     }
 
     /**
@@ -1431,7 +1322,7 @@ class BaseService
      */
     private function cacheVersionKey(): string
     {
-        return $this->cachePrefix . ':version:' . get_class($this->modelClass);
+        return $this->cacheCoordinator()->versionKey();
     }
 
     public function exportExcel($params)
@@ -1525,33 +1416,7 @@ class BaseService
      */
     private function normalizeOperNode(mixed $oper): array
     {
-        if (empty($oper)) {
-            return [];
-        }
-        if (is_string($oper)) {
-            $decoded = json_decode($oper, true);
-            if (json_last_error() === JSON_ERROR_NONE) {
-                $oper = $decoded;
-            }
-        }
-        if (!is_array($oper)) {
-            return [];
-        }
-        if (array_is_list($oper)) {
-            return ['and' => $oper];
-        }
-        $normalized = [];
-        foreach ($oper as $key => $value) {
-            if (in_array($key, ['and', 'or'], true)) {
-                if (!is_array($value)) {
-                    throw new HttpException(400, "Logical operator '{$key}' must have array value.");
-                }
-                $normalized[$key] = $value;
-            } else {
-                $normalized[$key] = $value;
-            }
-        }
-        return $normalized;
+        return $this->operFilterPipeline()->normalize($oper);
     }
 
     /**
@@ -1563,24 +1428,7 @@ class BaseService
      */
     private function getRelationsForModel(object|string $modelClass): array
     {
-        if (is_object($modelClass)) {
-            $modelClass = get_class($modelClass);
-        }
-        $model = is_string($modelClass) ? new $modelClass : $modelClass;
-        if (defined("{$modelClass}::RELATIONS")) {
-            return $modelClass::RELATIONS;
-        }
-
-        $strict = config('rest-generic-class.filtering.strict_relations', true);
-
-        if ($strict) {
-            throw new HttpException(
-                500,
-                "Model {$modelClass} must define const RELATIONS for security. " .
-                "Set 'filtering.strict_relations' => false to auto-detect (not recommended)."
-            );
-        }
-        return $this->autoDetectRelations($model);
+        return $this->relationResolver()->allowedFor($modelClass);
     }
 
     /**
@@ -1588,34 +1436,7 @@ class BaseService
      */
     private function autoDetectRelations($model): array
     {
-        $relations = [];
-        $methods = get_class_methods($model);
-
-        foreach ($methods as $method) {
-            if (method_exists($model, $method) && !in_array($method, ['exists', 'increment', 'decrement'])) {
-                try {
-                    $reflection = new \ReflectionMethod($model, $method);
-
-                    // Skip protected/private, static, magic methods
-                    if (!$reflection->isPublic() || $reflection->isStatic() || str_starts_with($method, '_')) {
-                        continue;
-                    }
-
-                    // Check return type
-                    $returnType = $reflection->getReturnType();
-                    if ($returnType && !$returnType->isBuiltin()) {
-                        $typeName = $returnType->getName();
-                        if (is_subclass_of($typeName, \Illuminate\Database\Eloquent\Relations\Relation::class)) {
-                            $relations[] = $method;
-                        }
-                    }
-                } catch (\ReflectionException $e) {
-                    continue;
-                }
-            }
-        }
-
-        return $relations;
+        return $this->relationResolver()->autoDetect($model);
     }
 
     /**
@@ -1628,37 +1449,7 @@ class BaseService
      */
     private function extractRelationFiltersForModel(array $normalized, object|string $modelClass): array
     {
-        $allowedRelations = $this->getRelationsForModel($modelClass);
-        $relationFilters = [];
-
-        foreach ($normalized as $key => $value) {
-            // Skip logical operators
-            if (in_array($key, ['and', 'or'], true)) {
-                continue;
-            }
-            // Check if key is allowed relation
-            $isAllowed = false;
-            // Support dot notation: user.roles
-            if (str_contains($key, '.')) {
-                $firstSegment = explode('.', $key)[0];
-                $isAllowed = in_array($firstSegment, $allowedRelations, true);
-            } else {
-                $isAllowed = in_array($key, $allowedRelations, true);
-            }
-
-            if (!$isAllowed) {
-                throw new HttpException(
-                    400,
-                    "Relation '{$key}' is not allowed for filtering on model " .
-                    (is_object($modelClass) ? get_class($modelClass) : $modelClass) .
-                    ". Allowed relations: " . implode(', ', $allowedRelations)
-                );
-            }
-
-            $relationFilters[$key] = $value;
-        }
-
-        return $relationFilters;
+        return $this->relationResolver()->extractFilters($normalized, $modelClass);
     }
 
     /**
@@ -1670,17 +1461,7 @@ class BaseService
      */
     private function stripRelationFiltersForModel(array $normalized, object|string $modelClass): array
     {
-        $cleaned = [];
-
-        foreach ($normalized as $key => $value) {
-            // Keep only 'and'/'or' keys
-            if (in_array($key, ['and', 'or'], true)) {
-                $cleaned[$key] = $value;
-            }
-            // Everything else is a relation (will be processed separately)
-        }
-
-        return $cleaned;
+        return $this->relationResolver()->stripFilters($normalized);
     }
 
     /**
@@ -1694,57 +1475,7 @@ class BaseService
      */
     private function applyOperTree(Builder $query, mixed $oper, string $boolean = 'and', $modelClass = null): Builder
     {
-        // Check recursion limits
-        $this->currentDepth++;
-        $maxDepth = config('rest-generic-class.filtering.max_depth', 5);
-
-        if ($this->currentDepth > $maxDepth) {
-            throw new HttpException(400, "Maximum nesting depth ({$maxDepth}) exceeded.");
-        }
-
-        try {
-            // 1. Normalize structure
-            $normalized = $this->normalizeOperNode($oper);
-
-            if (empty($normalized)) {
-                return $query;
-            }
-
-            // Use current model if not specified
-            $modelClass = $modelClass ?? $this->modelClass;
-
-            // 2. Extract base conditions and relation filters
-            $baseOper = $this->stripRelationFiltersForModel($normalized, $modelClass);
-            $relationFilters = $this->extractRelationFiltersForModel($normalized, $modelClass);
-
-            // 3. Apply base conditions (and/or blocks)
-            if (!empty($baseOper)) {
-                // Count conditions
-                foreach ($baseOper as $conditions) {
-                    if (is_array($conditions)) {
-                        $this->conditionCount += count($conditions);
-                    }
-                }
-
-                $maxConditions = config('rest-generic-class.filtering.max_conditions', 100);
-                if ($this->conditionCount > $maxConditions) {
-                    throw new HttpException(400, "Maximum conditions ({$maxConditions}) exceeded.");
-                }
-
-                // ✅ PASS MODEL TO applyFilters for table prefixing
-                $query = $this->applyFilters($query, $baseOper, $boolean, $modelClass);
-            }
-
-            // 4. Apply nested whereHas for each relation
-            foreach ($relationFilters as $relationPath => $subOper) {
-                $query = $this->applyNestedWhereHas($query, $relationPath, $subOper, $boolean, $modelClass);
-            }
-
-            return $query;
-
-        } finally {
-            $this->currentDepth--;
-        }
+        return $this->operFilterPipeline()->apply($query, $oper, $boolean, $modelClass, $this->modelClass);
     }
 
     /**
@@ -1765,35 +1496,7 @@ class BaseService
                 $currentModel
     ): Builder
     {
-        $method = $boolean === 'or' ? 'orWhereHas' : 'whereHas';
-
-        // Handle dot notation: user.roles
-        if (str_contains($relationPath, '.')) {
-            $segments = explode('.', $relationPath);
-            $firstRelation = array_shift($segments);
-            $remainingPath = implode('.', $segments);
-
-            // Get related model for first segment
-            $relatedModel = $this->getRelatedModel($currentModel, $firstRelation);
-
-            return $query->{$method}($firstRelation, function ($relationQuery) use ($remainingPath, $subOper, $boolean, $relatedModel) {
-                // Recurse into nested relation
-                if ($remainingPath) {
-                    $this->applyNestedWhereHas($relationQuery, $remainingPath, $subOper, $boolean, $relatedModel);
-                } else {
-                    // Terminal node: apply subOper with correct model context
-                    $this->applyOperTree($relationQuery, $subOper, $boolean, $relatedModel);
-                }
-            });
-        }
-
-        // Simple relation (no dots)
-        $relatedModel = $this->getRelatedModel($currentModel, $relationPath);
-
-        return $query->{$method}($relationPath, function ($relationQuery) use ($subOper, $boolean, $relatedModel) {
-            // ✅ PASS RELATED MODEL to applyOperTree for correct table prefixing
-            $this->applyOperTree($relationQuery, $subOper, $boolean, $relatedModel);
-        });
+        return $this->operFilterPipeline()->applyNestedWhereHas($query, $relationPath, $subOper, $boolean, $currentModel);
     }
 
     /**
@@ -1806,29 +1509,7 @@ class BaseService
      */
     private function getRelatedModel(object|string $modelClass, string $relationName): string
     {
-        if (is_object($modelClass)) {
-            $model = $modelClass;
-            $modelClass = get_class($modelClass);
-        } else {
-            $model = new $modelClass;
-        }
-
-        if (!method_exists($model, $relationName)) {
-            throw new HttpException(400, "Relation '{$relationName}' does not exist on model {$modelClass}.");
-        }
-
-        try {
-            $relation = $model->{$relationName}();
-
-            if (!$relation instanceof \Illuminate\Database\Eloquent\Relations\Relation) {
-                throw new HttpException(400, "Method '{$relationName}' on {$modelClass} is not a valid Eloquent relation.");
-            }
-
-            return get_class($relation->getRelated());
-
-        } catch (\Throwable $e) {
-            throw new HttpException(400, "Failed to resolve related model for '{$relationName}': " . $e->getMessage());
-        }
+        return $this->relationResolver()->relatedModel($modelClass, $relationName);
     }
 
     /**
@@ -1870,45 +1551,7 @@ class BaseService
      */
     private function ensureForeignKeysInFields(object|string $parentModel, string $relationName, array $fields): array
     {
-        if (empty($fields)) {
-            return $fields;
-        }
-
-        $model = is_string($parentModel) ? new $parentModel : $parentModel;
-
-        try {
-            $relation = $model->{$relationName}();
-
-            // Always include primary key of related model
-            $relatedKeyName = $relation->getRelated()->getKeyName();
-            if (!in_array($relatedKeyName, $fields, true)) {
-                array_unshift($fields, $relatedKeyName);
-            }
-
-            // Include foreign key based on relation type
-            if ($relation instanceof \Illuminate\Database\Eloquent\Relations\BelongsTo) {
-                // BelongsTo: need foreign key on parent
-                // No need to add to $fields (fields are for related model)
-            } elseif ($relation instanceof \Illuminate\Database\Eloquent\Relations\HasOneOrMany) {
-                // HasMany/HasOne: need foreign key on related model
-                $foreignKey = $relation->getForeignKeyName();
-                $foreignKeyName = last(explode('.', $foreignKey)); // Remove table prefix
-
-                if (!in_array($foreignKeyName, $fields, true)) {
-                    array_unshift($fields, $foreignKeyName);
-                }
-            } elseif ($relation instanceof \Illuminate\Database\Eloquent\Relations\BelongsToMany) {
-                // BelongsToMany: pivot keys are handled automatically by Laravel
-                // Just ensure we have the primary key (already done above)
-            }
-
-            return array_values(array_unique($fields));
-
-        } catch (\Throwable $e) {
-            // If we can't determine foreign keys, return fields as-is
-            Log::channel('rest-generic-class')->warning("Could not determine foreign keys for relation {$relationName}: " . $e->getMessage());
-            return $fields;
-        }
+        return $this->relationResolver()->addRequiredFields($parentModel, $relationName, $fields);
     }
 
     /**
@@ -1919,39 +1562,7 @@ class BaseService
      */
     private function processNestedRelationsWithFields(array $normalized): array
     {
-        $processed = [];
-
-        foreach ($normalized as $parsed) {
-            $relation = $parsed['relation'];
-            $fields = $parsed['fields'];
-
-            if (!str_contains($relation, '.')) {
-                // Simple relation, already handled
-                $processed[] = $parsed;
-                continue;
-            }
-
-            // Nested relation: user.roles
-            $segments = $parsed['segments'];
-
-            if ($fields) {
-                // Need to ensure foreign keys at each level
-                // This is complex - Laravel handles it when you use the string syntax
-                // "user.roles:id,name" works out of the box
-                $key = $relation . ':' . implode(',', $fields);
-                $processed[] = [
-                    'relation' => $relation,
-                    'key' => $key,
-                    'fields' => $fields,
-                    'segments' => $segments,
-                    'base' => $segments[0]
-                ];
-            } else {
-                $processed[] = $parsed;
-            }
-        }
-
-        return $processed;
+        return $this->relationResolver()->processNestedWithFields($normalized);
     }
 
     // ========================================================================
