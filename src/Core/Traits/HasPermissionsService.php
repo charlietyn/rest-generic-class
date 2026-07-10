@@ -4,13 +4,14 @@ namespace Ronu\RestGenericClass\Core\Traits;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Illuminate\Support\Collection;
 use MongoDB\Laravel\Eloquent\Model;
-use Nwidart\Modules\Facades\Module;
-use Ronu\RestGenericClass\Core\Resolvers\RouteMetaResolver;
 use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\PermissionCompressorContract;
+use Ronu\RestGenericClass\Core\Support\Permissions\RoleInputResolver;
+use Ronu\RestGenericClass\Core\Support\Permissions\RolePermissionAssignmentService;
+use Ronu\RestGenericClass\Core\Support\Permissions\RoutePermissionRefresher;
+use Ronu\RestGenericClass\Core\Support\Permissions\TargetPermissionResolver;
 use Symfony\Component\Translation\Exception\NotFoundResourceException;
 
 /**
@@ -61,30 +62,18 @@ trait HasPermissionsService
         $by = strtolower((string)($options['by'] ?? 'name'));
 
         // Mode unification (controller-first); fallback to CLI flags for backward compatibility.
-        $modeOpt = strtoupper((string)($options['mode'] ?? ''));
-        $sync = (bool)($options['sync'] ?? false);
-        $revoke = (bool)($options['revoke'] ?? false);
-
-        if (in_array($modeOpt, ['ADD', 'SYNC', 'REVOKE'], true)) {
-            $mode = $modeOpt;
-            $sync = $mode === 'SYNC';
-            $revoke = $mode === 'REVOKE';
-        } else {
-            if ($sync && $revoke) {
-                throw new \InvalidArgumentException('Cannot use both sync and revoke simultaneously.');
-            }
-            $mode = $revoke ? 'REVOKE' : ($sync ? 'SYNC' : 'ADD');
-        }
+        $assignment = app(RolePermissionAssignmentService::class);
+        $mode = $assignment->resolveMode($options);
 
         if (empty($roleInputs)) {
             throw new \InvalidArgumentException('You must provide at least one role.');
         }
-        $roles = $this->resolveRoles($roleInputs, $by, $guard);
+        $roles = app(RoleInputResolver::class)->resolve($roleInputs, $by, $guard);
         if ($roles->isEmpty()) {
             throw new NotFoundResourceException('No roles found for the given identifiers and guard.');
         }
         // Resolve target permissions (multi-source).
-        [$resolvedPerms, $createdNames, $usedDefaultAll] = $this->resolveTargetPermissions(
+        [$resolvedPerms, $createdNames, $usedDefaultAll] = app(TargetPermissionResolver::class)->resolve(
             guard: $guard,
             perms: $options['perms'] ?? null,
             prefix: $options['prefix'] ?? null,
@@ -103,34 +92,14 @@ trait HasPermissionsService
         foreach ($roles as $role) {
             $roleName = $role->name;
             if (!$dryRun) {
-                if ($mode === 'REVOKE') {
-                    $role->revokePermissionTo($resolvedPerms);
-                } elseif ($mode === 'SYNC') {
-                    $role->syncPermissions($resolvedPerms);
-                } else { // ADD
-                    $role->givePermissionTo($resolvedPerms);
-                }
+                $assignment->applyToRole($role, $mode, $resolvedPerms);
             }
-
-            // Rows for painting/JSON
-            $rows = $resolvedPerms
-                ->sortBy('name')
-                ->map(function ($perm) use ($mode) {
-                    return [
-                        'permission' => $perm->name,
-                        'module' => $perm->module ?? '-',
-                        'guard' => $perm->guard_name,
-                        'action' => $mode,
-                    ];
-                })
-                ->values()
-                ->all();
 
             $perRole[] = [
                 'role' => $roleName,
                 'guard' => $guard,
                 'mode' => $mode,
-                'rows' => $rows,
+                'rows' => $assignment->rows($resolvedPerms, $mode),
             ];
         }
 
@@ -188,20 +157,8 @@ trait HasPermissionsService
         $pivot = (array)($options['pivot'] ?? []);
 
         // Mode unification (controller-first), fallback to flags
-        $modeOpt = strtoupper((string)($options['mode'] ?? ''));
-        $sync = (bool)($options['sync'] ?? false);
-        $revoke = (bool)($options['revoke'] ?? false);
-
-        if (in_array($modeOpt, ['ADD', 'SYNC', 'REVOKE'], true)) {
-            $mode = $modeOpt;
-            $sync = $mode === 'SYNC';
-            $revoke = $mode === 'REVOKE';
-        } else {
-            if ($sync && $revoke) {
-                throw new \InvalidArgumentException('Cannot use both sync and revoke simultaneously.');
-            }
-            $mode = $revoke ? 'REVOKE' : ($sync ? 'SYNC' : 'ADD');
-        }
+        $assignment = app(RolePermissionAssignmentService::class);
+        $mode = $assignment->resolveMode($options);
 
         if (empty($userInputs)) {
             throw new \InvalidArgumentException('You must provide at least one user identifier.');
@@ -214,7 +171,7 @@ trait HasPermissionsService
         }
 
         // Resolve target permissions
-        [$resolvedPerms, $createdNames, $usedDefaultAll] = $this->resolveTargetPermissions(
+        [$resolvedPerms, $createdNames, $usedDefaultAll] = app(TargetPermissionResolver::class)->resolve(
             guard: $guard,
             perms: $options['perms'] ?? null,
             prefix: $options['prefix'] ?? null,
@@ -233,48 +190,14 @@ trait HasPermissionsService
         foreach ($users as $user) {
             // Apply changes
             if (!$dryRun) {
-                if ($mode === 'REVOKE') {
-                    $user->revokePermissionTo($resolvedPerms);
-                } elseif ($mode === 'SYNC') {
-                    if (!empty($pivot)) {
-                        $map = [];
-                        foreach ($resolvedPerms as $perm) {
-                            $map[$perm->getKey()] = $pivot;
-                        }
-                        $user->permissions()->sync($map); // keep pivot
-                    } else {
-                        $user->syncPermissions($resolvedPerms);
-                    }
-                } else { // ADD
-                    if (!empty($pivot)) {
-                        $payload = [];
-                        foreach ($resolvedPerms as $perm) {
-                            $payload[$perm->getKey()] = $pivot;
-                        }
-                        $user->permissions()->syncWithoutDetaching($payload);
-                    } else {
-                        $user->givePermissionTo($resolvedPerms);
-                    }
-                }
+                $assignment->applyToUser($user, $mode, $resolvedPerms, $pivot);
             }
-
-            // Output rows
-            $rows = $resolvedPerms
-                ->sortBy('name')
-                ->map(fn($perm) => [
-                    'permission' => $perm->name,
-                    'module' => $perm->module ?? '-',
-                    'guard' => $perm->guard_name,
-                    'action' => $mode,
-                ])
-                ->values()
-                ->all();
 
             $perUser[] = [
                 'user_label' => $this->formatUserLabel($user, $by),
                 'guard' => $guard,
                 'mode' => $mode,
-                'rows' => $rows,
+                'rows' => $assignment->rows($resolvedPerms, $mode),
             ];
         }
 
@@ -527,219 +450,10 @@ trait HasPermissionsService
 
     // ----------------- Helpers (private) -----------------
 
-    /**
-     * NEW: Resolver roles por 'name' o por 'id' (guard-aware).
-     * @throws \Throwable
-     */
-    private function resolveRoles(array $roleInputs, string $by, string $guard): Collection
-    {
-        $roleClass = app(config('permission.models.role'));
-        $list = collect($roleInputs)
-            ->flatMap(fn($r) => Str::of((string)$r)->explode(','))
-            ->map(fn($r) => trim((string)$r))
-            ->filter()
-            ->unique()
-            ->values();
-
-        $roles = collect();
-        try {
-            foreach ($list as $field) {
-                try {
-                    $role = $roleClass::query()->where($by, $field)->where('guard_name', $guard)->get()->first();
-                    $roles->push($role);
-                } catch (\Throwable $e) {
-                    throw $e;
-                }
-            }
-        } catch (\Throwable $e) {
-            $message = $e->getMessage();
-            if (str_contains($e->getMessage(), 'column') && str_contains($e->getMessage(), 'does not exist')) {
-                $column = explode('"', $e->getMessage())[1] ?? 'unknown';
-                $message = "Error querying roles by '{$by}' (column '{$column}' may not exist). ";
-            }
-            $message = "Error querying roles by '{$by}' " . explode('ERROR', explode('(', $e->getMessage())[0])[1] ?? 'unknown';
-            throw new \RuntimeException($message);
-        }
-        return $roles->filter()->unique('id')->values();
-    }
-
-    /** @return array{0:Collection,1:array,2:bool} [resolvedPerms, createdNames, usedDefaultAll] */
-    private function resolveTargetPermissions(
-        string  $guard,
-        ?array  $perms,
-        ?string $prefix,
-        ?string $from,
-        ?array  $modules,
-        ?array  $entities,
-    ): array
-    {
-        $names = collect();
-        $permissionClass = app(config('permission.models.permission'));
-        if (!empty($perms)) {
-            $names = $names->merge($this->normalizeList($perms));
-        }
-
-        if ($prefix) {
-            $prefixed = $permissionClass::query()
-                ->where('guard_name', $guard)
-                ->where('name', 'like', $prefix . '%')
-                ->pluck('name');
-            $names = $names->merge($prefixed);
-        }
-
-        if ($from) {
-            $names = $names->merge($this->loadPermsFromFile($from));
-        }
-
-        if (!empty($modules)) {
-            $byModule = $this->loadPermsByModule($guard, $this->normalizeList($modules), $permissionClass);
-            $names = $names->merge($byModule->pluck('name'));
-        }
-
-        if (!empty($entities)) {
-            $byEntity = $this->loadPermsByEntity($guard, $this->normalizeList($entities), $permissionClass);
-            $names = $names->merge($byEntity->pluck('name'));
-        }
-
-        $names = $names->map(fn($n) => trim((string)$n))->filter()->unique()->values();
-
-        $usedDefaultAll = false;
-        $createdNames = [];
-        $resolved = collect();
-
-        if ($names->isEmpty() && !$prefix && !$from && empty($modules) && empty($entities)) {
-            $usedDefaultAll = true;
-            $all = $permissionClass::query()->where('guard_name', $guard)->get();
-            return [$all, $createdNames, true];
-        }
-
-        foreach ($names as $name) {
-            $perm = $permissionClass::where('name', $name)->where('guard_name', $guard)->first();
-            if ($perm) {
-                $resolved->push($perm);
-            }
-        }
-
-        return [$resolved->unique('id')->values(), $createdNames, $usedDefaultAll];
-    }
-
-    private function loadPermsByModule(string $guard, array $modules, $permissionClass): Collection
-    {
-        return $permissionClass::query()
-            ->where('guard_name', $guard)
-            ->whereIn('module', $modules)
-            ->get();
-    }
-
-    private function loadPermsByEntity(string $guard, array $entities, $permissionClass): Collection
-    {
-        return $permissionClass::query()
-            ->where('guard_name', $guard)
-            ->where(function (Builder $outer) use ($entities) {
-                foreach ($entities as $raw) {
-                    $raw = trim((string)$raw);
-                    $module = null;
-                    $entity = $raw;
-
-                    if (Str::contains($raw, '.')) {
-                        $module = Str::before($raw, '.');
-                        $entity = Str::after($raw, '.');
-                    }
-
-                    $outer->orWhere(function (Builder $sub) use ($entity, $module) {
-                        $sub->where('model', 'ilike', $entity);
-                        if (!empty($module)) {
-                            $sub->where('module', 'ilike', $module);
-                        }
-                    });
-                }
-            })
-            ->get();
-    }
-
-    private function normalizeList(array $values): array
-    {
-        return collect($values)
-            ->flatMap(fn($v) => Str::of((string)$v)->explode(','))
-            ->map(fn($v) => trim((string)$v))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-    }
-
-    private function loadPermsFromFile(string $from): array
-    {
-        $filePath = base_path($from);
-        if (!is_file($filePath)) {
-            throw new \RuntimeException("File not found: {$filePath}");
-        }
-        $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
-        $contents = file_get_contents($filePath);
-
-        if ($ext === 'json') {
-            $list = json_decode($contents, true);
-        } elseif (in_array($ext, ['yml', 'yaml'])) {
-            if (!function_exists('yaml_parse')) {
-                throw new \RuntimeException('YAML extension not available (yaml_parse missing). Use JSON or enable ext/yaml.');
-            }
-            $list = yaml_parse($contents);
-        } else {
-            throw new \RuntimeException('Unsupported file extension. Use .json or .yml/.yaml');
-        }
-
-        if (!is_array($list)) {
-            throw new \RuntimeException('The file does not contain a valid flat list.');
-        }
-
-        return $this->normalizeList($list);
-    }
-
     public function refreshPermissions($guard, $dry): array
     {
-        Artisan::call('cache:forget spatie.permission.cache');
-        $exclude_actions = ['.create', '.edit'];
-        $cfg = config('route-permissions', []);
-        $permissionClass = app(config('permission.models.permission'));
-        $routes = Route::getRoutes();
-        $modules = Module::toCollection()->map->getName()->values()->all();
-        $rows = [];
-        /** @var RouteMetaResolver $resolver */
-        $resolver = app(RouteMetaResolver::class);
-        foreach ($routes as $route) {
-            $meta = $resolver->resolveFromRoute($route, $guard, $modules, $cfg);
-            if (!$meta) {
-                continue;
-            }
-            $permissionName = $meta->canonicalName;
-
-            $rows[] = [
-                'permission' => $permissionName,
-                'model' => $meta->model,
-                'type' => $meta->action,
-                'route' => $meta->uri,
-                'methods' => implode('|', $meta->verbs),
-                'controller' => $meta->controllerAction,
-            ];
-            if ($dry) continue;
-            $attributes = [
-                'name' => $permissionName,
-                'guard_name' => $guard,
-                'module' => $meta->module,
-                'route' => $meta->uri,
-                'type' => $meta->action,
-                'model' => $meta->model,
-                'restrict' => $meta->module !== $this->generalModule,
-                'action' => $meta->controllerAction,
-            ];
-            $permission_entity = $permissionClass::query()->where(['name' => $permissionName])->get()->first();
-            if (!$permission_entity) {
-                $permissionClass::create($attributes);
-            } else {
-                $permission_entity->fill($attributes)->save();
-            }
-        }
-        return collect($rows)->unique('permission')->values()->all();
+        return app(RoutePermissionRefresher::class, ['generalModule' => $this->generalModule])
+            ->refresh($guard, $dry);
     }
 
     protected function passesFilters(string $uri, ?string $name, array $middlewares, array $cfg): bool

@@ -11,14 +11,14 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\CursorPaginator;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Mail;
-use Maatwebsite\Excel\Facades\Excel;
 use Nwidart\Modules\Facades\Module;
 use Ronu\RestGenericClass\Core\Contracts\HasRestRelations;
-use Ronu\RestGenericClass\Core\Exports\ModelExport;
 use Ronu\RestGenericClass\Core\Services\Support\CacheCoordinator;
+use Ronu\RestGenericClass\Core\Services\Support\ExportCoordinator;
+use Ronu\RestGenericClass\Core\Services\Support\HierarchyCoordinator;
 use Ronu\RestGenericClass\Core\Services\Support\OperFilterPipeline;
+use Ronu\RestGenericClass\Core\Services\Support\PaginationCoordinator;
 use Ronu\RestGenericClass\Core\Services\Support\QueryBuilderPipeline;
 use Ronu\RestGenericClass\Core\Services\Support\RelationResolver;
 use Ronu\RestGenericClass\Core\Traits\HasDynamicFilter;
@@ -146,17 +146,45 @@ class BaseService
         );
     }
 
+    private function paginationCoordinator(): PaginationCoordinator
+    {
+        $model = $this->modelClass instanceof Model
+            ? $this->modelClass
+            : new $this->modelClass;
+
+        return new PaginationCoordinator($model);
+    }
+
+    private function exportCoordinator(): ExportCoordinator
+    {
+        $model = $this->modelClass instanceof Model
+            ? $this->modelClass
+            : new $this->modelClass;
+
+        return new ExportCoordinator(
+            $model,
+            fn ($params): mixed => $this->list_all($params)
+        );
+    }
+
+    private function hierarchyCoordinator(): HierarchyCoordinator
+    {
+        $model = $this->modelClass instanceof Model
+            ? $this->modelClass
+            : new $this->modelClass;
+
+        return new HierarchyCoordinator(
+            $model,
+            fn (array $params, Builder $query): Builder => $this->process_query($params, $query),
+            fn (Builder $query, mixed $relations, mixed $oper = null): Builder => $this->relations($query, $relations, $oper),
+            fn (array $params, bool $toJson = true): mixed => $this->list_all($params, $toJson),
+            fn (array $params, mixed $id): mixed => $this->show($params, $id)
+        );
+    }
 
     private function pagination($query, $pagination): LengthAwarePaginator
     {
-        if (is_string($pagination))
-            $pagination = json_decode($pagination, true);
-        $currentPage = isset($pagination["page"]) ? $pagination["page"] : 1;
-        $pageSize = isset($pagination["pageSize"]) ? $pagination["pageSize"] : (isset($pagination["pagesize"]) ? $pagination["pagesize"] : null);
-        Paginator::currentPageResolver(function () use ($currentPage) {
-            return $currentPage;
-        });
-        return $query->paginate($pageSize);
+        return $this->paginationCoordinator()->paginate($query, $pagination);
     }
 
     /***
@@ -476,20 +504,7 @@ class BaseService
      */
     public function process_pagination($params, $query): mixed
     {
-        $pagination_lower = array_change_key_case($params['pagination']);
-        $pagesize = array_key_exists('pagesize', $pagination_lower) ? $pagination_lower['pagesize'] : $this->modelClass->getPerPage();
-        if (!isset($params['pagination']['infinity']) || $params['pagination']['infinity'] !== true)
-            return $this->pagination($query, $params['pagination']);
-        else {
-            $cursor = isset($params['pagination']['cursor']) ? $params['pagination']['cursor'] : null;
-            $items = $query->cursorPaginate($pagesize, ['*'], 'cursor', $cursor);
-            return $items;
-//            return [
-//                'data' => $items->items(),
-//                'next_cursor' => $items->nextCursor()?->encode(),
-//                'has_more' => $items->hasMorePages(),
-//            ];
-        }
+        return $this->paginationCoordinator()->process($params, $query);
     }
 
     public function get_one($params, $toJson = true): mixed
@@ -719,355 +734,7 @@ class BaseService
      */
     public function showHierarchy(array $params, mixed $id): array
     {
-        // Validate model supports hierarchy
-        if (!$this->modelClass->hasHierarchyField()) {
-            throw new HttpException(400,
-                "Model " . get_class($this->modelClass) . " does not support hierarchical show. " .
-                "Define const HIERARCHY_FIELD_ID to enable this feature."
-            );
-        }
-
-        // Normalize hierarchy parameters with show-specific defaults
-        $hierarchyConfig = $this->normalizeShowHierarchyParams($params['hierarchy']);
-
-        if ($hierarchyConfig === null) {
-            // Hierarchy disabled, fallback to normal show
-            unset($params['hierarchy']);
-            return $this->show($params, $id)->toArray();
-        }
-
-        $hierarchyFieldId = $this->modelClass->getHierarchyFieldId();
-        $primaryKey = $this->modelClass->getKeyName();
-        $childrenKey = $hierarchyConfig['children_key'];
-        $maxDepth = $hierarchyConfig['max_depth'];
-        $mode = $hierarchyConfig['mode'];
-        $includeEmptyChildren = $hierarchyConfig['include_empty_children'];
-
-        // Get the requested record
-        $nested = isset($params['_nested']) ? $params['_nested'] : false;
-        $query = $this->modelClass->query();
-        if (isset($params['relations'])) {
-            $query = $this->relations($query, $params['relations'], $nested ? $params["oper"] : null);
-        }
-        if (isset($params['select'])) {
-            $query = $query->select($params['select']);
-        }
-        $record = $query->findOrFail($id);
-
-        // Build the hierarchical response based on mode
-        $result = $this->buildShowHierarchy(
-            $record,
-            $mode,
-            $hierarchyFieldId,
-            $primaryKey,
-            $childrenKey,
-            $maxDepth,
-            $includeEmptyChildren,
-            $params
-        );
-
-        return $result;
-    }
-
-    /**
-     * Normalize hierarchy parameters for show endpoint.
-     *
-     * @param mixed $hierarchy Raw hierarchy parameter
-     * @return array|null Normalized config or null if disabled
-     */
-    private function normalizeShowHierarchyParams(mixed $hierarchy): ?array
-    {
-        $defaults = [
-            'children_key' => 'children',
-            'max_depth' => null,
-            'mode' => 'with_descendants',  // Default for show is with_descendants
-            'include_empty_children' => true,
-        ];
-
-        $validModes = ['node_only', 'with_descendants', 'with_ancestors', 'full_branch'];
-
-        if ($hierarchy === null || $hierarchy === false) {
-            return null;
-        }
-
-        // Simple boolean true - use defaults
-        if ($hierarchy === true || $hierarchy === 'true' || $hierarchy === '1') {
-            return $defaults;
-        }
-
-        // Parse JSON string if needed
-        if (is_string($hierarchy)) {
-            $decoded = json_decode($hierarchy, true);
-            if (json_last_error() === JSON_ERROR_NONE) {
-                $hierarchy = $decoded;
-            } else {
-                return null;
-            }
-        }
-
-        if (!is_array($hierarchy)) {
-            return null;
-        }
-
-        // Check for enabled flag
-        if (isset($hierarchy['enabled']) && !$hierarchy['enabled']) {
-            return null;
-        }
-
-        // Merge with defaults
-        $config = array_merge($defaults, $hierarchy);
-
-        // Validate mode
-        if (!in_array($config['mode'], $validModes, true)) {
-            throw new HttpException(400, "Invalid hierarchy mode '{$config['mode']}'. Valid modes for show: " . implode(', ', $validModes));
-        }
-
-        // Validate max_depth
-        if ($config['max_depth'] !== null && (!is_int($config['max_depth']) || $config['max_depth'] < 1)) {
-            throw new HttpException(400, "Hierarchy max_depth must be a positive integer or null.");
-        }
-
-        return $config;
-    }
-
-    /**
-     * Build hierarchical structure for show endpoint.
-     *
-     * @param Model $record The main record
-     * @param string $mode Hierarchy mode
-     * @param string $hierarchyFieldId FK field name
-     * @param string $primaryKey PK field name
-     * @param string $childrenKey Children array key
-     * @param int|null $maxDepth Maximum depth
-     * @param bool $includeEmptyChildren Include empty children arrays
-     * @param array $params Original query params (for relations/select)
-     * @return array Hierarchical structure
-     */
-    private function buildShowHierarchy(
-        $record,
-        string $mode,
-        string $hierarchyFieldId,
-        string $primaryKey,
-        string $childrenKey,
-        ?int $maxDepth,
-        bool $includeEmptyChildren,
-        array $params
-    ): array
-    {
-        $recordId = $record->{$primaryKey};
-
-        switch ($mode) {
-            case 'node_only':
-                // Just the node with empty children
-                $result = $record->toArray();
-                if ($includeEmptyChildren) {
-                    $result[$childrenKey] = [];
-                }
-                return $result;
-
-            case 'with_descendants':
-                // Node + all descendants as tree - optimized single query approach
-                $allRecords = $this->loadDescendantsOptimized(
-                    collect([$record]),
-                    $hierarchyFieldId,
-                    $primaryKey,
-                    $params
-                );
-
-                $tree = $this->buildHierarchyTree(
-                    $allRecords,
-                    $hierarchyFieldId,
-                    $primaryKey,
-                    $childrenKey,
-                    $maxDepth,
-                    $includeEmptyChildren
-                );
-
-                // Find and return only the requested node with its descendants
-                return $this->findNodeInTree($tree, $recordId, $primaryKey) ?? $record->toArray();
-
-            case 'with_ancestors':
-                // Build chain from root to this node - optimized
-                $allRecords = $this->loadAncestorsOptimized(
-                    collect([$record]),
-                    $hierarchyFieldId,
-                    $primaryKey,
-                    $params
-                );
-
-                $tree = $this->buildHierarchyTree(
-                    $allRecords,
-                    $hierarchyFieldId,
-                    $primaryKey,
-                    $childrenKey,
-                    $maxDepth,
-                    $includeEmptyChildren
-                );
-
-                // Return the root (which contains the chain to our node)
-                return $tree[0] ?? $record->toArray();
-
-            case 'full_branch':
-                // Ancestors + node + descendants - optimized
-                $withAncestors = $this->loadAncestorsOptimized(
-                    collect([$record]),
-                    $hierarchyFieldId,
-                    $primaryKey,
-                    $params
-                );
-
-                $allRecords = $this->loadDescendantsOptimized(
-                    $withAncestors,
-                    $hierarchyFieldId,
-                    $primaryKey,
-                    $params
-                );
-
-                $tree = $this->buildHierarchyTree(
-                    $allRecords,
-                    $hierarchyFieldId,
-                    $primaryKey,
-                    $childrenKey,
-                    $maxDepth,
-                    $includeEmptyChildren
-                );
-
-                // Return the root of the branch
-                return $tree[0] ?? $record->toArray();
-
-            default:
-                return $record->toArray();
-        }
-    }
-
-    /**
-     * Load descendants with optimized queries (loads full records, not just IDs).
-     *
-     * @param \Illuminate\Support\Collection $records Starting records
-     * @param string $hierarchyFieldId FK field name
-     * @param string $primaryKey PK field name
-     * @param array $params Query params for relations/select
-     * @return \Illuminate\Support\Collection All records including descendants
-     */
-    private function loadDescendantsOptimized(
-        \Illuminate\Support\Collection $records,
-        string                         $hierarchyFieldId,
-        string                         $primaryKey,
-        array                          $params
-    ): \Illuminate\Support\Collection
-    {
-        $existingIds = $records->pluck($primaryKey)->toArray();
-        $allDescendants = collect();
-
-        // BFS to get all descendants - load full records in each iteration
-        $currentIds = $existingIds;
-        while (!empty($currentIds)) {
-            $query = $this->modelClass->query()
-                ->whereIn($hierarchyFieldId, $currentIds);
-
-            // Apply relations if specified
-            if (isset($params['relations'])) {
-                $query = $this->relations($query, $params['relations'], null);
-            }
-            // Apply select if specified
-            if (isset($params['select'])) {
-                $query = $query->select($params['select']);
-            }
-
-            $children = $query->get();
-
-            if ($children->isEmpty()) {
-                break;
-            }
-
-            // Filter out already processed records
-            $newChildren = $children->filter(function ($child) use ($existingIds, $allDescendants, $primaryKey) {
-                $id = $child->{$primaryKey};
-                return !in_array($id, $existingIds) && !$allDescendants->contains($primaryKey, $id);
-            });
-
-            if ($newChildren->isEmpty()) {
-                break;
-            }
-
-            $allDescendants = $allDescendants->merge($newChildren);
-            $currentIds = $newChildren->pluck($primaryKey)->toArray();
-        }
-
-        return $records->merge($allDescendants);
-    }
-
-    /**
-     * Load ancestors with optimized queries (loads full records, not just IDs).
-     *
-     * @param \Illuminate\Support\Collection $records Starting records
-     * @param string $hierarchyFieldId FK field name
-     * @param string $primaryKey PK field name
-     * @param array $params Query params for relations/select
-     * @return \Illuminate\Support\Collection All records including ancestors
-     */
-    private function loadAncestorsOptimized(
-        \Illuminate\Support\Collection $records,
-        string                         $hierarchyFieldId,
-        string                         $primaryKey,
-        array                          $params
-    ): \Illuminate\Support\Collection
-    {
-        $existingIds = $records->pluck($primaryKey)->toArray();
-        $ancestorIds = [];
-
-        // Collect all ancestor IDs first (this is fast, just IDs)
-        foreach ($records as $record) {
-            $parentId = $record->{$hierarchyFieldId};
-            while ($parentId !== null && !in_array($parentId, $existingIds) && !in_array($parentId, $ancestorIds)) {
-                $ancestorIds[] = $parentId;
-                $parent = $this->modelClass->query()
-                    ->select([$primaryKey, $hierarchyFieldId])
-                    ->find($parentId);
-                $parentId = $parent ? $parent->{$hierarchyFieldId} : null;
-            }
-        }
-
-        // Load all ancestors in a single query with relations/select
-        if (!empty($ancestorIds)) {
-            $query = $this->modelClass->query()->whereIn($primaryKey, $ancestorIds);
-
-            if (isset($params['relations'])) {
-                $query = $this->relations($query, $params['relations'], null);
-            }
-            if (isset($params['select'])) {
-                $query = $query->select($params['select']);
-            }
-
-            $ancestors = $query->get();
-            $records = $records->merge($ancestors)->unique($primaryKey);
-        }
-
-        return $records;
-    }
-
-    /**
-     * Find a node in a tree by its ID.
-     *
-     * @param array $tree Tree structure
-     * @param mixed $nodeId ID to find
-     * @param string $primaryKey Primary key name
-     * @return array|null The found node or null
-     */
-    private function findNodeInTree(array $tree, mixed $nodeId, string $primaryKey): ?array
-    {
-        foreach ($tree as $node) {
-            if (($node[$primaryKey] ?? null) == $nodeId) {
-                return $node;
-            }
-            if (isset($node['children']) && !empty($node['children'])) {
-                $found = $this->findNodeInTree($node['children'], $nodeId, $primaryKey);
-                if ($found !== null) {
-                    return $found;
-                }
-            }
-        }
-        return null;
+        return $this->hierarchyCoordinator()->show($params, $id);
     }
 
     public function destroy($id): array
@@ -1327,69 +994,27 @@ class BaseService
 
     public function exportExcel($params)
     {
-        $result = $this->list_all($params);
-        $data = $this->extractExportData($result);
-        $columns = $this->resolveExportColumns($params);
-        $filename = $params['filename'] ?? 'excel.xlsx';
-        return Excel::download(new ModelExport($data, $columns), $filename);
+        return $this->exportCoordinator()->exportExcel($params);
     }
 
     public function exportPdf($params)
     {
-        $result = $this->list_all($params);
-        $data = $this->extractExportData($result);
-        $columns = $this->resolveExportColumns($params);
-        $template = $params['template'] ?? 'pdf';
-        $filename = $params['filename'] ?? 'pdf_file.pdf';
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView($template, [
-            'data' => $data,
-            'columns' => $columns,
-            'model' => $this->modelClass,
-            'params' => $params,
-        ]);
-        // download PDF file with download method
-        return $pdf->download($filename);
+        return $this->exportCoordinator()->exportPdf($params);
     }
 
     private function extractExportData(mixed $result): array
     {
-        if ($result instanceof LengthAwarePaginator) {
-            return $result->items();
-        }
-        if (is_array($result) && array_key_exists('data', $result)) {
-            return $result['data'];
-        }
-        if (is_array($result)) {
-            return $result;
-        }
-        return [];
+        return $this->exportCoordinator()->extractData($result);
     }
 
     private function resolveExportColumns(array $params): array
     {
-        if (array_key_exists('columns', $params)) {
-            return $this->normalizeExportColumns($params['columns']);
-        }
-        $select = $params['select'] ?? '*';
-        if ($select === '*') {
-            return $this->modelClass->getFillable();
-        }
-        if (is_array($select) && count($select) === 1 && $select[0] === '*') {
-            return $this->modelClass->getFillable();
-        }
-        $normalized = $this->normalizeExportColumns($select);
-        return empty($normalized) ? $this->modelClass->getFillable() : $normalized;
+        return $this->exportCoordinator()->resolveColumns($params);
     }
 
     private function normalizeExportColumns(mixed $columns): array
     {
-        if (is_string($columns)) {
-            $columns = array_filter(array_map('trim', explode(',', $columns)));
-        }
-        if (!is_array($columns)) {
-            return [];
-        }
-        return array_values(array_filter($columns, static fn($value) => $value !== ''));
+        return $this->exportCoordinator()->normalizeColumns($columns);
     }
 
     public static function sendEmail($view, $variables, $from, $name, $email, $subject): array
@@ -1565,83 +1190,6 @@ class BaseService
         return $this->relationResolver()->processNestedWithFields($normalized);
     }
 
-    // ========================================================================
-    // HIERARCHY METHODS - Self-referencing hierarchical listing
-    // ========================================================================
-
-    /**
-     * Default hierarchy configuration values
-     */
-    private const HIERARCHY_DEFAULTS = [
-        'children_key' => 'children',
-        'max_depth' => null,
-        'filter_mode' => 'match_only',
-        'include_empty_children' => true,
-    ];
-
-    /**
-     * Valid filter modes for hierarchy
-     */
-    private const HIERARCHY_FILTER_MODES = [
-        'match_only',       // Only nodes that match the filter
-        'with_ancestors',   // Matching nodes + their ancestors up to root
-        'with_descendants', // Matching nodes + all their descendants
-        'full_branch',      // Matching nodes + ancestors + descendants
-        'root_filter',      // Filter only applies to root nodes, descendants included without filter
-    ];
-
-    /**
-     * Normalize hierarchy parameter to standard format.
-     *
-     * @param mixed $hierarchy Raw hierarchy parameter (true, false, or object)
-     * @return array|null Normalized hierarchy config or null if disabled
-     */
-    private function normalizeHierarchyParams(mixed $hierarchy): ?array
-    {
-        if ($hierarchy === null || $hierarchy === false) {
-            return null;
-        }
-
-        // Simple boolean true - use all defaults
-        if ($hierarchy === true || $hierarchy === 'true' || $hierarchy === '1') {
-            return self::HIERARCHY_DEFAULTS;
-        }
-
-        // Parse JSON string if needed
-        if (is_string($hierarchy)) {
-            $decoded = json_decode($hierarchy, true);
-            if (json_last_error() === JSON_ERROR_NONE) {
-                $hierarchy = $decoded;
-            } else {
-                return null;
-            }
-        }
-
-        if (!is_array($hierarchy)) {
-            return null;
-        }
-
-        // Check for enabled flag
-        if (isset($hierarchy['enabled']) && !$hierarchy['enabled']) {
-            return null;
-        }
-
-        // Merge with defaults
-        $config = array_merge(self::HIERARCHY_DEFAULTS, $hierarchy);
-
-        // Validate filter_mode
-        if (!in_array($config['filter_mode'], self::HIERARCHY_FILTER_MODES, true)) {
-            throw new HttpException(400, "Invalid hierarchy filter_mode '{$config['filter_mode']}'. Valid modes: " . implode(', ', self::HIERARCHY_FILTER_MODES));
-        }
-
-        // Validate max_depth
-        if ($config['max_depth'] !== null && (!is_int($config['max_depth']) || $config['max_depth'] < 1)) {
-            throw new HttpException(400, "Hierarchy max_depth must be a positive integer or null.");
-        }
-
-        return $config;
-    }
-
     /**
      * List all records in hierarchical (tree) structure.
      *
@@ -1652,376 +1200,6 @@ class BaseService
      */
     public function listHierarchy(array $params, bool $toJson = true): mixed
     {
-        // Validate model supports hierarchy
-        if (!$this->modelClass->hasHierarchyField()) {
-            throw new HttpException(400,
-                "Model " . get_class($this->modelClass) . " does not support hierarchical listing. " .
-                "Define const HIERARCHY_FIELD_ID to enable this feature."
-            );
-        }
-
-        // Normalize hierarchy parameters
-        $hierarchyConfig = $this->normalizeHierarchyParams($params['hierarchy']);
-
-        if ($hierarchyConfig === null) {
-            // Hierarchy disabled, fallback to normal listing
-            unset($params['hierarchy']);
-            return $this->list_all($params, $toJson);
-        }
-
-        $hierarchyFieldId = $this->modelClass->getHierarchyFieldId();
-        $primaryKey = $this->modelClass->getKeyName();
-        $childrenKey = $hierarchyConfig['children_key'];
-        $maxDepth = $hierarchyConfig['max_depth'];
-        $filterMode = $hierarchyConfig['filter_mode'];
-        $includeEmptyChildren = $hierarchyConfig['include_empty_children'];
-
-        // Build and execute query based on filter mode
-        $query = $this->modelClass->query();
-        $query = $this->process_query($params, $query);
-
-        // Get all matching records
-        $allRecords = $query->get();
-
-        // Apply filter mode logic to get the final set of IDs
-        $finalRecords = $this->applyHierarchyFilterMode(
-            $allRecords,
-            $filterMode,
-            $hierarchyFieldId,
-            $primaryKey
-        );
-
-        // Build the tree structure
-        $tree = $this->buildHierarchyTree(
-            $finalRecords,
-            $hierarchyFieldId,
-            $primaryKey,
-            $childrenKey,
-            $maxDepth,
-            $includeEmptyChildren
-        );
-
-        // Handle pagination (only for root nodes)
-        if (isset($params['pagination'])) {
-            return $this->paginateHierarchyRoots($tree, $params['pagination'], $childrenKey);
-        }
-
-        return $toJson ? ['data' => $tree] : $tree;
-    }
-
-    /**
-     * Apply filter mode logic to get the final set of records for hierarchy.
-     *
-     * @param \Illuminate\Support\Collection $matchedRecords Records that matched the filters
-     * @param string $filterMode The filter mode to apply
-     * @param string $hierarchyFieldId Foreign key field name
-     * @param string $primaryKey Primary key field name
-     * @return \Illuminate\Support\Collection Final collection of records
-     */
-    private function applyHierarchyFilterMode(
-        \Illuminate\Support\Collection $matchedRecords,
-        string                         $filterMode,
-        string                         $hierarchyFieldId,
-        string                         $primaryKey
-    ): \Illuminate\Support\Collection
-    {
-        if ($matchedRecords->isEmpty()) {
-            return $matchedRecords;
-        }
-
-        switch ($filterMode) {
-            case 'match_only':
-                // Return only matched records, organized hierarchically
-                return $matchedRecords;
-
-            case 'with_ancestors':
-                // Get ancestors for all matched records
-                return $this->addAncestorsToCollection($matchedRecords, $hierarchyFieldId, $primaryKey);
-
-            case 'with_descendants':
-                // Get descendants for all matched records
-                return $this->addDescendantsToCollection($matchedRecords, $hierarchyFieldId, $primaryKey);
-
-            case 'full_branch':
-                // Get both ancestors and descendants
-                $withAncestors = $this->addAncestorsToCollection($matchedRecords, $hierarchyFieldId, $primaryKey);
-                return $this->addDescendantsToCollection($withAncestors, $hierarchyFieldId, $primaryKey);
-
-            case 'root_filter':
-                // Only root nodes were filtered, load all descendants
-                $rootRecords = $matchedRecords->filter(fn($r) => $r->{$hierarchyFieldId} === null);
-                return $this->addDescendantsToCollection($rootRecords, $hierarchyFieldId, $primaryKey);
-
-            default:
-                return $matchedRecords;
-        }
-    }
-
-    /**
-     * Add ancestors to a collection of records.
-     *
-     * @param \Illuminate\Support\Collection $records Current records
-     * @param string $hierarchyFieldId Foreign key field name
-     * @param string $primaryKey Primary key field name
-     * @return \Illuminate\Support\Collection Records with ancestors added
-     */
-    private function addAncestorsToCollection(
-        \Illuminate\Support\Collection $records,
-        string                         $hierarchyFieldId,
-        string                         $primaryKey
-    ): \Illuminate\Support\Collection
-    {
-        $existingIds = $records->pluck($primaryKey)->toArray();
-        $ancestorIds = [];
-
-        foreach ($records as $record) {
-            $parentId = $record->{$hierarchyFieldId};
-            while ($parentId !== null && !in_array($parentId, $existingIds) && !in_array($parentId, $ancestorIds)) {
-                $ancestorIds[] = $parentId;
-                // Fetch parent to get its parent_id
-                $parent = $this->modelClass->query()->find($parentId);
-                $parentId = $parent ? $parent->{$hierarchyFieldId} : null;
-            }
-        }
-
-        if (!empty($ancestorIds)) {
-            $ancestors = $this->modelClass->query()
-                ->whereIn($primaryKey, $ancestorIds)
-                ->get();
-            $records = $records->merge($ancestors)->unique($primaryKey);
-        }
-
-        return $records;
-    }
-
-    /**
-     * Add descendants to a collection of records.
-     *
-     * @param \Illuminate\Support\Collection $records Current records
-     * @param string $hierarchyFieldId Foreign key field name
-     * @param string $primaryKey Primary key field name
-     * @return \Illuminate\Support\Collection Records with descendants added
-     */
-    private function addDescendantsToCollection(
-        \Illuminate\Support\Collection $records,
-        string                         $hierarchyFieldId,
-        string                         $primaryKey
-    ): \Illuminate\Support\Collection
-    {
-        $existingIds = $records->pluck($primaryKey)->toArray();
-        $allDescendantIds = [];
-
-        // BFS to get all descendants
-        $queue = $existingIds;
-        while (!empty($queue)) {
-            $childIds = $this->modelClass->query()
-                ->whereIn($hierarchyFieldId, $queue)
-                ->pluck($primaryKey)
-                ->toArray();
-
-            $newIds = array_diff($childIds, $existingIds, $allDescendantIds);
-            if (empty($newIds)) {
-                break;
-            }
-
-            $allDescendantIds = array_merge($allDescendantIds, $newIds);
-            $queue = $newIds;
-        }
-
-        if (!empty($allDescendantIds)) {
-            $descendants = $this->modelClass->query()
-                ->whereIn($primaryKey, $allDescendantIds)
-                ->get();
-            $records = $records->merge($descendants)->unique($primaryKey);
-        }
-
-        return $records;
-    }
-
-    /**
-     * Build a hierarchical tree structure from a flat collection.
-     *
-     * @param \Illuminate\Support\Collection $records Flat collection of records
-     * @param string $hierarchyFieldId Foreign key field name (parent_id)
-     * @param string $primaryKey Primary key field name
-     * @param string $childrenKey Key name for children array in output
-     * @param int|null $maxDepth Maximum depth to build (null = unlimited)
-     * @param bool $includeEmptyChildren Whether to include empty children arrays
-     * @return array Hierarchical tree structure
-     */
-    private function buildHierarchyTree(
-        \Illuminate\Support\Collection $records,
-        string                         $hierarchyFieldId,
-        string                         $primaryKey,
-        string                         $childrenKey = 'children',
-        ?int                           $maxDepth = null,
-        bool                           $includeEmptyChildren = true
-    ): array
-    {
-        if ($records->isEmpty()) {
-            return [];
-        }
-
-        // Convert to array and index by primary key
-        $recordsById = [];
-        $recordIds = [];
-        foreach ($records as $record) {
-            $id = $record->{$primaryKey};
-            $recordIds[] = $id;
-            $recordsById[$id] = $record->toArray();
-            if ($includeEmptyChildren) {
-                $recordsById[$id][$childrenKey] = [];
-            }
-        }
-
-        // Build tree by attaching children to parents
-        $roots = [];
-
-        foreach ($recordsById as $id => &$record) {
-            $parentId = $record[$hierarchyFieldId] ?? null;
-
-            // Check if parent exists in our dataset
-            if ($parentId === null || !isset($recordsById[$parentId])) {
-                // This is a root node (or parent not in dataset)
-                $roots[] = &$record;
-            } else {
-                // Attach to parent
-                if (!isset($recordsById[$parentId][$childrenKey])) {
-                    $recordsById[$parentId][$childrenKey] = [];
-                }
-                $recordsById[$parentId][$childrenKey][] = &$record;
-            }
-        }
-        unset($record);
-
-        // Apply max depth if specified
-        if ($maxDepth !== null) {
-            $roots = $this->limitTreeDepth($roots, $childrenKey, $maxDepth);
-        }
-
-        // Remove empty children arrays if not wanted
-        if (!$includeEmptyChildren) {
-            $roots = $this->removeEmptyChildren($roots, $childrenKey);
-        }
-
-        return $roots;
-    }
-
-    /**
-     * Limit tree depth by removing children beyond max depth.
-     *
-     * @param array $nodes Current level nodes
-     * @param string $childrenKey Key name for children array
-     * @param int $maxDepth Maximum depth allowed
-     * @param int $currentDepth Current depth level
-     * @return array Nodes with depth limited
-     */
-    private function limitTreeDepth(array $nodes, string $childrenKey, int $maxDepth, int $currentDepth = 0): array
-    {
-        if ($currentDepth >= $maxDepth) {
-            // Remove children at this level
-            foreach ($nodes as &$node) {
-                $node[$childrenKey] = [];
-            }
-            return $nodes;
-        }
-
-        foreach ($nodes as &$node) {
-            if (!empty($node[$childrenKey])) {
-                $node[$childrenKey] = $this->limitTreeDepth(
-                    $node[$childrenKey],
-                    $childrenKey,
-                    $maxDepth,
-                    $currentDepth + 1
-                );
-            }
-        }
-
-        return $nodes;
-    }
-
-    /**
-     * Remove empty children arrays from tree nodes.
-     *
-     * @param array $nodes Tree nodes
-     * @param string $childrenKey Key name for children array
-     * @return array Nodes with empty children removed
-     */
-    private function removeEmptyChildren(array $nodes, string $childrenKey): array
-    {
-        foreach ($nodes as &$node) {
-            if (isset($node[$childrenKey])) {
-                if (empty($node[$childrenKey])) {
-                    unset($node[$childrenKey]);
-                } else {
-                    $node[$childrenKey] = $this->removeEmptyChildren($node[$childrenKey], $childrenKey);
-                }
-            }
-        }
-
-        return $nodes;
-    }
-
-    /**
-     * Paginate hierarchy by root nodes.
-     *
-     * @param array $tree Full tree structure
-     * @param mixed $pagination Pagination parameters
-     * @param string $childrenKey Key name for children array
-     * @return array Paginated result
-     */
-    private function paginateHierarchyRoots(array $tree, mixed $pagination, string $childrenKey): array
-    {
-        if (is_string($pagination)) {
-            $pagination = json_decode($pagination, true);
-        }
-
-        $totalRoots = count($tree);
-
-        // Handle infinity/cursor pagination
-        if (isset($pagination['infinity']) && $pagination['infinity'] === true) {
-            $pageSize = $pagination['pageSize'] ?? $pagination['pagesize'] ?? $this->modelClass->getPerPage();
-            $cursor = $pagination['cursor'] ?? null;
-
-            // Simple cursor implementation for hierarchy (index-based)
-            $startIndex = 0;
-            if ($cursor !== null) {
-                $decodedCursor = json_decode(base64_decode($cursor), true);
-                $startIndex = $decodedCursor['index'] ?? 0;
-            }
-
-            $pagedRoots = array_slice($tree, $startIndex, $pageSize);
-            $nextIndex = $startIndex + $pageSize;
-            $hasMore = $nextIndex < $totalRoots;
-
-            $nextCursor = $hasMore
-                ? base64_encode(json_encode(['index' => $nextIndex]))
-                : null;
-
-            return [
-                'data' => $pagedRoots,
-                'next_cursor' => $nextCursor,
-                'has_more' => $hasMore,
-            ];
-        }
-
-        // Standard offset pagination
-        $page = $pagination['page'] ?? 1;
-        $pageSize = $pagination['pageSize'] ?? $pagination['pagesize'] ?? $this->modelClass->getPerPage();
-
-        $offset = ($page - 1) * $pageSize;
-        $pagedRoots = array_slice($tree, $offset, $pageSize);
-
-        $lastPage = (int)ceil($totalRoots / $pageSize);
-
-        return [
-            'current_page' => $page,
-            'data' => $pagedRoots,
-            'per_page' => $pageSize,
-            'total' => $totalRoots,
-            'last_page' => $lastPage,
-            'from' => $totalRoots > 0 ? $offset + 1 : null,
-            'to' => $totalRoots > 0 ? min($offset + $pageSize, $totalRoots) : null,
-        ];
+        return $this->hierarchyCoordinator()->list($params, $toJson);
     }
 }

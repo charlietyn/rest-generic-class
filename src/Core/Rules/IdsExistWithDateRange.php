@@ -7,6 +7,7 @@ use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Contracts\Validation\ValidatorAwareRule;
 use Illuminate\Validation\Validator;
 use Ronu\RestGenericClass\Core\Traits\ValidatesExistenceInDatabase;
+use Ronu\RestGenericClass\Core\Validation\ValidationRuleSupport;
 
 class IdsExistWithDateRange implements ValidationRule, ValidatorAwareRule
 {
@@ -36,22 +37,20 @@ class IdsExistWithDateRange implements ValidationRule, ValidatorAwareRule
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
-        if ($value === null || $value === '') {
+        $items = ValidationRuleSupport::normalizeValue($value);
+
+        if ($items === null) {
             return;
         }
-        if (!is_array($value)) {
-            $value = [$value];
-        }
-        if (empty($value)) {
-            return;
-        }
-        $ids = $this->extractIds($value);
+
+        $ids = ValidationRuleSupport::extractIds($items);
         $validated = $this->validateIdsExistWithDateRange($ids, $this->table, $this->dateColumn, $this->startDate, $this->endDate, $this->additionalConditions);
         if (!$validated) {
-            $this->validator->errors()->add(
+            ValidationRuleSupport::addMissingIdsError(
+                $this->validator,
                 $attribute,
-                'The following IDs do not exist: ' . implode(', ', $ids)
-                . $this->buildConditionsMessage($this->additionalConditions)
+                $ids,
+                $this->additionalConditions
             );
         }
     }

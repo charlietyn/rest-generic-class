@@ -5,9 +5,10 @@ namespace Ronu\RestGenericClass\Core\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Str;
 use Nwidart\Modules\Facades\Module;
 use Ronu\RestGenericClass\Core\Resolvers\RouteMetaResolver;
+use Ronu\RestGenericClass\Core\Support\Authorization\PermissionDecisionEvaluator;
+use Ronu\RestGenericClass\Core\Support\Authorization\RequiredPermissionResolver;
 use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -89,11 +90,8 @@ class SpatieAuthorize
     /**
      * Derive required permissions and evaluation mode ("any"|"all").
      *
-     * Priority:
-     *   1) Route override via ->defaults('authorize', [...])
-     *   2) Route name convention
-     *   3) Controller@method convention
-     *   4) HTTP verb + first URI segment convention
+     * Thin facade over {@see RequiredPermissionResolver}; kept for backward
+     * compatibility with any subclass that relied on this seam.
      *
      * @return array{0: string[], 1: 'any'|'all'}
      */
@@ -103,33 +101,8 @@ class SpatieAuthorize
         ?string $actionMethod,
         array $actionArr
     ): array {
-        // 1) Route explicit override
-        $override = Arr::get($actionArr, 'defaults.authorize', null);
-        if (is_array($override)) {
-            $perms = Arr::get($override, 'permissions');
-            $mode  = strtolower((string) Arr::get($override, 'mode', 'any')) === 'all' ? 'all' : 'any';
-            $list  = $this->normalizePermissions($perms);
-            if (!empty($list)) {
-                return [$list, $mode];
-            }
-        }
-
-        // 2) From route name convention
-        if ($perm = $this->mapRouteNameToPermission($routeName)) {
-            return [[$perm], 'any'];
-        }
-
-        // 3) From Controller@method convention
-        if ($perm = $this->mapActionToPermission($request)) {
-            return [[$perm], 'any'];
-        }
-
-        // 4) From HTTP verb + first URI segment (last resort)
-        if ($perm = $this->mapHttpVerbToPermission($request)) {
-            return [[$perm], 'any'];
-        }
-
-        return [[], 'any'];
+        return app(RequiredPermissionResolver::class)
+            ->resolve($request, $routeName, $actionMethod, $actionArr);
     }
 
     /**
@@ -138,115 +111,46 @@ class SpatieAuthorize
      */
     protected function normalizePermissions(null|string|array $perms): array
     {
-        if (is_null($perms)) return [];
-        if (is_string($perms)) {
-            // Support pipe-separated "a|b|c"
-            $perms = Str::contains($perms, '|') ? explode('|', $perms) : [$perms];
-        }
-        return array_values(array_filter(array_map('strval', $perms)));
+        return app(RequiredPermissionResolver::class)->normalizePermissions($perms);
     }
 
     /**
      * Map from route name suffix to permission name.
-     * Example: 'articles.store'  -> 'articles.create'
-     *          'articles.index'  -> 'articles.view'
      */
     protected function mapRouteNameToPermission(?string $name): ?string
     {
-        if (!$name) return null;
-
-        $map = [
-            '.index'   => '.index',
-            '.show'    => '.view',
-            '.store'   => '.store',
-            '.update'  => '.update',
-            '.destroy' => '.delete',
-        ];
-
-        foreach ($map as $suffix => $permSuffix) {
-            if (Str::endsWith($name, $suffix)) {
-                return Str::replaceLast($suffix, $permSuffix, $name);
-            }
-        }
-
-        // Optional: additional overrides from config
-        $overrides = (array) config('permission_map.overrides', []);
-        return $overrides[$name] ?? null;
+        return app(RequiredPermissionResolver::class)->mapRouteNameToPermission($name);
     }
 
     /**
      * Map from Controller@method to permission.
-     * Example: ArticleController@store -> 'article.create'
      */
     protected function mapActionToPermission(Request $request): ?string
     {
-        $actionName = $request->route()?->getActionName(); // "App\Http\Controllers\X@store"
-        $method     = $request->route()?->getActionMethod();
-        if (!$actionName || !$method) return null;
-
-        $resource = Str::of(class_basename(Str::before($actionName, '@')))
-            ->replace('Controller', '')
-            ->lower(); // "articles"
-
-        $verbMap = [
-            'index'   => 'view',
-            'show'    => 'view',
-            'store'   => 'create',
-            'update'  => 'update',
-            'destroy' => 'delete',
-        ];
-
-        $permVerb = $verbMap[$method] ?? null;
-        return $permVerb ? Str::of($resource)->singular().'.'.$permVerb : null; // "article.create"
+        return app(RequiredPermissionResolver::class)->mapActionToPermission($request);
     }
 
     /**
      * Last-resort mapping: HTTP verb + first URI segment.
-     * Example: POST /articles -> 'article.create'
      */
     protected function mapHttpVerbToPermission(Request $request): ?string
     {
-        $method = $request->getMethod(); // GET, POST, PUT, PATCH, DELETE
-        $first  = Str::of($request->route()?->uri())->explode('/')->first();
-
-        $verbMap = [
-            'GET'    => 'view',
-            'POST'   => 'create',
-            'PUT'    => 'update',
-            'PATCH'  => 'update',
-            'DELETE' => 'delete',
-        ];
-
-        $permVerb = $verbMap[$method] ?? null;
-        if ($permVerb && $first) {
-            return Str::of($first)->singular().'.'.$permVerb; // "article.create"
-        }
-        return null;
+        return app(RequiredPermissionResolver::class)->mapHttpVerbToPermission($request);
     }
 
     /**
      * Evaluate "ANY": user must hold at least one permission.
-     * Uses Gate/Spatie under the hood (cache-aware).
      */
     protected function userCanAny($user, array $permissions): bool
     {
-        if (!$user) return false;
-        foreach ($permissions as $perm) {
-            if ($user->can($perm)) return true;
-        }
-        return false;
+        return app(PermissionDecisionEvaluator::class)->canAny($user, $permissions);
     }
 
     /**
      * Evaluate "ALL": user must hold all permissions.
-     * Uses Gate/Spatie under the hood (cache-aware).
      */
     protected function userCanAll($user, array $permissions): bool
     {
-        if (!$user) return false;
-        foreach ($permissions as $perm) {
-            if (!$user->can($perm)) return false;
-        }
-        return true;
+        return app(PermissionDecisionEvaluator::class)->canAll($user, $permissions);
     }
 }

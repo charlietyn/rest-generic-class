@@ -3,6 +3,8 @@
 namespace Ronu\RestGenericClass\Core\Traits;
 
 use Illuminate\Support\Collection;
+use Ronu\RestGenericClass\Core\Support\Permissions\PermissionFilter;
+use Ronu\RestGenericClass\Core\Support\Permissions\RolePermissionReader;
 
 trait HasReadableRolePermissions
 {
@@ -25,18 +27,8 @@ trait HasReadableRolePermissions
      */
     public function allPermissions(): Collection
     {
-        $permissionClass = app(config('permission.models.permission'));
-        /** @var \Illuminate\Database\Eloquent\Collection $globalPerms */
-        $globalPerms = $permissionClass::query()
-            ->notRestricted()
-            ->where('guard_name', $this->guard_name)
-            ->get();
-        $this->setRelation(
-            'permissions',
-            $this->permissions->concat($globalPerms)->unique('id')->values()
-        );
-
-        return $this->permissions; // eager load recommended outside
+        // eager load recommended outside
+        return app(RolePermissionReader::class)->allPermissions($this);
     }
 
     /**
@@ -44,29 +36,12 @@ trait HasReadableRolePermissions
      */
     public function permissionsFiltered(?string $guard = null, ?array $modules = null, ?array $entities = null): Collection
     {
-        return $this->permissions->filter(function ($perm) use ($guard, $modules, $entities) {
-            if ($guard && $perm->guard_name !== $guard) return false;
-            if (!$perm->restrict) return true;
-            if ($modules && count($modules) > 0) {
-                if (!in_array($perm->module ?? null, $modules, true)) return false;
-            }
-
-            if ($entities && count($entities) > 0) {
-                // entity expected in $perm->model (según tu schema)
-                $entity = $perm->model ?? null;
-                $ok = false;
-                foreach ($entities as $raw) {
-                    $needle = $raw;
-                    // soporta module.entity => ignoramos módulo aquí; ya filtrado arriba
-                    if (str_contains($raw, '.')) {
-                        $needle = substr($raw, strpos($raw, '.') + 1);
-                    }
-                    if ($entity && strcasecmp($entity, $needle) === 0) { $ok = true; break; }
-                }
-                if (!$ok) return false;
-            }
-
-            return true;
-        })->values();
+        return (new PermissionFilter())->filter(
+            $this->permissions,
+            $guard,
+            $modules,
+            $entities,
+            includeUnrestricted: true
+        );
     }
 }

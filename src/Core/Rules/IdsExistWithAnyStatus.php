@@ -7,6 +7,7 @@ use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Contracts\Validation\ValidatorAwareRule;
 use Illuminate\Validation\Validator;
 use Ronu\RestGenericClass\Core\Traits\ValidatesExistenceInDatabase;
+use Ronu\RestGenericClass\Core\Validation\ValidationRuleSupport;
 
 class IdsExistWithAnyStatus implements ValidationRule, ValidatorAwareRule
 {
@@ -34,29 +35,25 @@ class IdsExistWithAnyStatus implements ValidationRule, ValidatorAwareRule
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
-        if ($value === null || $value === '') {
+        $ids = ValidationRuleSupport::extractIdsOrAddError(
+            $this->validator,
+            $attribute,
+            $value,
+            'id',
+            $this->column
+        );
+
+        if ($ids === null) {
             return;
         }
-        if (!is_array($value)) {
-            $value = [$value];
-        }
-        if (empty($value)) {
-            return;
-        }
-        $ids = $this->extractIds($value);
-        if (empty($ids)) {
-            $this->validator->errors()->add(
-                $attribute,
-                'Theres no IDs provided to validate.:'.$this->column
-            );
-            return;
-        }
+
         $validated = $this->validateIdsExistWithAnyStatus($ids, $this->table, $this->statuses, $this->column, $this->additionalConditions);
         if (!$validated) {
-            $this->validator->errors()->add(
+            ValidationRuleSupport::addMissingIdsError(
+                $this->validator,
                 $attribute,
-                'The following IDs do not exist: ' . implode(', ', $ids)
-                . $this->buildConditionsMessage($this->additionalConditions)
+                $ids,
+                $this->additionalConditions
             );
         }
     }

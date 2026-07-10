@@ -1,6 +1,9 @@
 <?php
 
 namespace Ronu\RestGenericClass\Core\Helpers;
+
+use Ronu\RestGenericClass\Core\Validation\UpdateArrayUniqueValidator;
+
 /**
  * Class HelpersValidations
  *
@@ -22,19 +25,10 @@ class HelpersValidations
      */
     public static function validateUniqueValueInUpdateArray($attribute, $value, $fail, $request, $id, $dbconection = null): void
     {
-        $dataAttributes = explode('.', $attribute);
-        $lengthAttributes = count($dataAttributes);
-        $table = $lengthAttributes > 0 ? $dataAttributes[0] : 0;
-        $table = $dbconection ? $dbconection . '.' . $table : $table;
-        $index = $lengthAttributes > 1 ? $dataAttributes[1] : 0;
-        $userId = $request->users[$index][$id] ?? null;
-        $attribute = $lengthAttributes > 2 ? $dataAttributes[2] : 0;
-        if ($userId) {
-            $rule = \Illuminate\Validation\Rule::unique($table, $attribute)->ignore($userId, $id);
-            $validator = \Illuminate\Support\Facades\Validator::make([$attribute => $value], [$attribute => $rule]);
-            if ($validator->fails()) {
-                $fail($validator->errors()->first($attribute));
-            }
+        $message = UpdateArrayUniqueValidator::validate($attribute, $value, $request, $id, $dbconection);
+
+        if ($message !== null) {
+            $fail($message);
         }
     }
 }

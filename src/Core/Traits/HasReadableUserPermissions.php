@@ -8,6 +8,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\PermissionCompressorContract;
 use Ronu\RestGenericClass\Core\Support\Permissions\Exceptions\RolesContractViolationException;
+use Ronu\RestGenericClass\Core\Support\Permissions\PermissionFilter;
+use Ronu\RestGenericClass\Core\Support\Permissions\PermissionPayloadBuilder;
+use Ronu\RestGenericClass\Core\Support\Permissions\PermissionUniverseResolver;
+use Ronu\RestGenericClass\Core\Support\Permissions\UserPermissionReader;
 use Ronu\RestGenericClass\Core\Support\Permissions\UserRolesResolver;
 use Spatie\Permission\Contracts\Permission;
 use Spatie\Permission\Contracts\Role;
@@ -142,14 +146,7 @@ trait HasReadableUserPermissions
      */
     public function effectivePermissions(?string $guard = null): Collection
     {
-        $direct = $this->enabled_permissions()->get();
-        $via = $this->getEnabledPermissionsViaRoles();
-
-        $all = $direct->concat($via);
-        if ($guard) {
-            $all = $all->where('guard_name', $guard);
-        }
-        return $all->unique('id')->values();
+        return app(UserPermissionReader::class)->effectivePermissions($this, $guard);
     }
 
     /**
@@ -175,36 +172,17 @@ trait HasReadableUserPermissions
      */
     public function permissionsPayload(Request $request, $context = null): array
     {
-        $guard = $request->query('guard');
-        $guard = is_string($guard) && $guard !== '' ? $guard : null;
-        $modules = $this->permissionPayloadList($request->query('modules'));
-        $entities = $this->permissionPayloadList($request->query('entities'));
-        $base = $this->permissionPayloadContext($context);
-
-        if ($guard !== null) {
-            $base['guard'] = $guard;
-        }
-
-        if (!$request->boolean('compress', false)) {
-            $permissions = $this->permissionsFiltered($guard, $modules, $entities);
-
-            return array_merge($base, [
-                'count' => $permissions->count(),
-                'permissions' => $this->permissionPayloadRows($permissions),
-            ]);
-        }
-
-        return array_merge($base, $this->effectivePermissionsCompressed(
-            $guard,
-            $modules,
-            $entities,
-            [
-                'module_wildcard' => true,
-                'table_wildcard' => true,
-                'global_wildcard' => $request->boolean('compress_global', false),
-                'include_expanded' => $request->boolean('expand', false),
-            ]
-        ));
+        return (new PermissionPayloadBuilder())->build(
+            $request,
+            $context,
+            fn(?string $guard, ?array $modules, ?array $entities): Collection => $this->permissionsFiltered($guard, $modules, $entities),
+            fn(?string $guard, ?array $modules, ?array $entities, array $options): array => $this->effectivePermissionsCompressed(
+                $guard,
+                $modules,
+                $entities,
+                $options
+            )
+        );
     }
 
     /**
@@ -212,97 +190,16 @@ trait HasReadableUserPermissions
      */
     public function permissionsFiltered(?string $guard = null, ?array $modules = null, ?array $entities = null): Collection
     {
-        return $this->effectivePermissions($guard)->filter(function ($perm) use ($modules, $entities) {
-            if ($modules && count($modules) > 0) {
-                if (!in_array($perm->module ?? null, $modules, true)) return false;
-            }
-            if ($entities && count($entities) > 0) {
-                $entity = $perm->model ?? null;
-                $ok = false;
-                foreach ($entities as $raw) {
-                    $needle = $raw;
-                    if (str_contains($raw, '.')) {
-                        $needle = substr($raw, strpos($raw, '.') + 1);
-                    }
-                    if ($entity && strcasecmp($entity, $needle) === 0) {
-                        $ok = true;
-                        break;
-                    }
-                }
-                if (!$ok) return false;
-            }
-            return true;
-        })->values();
+        return (new PermissionFilter())->filter(
+            $this->effectivePermissions($guard),
+            modules: $modules,
+            entities: $entities
+        );
     }
 
     private function permissionCompressionUniverse(?string $guard = null, ?array $modules = null, ?array $entities = null): Collection
     {
-        $permissionClass = app(config('permission.models.permission'));
-
-        return $permissionClass::query()
-            ->when($guard, fn($q) => $q->where('guard_name', $guard))
-            ->when($modules && count($modules) > 0, fn($q) => $q->whereIn('module', $modules))
-            ->when($entities && count($entities) > 0, function ($query) use ($entities) {
-                $query->where(function ($outer) use ($entities) {
-                    foreach ($entities as $raw) {
-                        $module = null;
-                        $entity = $raw;
-
-                        if (str_contains($raw, '.')) {
-                            [$module, $entity] = explode('.', $raw, 2);
-                        }
-
-                        $outer->orWhere(function ($sub) use ($module, $entity) {
-                            $sub->whereRaw('LOWER(model) = ?', [strtolower($entity)]);
-
-                            if ($module !== null && $module !== '') {
-                                $sub->whereRaw('LOWER(module) = ?', [strtolower($module)]);
-                            }
-                        });
-                    }
-                });
-            })
-            ->get();
-    }
-
-    private function permissionPayloadList($value): ?array
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        $values = is_array($value) ? $value : explode(',', (string)$value);
-        $values = collect($values)
-            ->flatMap(fn($item) => is_array($item) ? $item : explode(',', (string)$item))
-            ->map(fn($item) => trim((string)$item))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-
-        return $values === [] ? null : $values;
-    }
-
-    private function permissionPayloadContext($context): array
-    {
-        if ($context === null) {
-            return [];
-        }
-
-        return is_array($context) ? $context : ['context' => $context];
-    }
-
-    private function permissionPayloadRows(Collection $permissions): array
-    {
-        return $permissions
-            ->map(fn($permission) => [
-                'id' => $permission->id ?? null,
-                'name' => $permission->name,
-                'module' => $permission->module ?? null,
-                'guard' => $permission->guard_name ?? null,
-            ])
-            ->values()
-            ->all();
+        return app(PermissionUniverseResolver::class)->universe($guard, $modules, $entities);
     }
 
 }

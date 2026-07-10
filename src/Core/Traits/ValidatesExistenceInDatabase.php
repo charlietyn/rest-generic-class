@@ -3,9 +3,9 @@ declare(strict_types=1);
 namespace Ronu\RestGenericClass\Core\Traits;
 
 use Closure;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Ronu\RestGenericClass\Core\Validation\DatabaseExistenceChecker;
+use Ronu\RestGenericClass\Core\Validation\ValidationRuleSupport;
 
 /**
  * Trait ValidatesExistenceInDatabase
@@ -64,6 +64,16 @@ trait ValidatesExistenceInDatabase
         $this->connection = (string) config('rest-generic-class.validation.connection', $this->connection);
     }
 
+    private function databaseExistenceChecker(): DatabaseExistenceChecker
+    {
+        return new DatabaseExistenceChecker(
+            $this->connection,
+            $this->validationCacheTtl,
+            $this->enableValidationCache,
+            $this->cacheKeyPrefix
+        );
+    }
+
     /**
      * Validate that all IDs exist in the specified table with optional conditions
      *
@@ -93,7 +103,7 @@ trait ValidatesExistenceInDatabase
         array $additionalConditions = []
     ): mixed {
         // Remove duplicates and filter out null/empty values
-        $ids = array_values(array_unique(array_filter($ids, fn($id) => $id !== null && $id !== '')));
+        $ids = $this->databaseExistenceChecker()->normalizeIds($ids);
 
         if (empty($ids)) {
             return ['success'=>false,'error'=>'No valid IDs provided','missing_ids'=>[],'existing_ids'=>[]];
@@ -177,39 +187,20 @@ trait ValidatesExistenceInDatabase
             return true;
         }
 
-        $ids = array_values(array_unique(array_filter($ids, fn($id) => $id !== null && $id !== '')));
+        $ids = $this->databaseExistenceChecker()->normalizeIds($ids);
 
         if (empty($ids)) {
             return true;
         }
 
         try {
-            $cacheKey = $this->buildCacheKey($table, $column, array_merge(
-                ['not_deleted' => $deletedAtColumn ?? false],
-                $additionalConditions
-            ));
-
-            $validIds = $this->getCachedData($cacheKey, function () use ($table, $column, $additionalConditions, $deletedAtColumn) {
-                $query = DB::connection($this->connection)->table($table);
-
-                if ($deletedAtColumn !== null) {
-                    $query->whereNull($deletedAtColumn);
-                }
-
-                foreach ($additionalConditions as $col => $value) {
-                    if (is_array($value)) {
-                        $query->whereIn($col, $value);
-                    } else {
-                        $query->where($col, $value);
-                    }
-                }
-
-                return $query->pluck($column)->toArray();
-            });
-
-            $missingIds = array_diff($ids, $validIds);
-
-            return empty($missingIds);
+            return $this->databaseExistenceChecker()->idsExistNotDeleted(
+                $ids,
+                $table,
+                $column,
+                $additionalConditions,
+                $deletedAtColumn
+            );
         } catch (\Exception $e) {
             $this->logValidationError('validateIdsExistNotDeleted', $table, $e);
             return false;
@@ -243,7 +234,7 @@ trait ValidatesExistenceInDatabase
             return [];
         }
 
-        $ids = array_values(array_unique(array_filter($ids, fn($id) => $id !== null && $id !== '')));
+        $ids = $this->databaseExistenceChecker()->normalizeIds($ids);
 
         if (empty($ids)) {
             return [];
@@ -289,31 +280,19 @@ trait ValidatesExistenceInDatabase
             return true;
         }
 
-        $ids = array_values(array_unique(array_filter($ids, fn($id) => $id !== null && $id !== '')));
+        $ids = $this->databaseExistenceChecker()->normalizeIds($ids);
 
         if (empty($ids)) {
             return true;
         }
 
         try {
-            // Execute the callback to get the query builder
-            $query = $queryCallback( DB::connection($this->connection)->query());
-
-            if (!$query instanceof \Illuminate\Database\Query\Builder) {
-                throw new \InvalidArgumentException('Query callback must return a Query Builder instance');
-            }
-
-            foreach ($additionalConditions as $col => $value) {
-                if (is_array($value)) {
-                    $query->whereIn($col, $value);
-                } else {
-                    $query->where($col, $value);
-                }
-            }
-
-            $count = $query->whereIn($column, $ids)->count();
-
-            return $count === count($ids);
+            return $this->databaseExistenceChecker()->idsExistWithCustomQuery(
+                $ids,
+                $queryCallback,
+                $column,
+                $additionalConditions
+            );
         } catch (\Exception $e) {
             $this->logValidationError('validateIdsWithCustomQuery', 'custom_query', $e);
             return false;
@@ -348,36 +327,20 @@ trait ValidatesExistenceInDatabase
             return empty($ids); // True if no IDs to validate
         }
 
-        $ids = array_values(array_unique(array_filter($ids, fn($id) => $id !== null && $id !== '')));
+        $ids = $this->databaseExistenceChecker()->normalizeIds($ids);
 
         if (empty($ids)) {
             return true;
         }
 
         try {
-            $cacheKey = $this->buildCacheKey($table, 'id', array_merge(
-                [$statusColumn => $statuses],
+            return $this->databaseExistenceChecker()->idsExistWithAnyStatus(
+                $ids,
+                $table,
+                $statuses,
+                $statusColumn,
                 $additionalConditions
-            ));
-
-            $validIds = $this->getCachedData($cacheKey, function () use ($table, $statusColumn, $statuses, $additionalConditions) {
-                $query = DB::connection($this->connection)->table($table)
-                    ->whereIn($statusColumn, $statuses);
-
-                foreach ($additionalConditions as $col => $value) {
-                    if (is_array($value)) {
-                        $query->whereIn($col, $value);
-                    } else {
-                        $query->where($col, $value);
-                    }
-                }
-
-                return $query->pluck('id')->toArray();
-            });
-
-            $missingIds = array_diff($ids, $validIds);
-
-            return empty($missingIds);
+            );
         } catch (\Exception $e) {
             $this->logValidationError('validateIdsExistWithAnyStatus', $table, $e);
             return false;
@@ -417,30 +380,21 @@ trait ValidatesExistenceInDatabase
             return true;
         }
 
-        $ids = array_values(array_unique(array_filter($ids, fn($id) => $id !== null && $id !== '')));
+        $ids = $this->databaseExistenceChecker()->normalizeIds($ids);
 
         if (empty($ids)) {
             return true;
         }
 
         try {
-            $query =  DB::connection($this->connection)->table($table)->whereIn('id', $ids);
-
-            if ($startDate !== null) {
-                $query->where($dateColumn, '>=', $startDate);
-            }
-
-            if ($endDate !== null) {
-                $query->where($dateColumn, '<=', $endDate);
-            }
-
-            foreach ($additionalConditions as $column => $value) {
-                $query->where($column, $value);
-            }
-
-            $count = $query->count();
-
-            return $count === count($ids);
+            return $this->databaseExistenceChecker()->idsExistWithDateRange(
+                $ids,
+                $table,
+                $dateColumn,
+                $startDate,
+                $endDate,
+                $additionalConditions
+            );
         } catch (\Exception $e) {
             $this->logValidationError('validateIdsExistWithDateRange', $table, $e);
             return false;
@@ -460,68 +414,7 @@ trait ValidatesExistenceInDatabase
         string $column = 'id',
         array $conditions = []
     ): array {
-        $cacheKey = $this->buildCacheKey($table, $column, $conditions);
-
-        return $this->getCachedData($cacheKey, function () use ($table, $column, $conditions) {
-            $query =  DB::connection($this->connection)->table($table);
-
-            foreach ($conditions as $col => $value) {
-                if (is_array($value)) {
-                    $query->whereIn($col, $value);
-                } else {
-                    $query->where($col, $value);
-                }
-            }
-
-            return $query->pluck($column)->toArray();
-        });
-    }
-
-    /**
-     * Build cache key for validation queries
-     *
-     * @param string $table Table name
-     * @param string $column Column name
-     * @param array<string, mixed> $conditions Conditions array
-     * @return string Cache key
-     */
-    private function buildCacheKey(string $table, string $column, array $conditions): string
-    {
-        $conditionsHash = md5(serialize($conditions));
-
-        return sprintf(
-            '%s:%s:%s:%s',
-            $this->cacheKeyPrefix,
-            $table,
-            $column,
-            $conditionsHash
-        );
-    }
-
-    /**
-     * Get data from cache or execute callback
-     *
-     * @param string $cacheKey Cache key
-     * @param Closure $callback Callback to execute if cache miss
-     * @return mixed Cached or fresh data
-     */
-    private function getCachedData(string $cacheKey, Closure $callback): mixed
-    {
-        if (!$this->enableValidationCache) {
-            return $callback();
-        }
-
-        try {
-            return Cache::remember($cacheKey, $this->validationCacheTtl, $callback);
-        } catch (\Exception $e) {
-            // If caching fails, execute callback directly
-            Log::warning('Validation cache failed, executing query directly', [
-                'cache_key' => $cacheKey,
-                'error' => $e->getMessage(),
-            ]);
-
-            return $callback();
-        }
+        return $this->databaseExistenceChecker()->getValidIdsFromTable($table, $column, $conditions);
     }
 
     /**
@@ -533,20 +426,7 @@ trait ValidatesExistenceInDatabase
     public function clearValidationCache(string $table): bool
     {
         try {
-            $pattern = sprintf('%s:%s:*', $this->cacheKeyPrefix, $table);
-
-            // For Redis cache driver
-            if (Cache::getStore() instanceof \Illuminate\Cache\RedisStore) {
-                $keys = Cache::getStore()->getRedis()->keys($pattern);
-                foreach ($keys as $key) {
-                    Cache::forget($key);
-                }
-                return true;
-            }
-
-            // For other cache drivers, we can't efficiently clear by pattern
-            // Caller should handle cache invalidation on model events
-            return false;
+            return $this->databaseExistenceChecker()->clearValidationCache($table);
         } catch (\Exception $e) {
             $this->logValidationError('clearValidationCache', $table, $e);
             return false;
@@ -561,18 +441,7 @@ trait ValidatesExistenceInDatabase
     protected function clearAllValidationCache(): bool
     {
         try {
-            if (Cache::getStore() instanceof \Illuminate\Cache\RedisStore) {
-                $pattern = sprintf('%s:*', $this->cacheKeyPrefix);
-                $keys = Cache::getStore()->getRedis()->keys($pattern);
-
-                foreach ($keys as $key) {
-                    Cache::forget($key);
-                }
-
-                return true;
-            }
-
-            return false;
+            return $this->databaseExistenceChecker()->clearAllValidationCache();
         } catch (\Exception $e) {
             Log::error('Failed to clear all validation cache', [
                 'error' => $e->getMessage(),
@@ -635,28 +504,7 @@ trait ValidatesExistenceInDatabase
      */
     public function extractIds(array $items, string $key = 'id'): array
     {
-        if (empty($items)) {
-            return [];
-        }
-
-        return array_values(array_unique(array_filter(
-            array_map(function ($item) use ($key) {
-                if (is_int($item) || is_string($item)) {
-                    return $item;
-                }
-
-                if (is_array($item) && array_key_exists($key, $item)) {
-                    return $item[$key];
-                }
-
-                if (is_object($item) && property_exists($item, $key)) {
-                    return $item->{$key};
-                }
-
-                return null;
-            }, $items),
-            fn($id) => $id !== null && $id !== ''
-        )));
+        return ValidationRuleSupport::extractIds($items, $key);
     }
 
     /**
@@ -670,20 +518,7 @@ trait ValidatesExistenceInDatabase
      */
     protected function buildConditionsMessage(array $conditions): string
     {
-        if (empty($conditions)) {
-            return '';
-        }
-
-        $parts = [];
-        foreach ($conditions as $column => $value) {
-            if (is_array($value)) {
-                $parts[] = "{$column}=[" . implode(', ', $value) . ']';
-            } else {
-                $parts[] = "{$column}={$value}";
-            }
-        }
-
-        return ' (conditions: ' . implode(', ', $parts) . ')';
+        return ValidationRuleSupport::buildConditionsMessage($conditions);
     }
 
     /**

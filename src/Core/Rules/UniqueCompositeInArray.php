@@ -5,30 +5,11 @@ namespace Ronu\RestGenericClass\Core\Rules;
 use Closure;
 use Illuminate\Contracts\Validation\DataAwareRule;
 use Illuminate\Contracts\Validation\ValidationRule;
-use Illuminate\Support\Facades\DB;
+use Ronu\RestGenericClass\Core\Validation\UniqueValidationSupport;
 
 /**
- * Validates uniqueness of a column in a DB table for bulk (array) operations,
- * supporting composite conditions and per-item ignore (for updates).
- *
- * Usage — bulk create:
- *   new UniqueCompositeInArray(
- *       connection:  $this->connection,
- *       table:       'location.states',
- *       column:      'name',
- *       arrayKey:    'states',
- *       conditions:  ['country_id' => $this->parent_id],
- *   )
- *
- * Usage — bulk update (ignores the record's own ID):
- *   new UniqueCompositeInArray(
- *       connection:  $this->connection,
- *       table:       'location.states',
- *       column:      'name',
- *       arrayKey:    'states',
- *       conditions:  ['country_id' => $this->parent_id],
- *       ignoreField: 'id',
- *   )
+ * Validates uniqueness of a column in a DB table for bulk array operations,
+ * supporting composite conditions and per-item ignore values for updates.
  */
 final class UniqueCompositeInArray implements DataAwareRule, ValidationRule
 {
@@ -74,65 +55,40 @@ final class UniqueCompositeInArray implements DataAwareRule, ValidationRule
 
     private function buildMessage(string $attribute, mixed $value, bool $duplicate): string
     {
-        $index    = $this->resolveIndex($attribute);
-        $position = $index !== null ? "{$this->arrayKey}[{$index}]" : $attribute;
-
-        return $duplicate
-            ? "The {$this->column} '{$value}' is duplicated in the request at {$position}."
-            : "The {$this->column} '{$value}' at {$position} has already been taken.";
-    }
-
-    private function resolveIndex(string $attribute): ?int
-    {
-        $pattern = '/^' . preg_quote($this->arrayKey, '/') . '\.(\d+)\./';
-
-        return preg_match($pattern, $attribute, $matches) ? (int) $matches[1] : null;
+        return UniqueValidationSupport::buildArrayMessage(
+            $attribute,
+            $value,
+            $this->column,
+            $this->arrayKey,
+            $duplicate
+        );
     }
 
     /** Checks whether the value appears more than once in sibling items. */
     private function hasDuplicatesInArray(array $items, mixed $value): bool
     {
-        $columnValues = array_column($items, $this->column);
-
-        return count(array_keys($columnValues, $value, strict: true)) > 1;
+        return UniqueValidationSupport::hasDuplicateValue($items, $this->column, $value);
     }
 
     /** Queries the DB for a conflicting record, optionally excluding the current item. */
     private function existsInDatabase(string $attribute, array $items, mixed $value): bool
     {
-        $query = DB::connection($this->connection)
-            ->table($this->table)
-            ->where($this->column, $value);
+        $ignoreValue = UniqueValidationSupport::resolveIgnoreValue(
+            $attribute,
+            $items,
+            $this->arrayKey,
+            $this->ignoreField
+        );
 
-        // Ignore soft-deleted rows so a unique value freed by a deleted row can
-        // be reused.
-        if ($this->softDeleteColumn !== null) {
-            $query->whereNull($this->softDeleteColumn);
-        }
-
-        foreach ($this->conditions as $column => $conditionValue) {
-            $query->where($column, $conditionValue);
-        }
-
-        if ($this->ignoreField !== null) {
-            $ignoreValue = $this->resolveIgnoreValue($attribute, $items);
-
-            if ($ignoreValue !== null) {
-                $query->where($this->ignoreField, '!=', $ignoreValue);
-            }
-        }
-
-        return $query->exists();
-    }
-
-    /**
-     * Extracts the array index from the attribute path (e.g. "states.2.name" → 2)
-     * and returns the ignore-field value of that sibling item.
-     */
-    private function resolveIgnoreValue(string $attribute, array $items): mixed
-    {
-        $index = $this->resolveIndex($attribute);
-
-        return $index !== null ? ($items[$index][$this->ignoreField] ?? null) : null;
+        return UniqueValidationSupport::compositeExists(
+            $this->connection,
+            $this->table,
+            $this->column,
+            $value,
+            $this->conditions,
+            $this->ignoreField,
+            $ignoreValue,
+            $this->softDeleteColumn
+        );
     }
 }

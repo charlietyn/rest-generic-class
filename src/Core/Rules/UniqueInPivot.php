@@ -4,7 +4,7 @@ namespace Ronu\RestGenericClass\Core\Rules;
 
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
-use Illuminate\Support\Facades\DB;
+use Ronu\RestGenericClass\Core\Validation\UniqueValidationSupport;
 
 /**
  * Validates that a column value is unique within the scope of a Many-to-Many
@@ -122,30 +122,19 @@ final class UniqueInPivot implements ValidationRule
 
     private function existsInPivot(mixed $value): bool
     {
-        $query = DB::connection($this->connection)
-            ->table("{$this->mainTable} as _main")
-            ->join(
-                "{$this->pivotTable} as _pivot",
-                "_pivot.{$this->pivotForeignKey}",
-                '=',
-                "_main.{$this->mainTablePk}",
-            )
-            ->where("_main.{$this->column}", $value)
-            ->where("_pivot.{$this->pivotOwnerKey}", $this->ownerValue);
-
-        // Respect soft delete on the main table and/or the pivot so memberships
-        // / values freed by a soft delete are not counted as conflicts.
-        if ($this->softDeleteColumn !== null) {
-            $query->whereNull("_main.{$this->softDeleteColumn}");
-        }
-        if ($this->pivotSoftDeleteColumn !== null) {
-            $query->whereNull("_pivot.{$this->pivotSoftDeleteColumn}");
-        }
-
-        if ($this->ignoreValue !== null) {
-            $query->where("_main.{$this->mainTablePk}", '!=', $this->ignoreValue);
-        }
-
-        return $query->exists();
+        return UniqueValidationSupport::pivotExists(
+            $this->connection,
+            $this->mainTable,
+            $this->pivotTable,
+            $this->pivotForeignKey,
+            $this->pivotOwnerKey,
+            $this->ownerValue,
+            $this->column,
+            $value,
+            $this->mainTablePk,
+            $this->ignoreValue,
+            $this->softDeleteColumn,
+            $this->pivotSoftDeleteColumn
+        );
     }
 }
