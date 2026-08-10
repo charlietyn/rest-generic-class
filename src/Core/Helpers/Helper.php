@@ -19,6 +19,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Route;
 
+
 class Helper
 {
     /**
@@ -85,27 +86,28 @@ class Helper
         return $webp_file;
     }
 
+
+    /** Cap stored error details so one broken file cannot flood the report. */
+    private const MAX_REPORTED_ERRORS = 25;
+
     /**
-     * Load data from a JSON file and UPSERT rows one-by-one using a primary/unique key.
+     * Upsert rows from a JSON file, isolating each row so one bad row cannot
+     * discard the whole table.
      *
-     * IMPORTANT for seeder:
-     *  - For each row: first check if the key ($pk) exists in the DB.
-     *      - If it exists -> UPDATE (exclude pk from payload).
-     *      - If it does not exist -> INSERT.
-     *  - This explicitly follows the "check-then-update-else-insert" flow you requested.
+     * Overrides the parent implementation, which wraps every row of a table in a
+     * single transaction with the try/catch *outside* the loop. On PostgreSQL the
+     * first failing row aborts that transaction, so the entire table is rolled
+     * back — while the in-memory counters still report every row as inserted. A
+     * single duplicate email once silently discarded all 5791 users and cascaded
+     * into four FK-dependent tables that all reported success.
      *
-     * Metrics are returned to build a consolidated report in DatabaseSeeder.
+     * Here each row runs inside a nested transaction, which Laravel implements as
+     * a SAVEPOINT. A failing row rolls back to its own savepoint and the
+     * remaining rows still commit. Counters are incremented only after the row
+     * actually survives, so the report reflects what is really in the database.
      *
-     * @param class-string<\Illuminate\Database\Eloquent\Model> $modelClass Eloquent model class.
-     * @param string $jsonPath Absolute/relative path to a JSON file with an array of rows (or a single object).
-     * @param string $pk Primary/unique key column (default 'id').
-     * @param int $chunkSize How many rows to process per chunk inside the transaction.
-     * @return array{
-     *   model:string,table:string,file:string,
-     *   inserted:int,updated:int,skipped:int,
-     *   errors:array<int,array{key:mixed,message:string}>,
-     *   duration_ms:int
-     * }
+     * @return array{model:string,table:string,file:string,inserted:int,updated:int,
+     *               skipped:int,errors:array<int,array{key:mixed,message:string}>,duration_ms:int}
      */
     public static function loadFromJson(string $modelClass, string $jsonPath, string $pk = 'id', int $chunkSize = 1000): array
     {
@@ -118,44 +120,36 @@ class Helper
         $updated = 0;
         $skipped = 0;
         $errors = [];
+        $failed = 0;
 
-        // Validate file presence
+        $result = static fn() => [
+            'model' => $modelClass,
+            'table' => $table,
+            'file' => $jsonPath,
+            'inserted' => 0,
+            'updated' => 0,
+            'skipped' => 0,
+            'errors' => [],
+            'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+        ];
+
         if (!is_file($jsonPath)) {
-            return [
-                'model' => $modelClass,
-                'table' => $table,
-                'file' => $jsonPath,
-                'inserted' => 0,
-                'updated' => 0,
-                'skipped' => 0,
-                'errors' => [['key' => null, 'message' => "File not found: {$jsonPath}"]],
-                'duration_ms' => (int)round((microtime(true) - $started) * 1000),
-            ];
+            return array_replace($result(), ['errors' => [['key' => null, 'message' => "File not found: {$jsonPath}"]]]);
         }
 
-        // Read + decode JSON
-        $raw = file_get_contents($jsonPath);
-        $data = json_decode($raw, true);
+        $data = json_decode(file_get_contents($jsonPath), true);
 
         if (!is_array($data)) {
-            return [
-                'model' => $modelClass,
-                'table' => $table,
-                'file' => $jsonPath,
-                'inserted' => 0,
-                'updated' => 0,
-                'skipped' => 0,
-                'errors' => [['key' => null, 'message' => "Invalid JSON in {$jsonPath}"]],
-                'duration_ms' => (int)round((microtime(true) - $started) * 1000),
-            ];
+            return array_replace($result(), [
+                'errors' => [['key' => null, 'message' => "Invalid JSON in {$jsonPath}: " . json_last_error_msg()]],
+            ]);
         }
 
-        // Normalize: allow a single object as input
         if (Arr::isAssoc($data)) {
             $data = [$data];
         }
 
-        // Filter rows without PK and non-array items
+        // Normalize rows: drop malformed entries, serialize nested nodes, coerce dates.
         $rows = [];
         foreach ($data as $idx => $row) {
             if (!is_array($row)) {
@@ -169,18 +163,12 @@ class Helper
                 continue;
             }
             foreach ($row as $key => $value) {
-                // ── JSON node (nested object or array) → JSON string ──────────────
-                // json_decode with true converts both JSON objects and arrays into
-                // PHP arrays, so any nested JSON node arrives here as an array.
-                // It is serialized back to a string for json/jsonb or text columns.
                 if (is_array($value)) {
                     $row[$key] = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-                    continue; // already a string; skip date detection
+                    continue;
                 }
-
-                // ── Date coercion ─────────────────────────────────────────────────────
                 if (is_string($value) && $format = self::detectDateFormat($value)) {
-                    if (Carbon::hasFormat($value, $format)) {
+                    if (\Illuminate\Support\Carbon::hasFormat($value, $format)) {
                         $row[$key] = Carbon::createFromFormat($format, $value)->format('Y-m-d H:i:s');
                     }
                 }
@@ -189,77 +177,87 @@ class Helper
         }
 
         if (empty($rows)) {
-            return [
-                'model' => $modelClass,
-                'table' => $table,
-                'file' => $jsonPath,
-                'inserted' => 0,
-                'updated' => 0,
-                'skipped' => $skipped,
-                'errors' => $errors,
-                'duration_ms' => (int)round((microtime(true) - $started) * 1000),
-            ];
+            return array_replace($result(), ['skipped' => $skipped, 'errors' => $errors]);
         }
 
-        // Determine columns to update (all except the PK)
         $allColumns = array_keys(array_reduce($rows, function ($carry, $r) {
-            foreach ($r as $k => $v) $carry[$k] = true;
+            foreach ($r as $k => $v) {
+                $carry[$k] = true;
+            }
             return $carry;
         }, []));
         $updateColumns = array_values(array_diff($allColumns, [$pk]));
 
-        // Process inside a transaction, but keep per-row try/catch to continue on errors.
         try {
             DB::connection($conn)->transaction(function () use (
-                $conn, $table, $rows, $pk, $updateColumns, $chunkSize, &$inserted, &$updated, &$errors
+                $conn, $table, $rows, $pk, $updateColumns, $chunkSize, &$inserted, &$updated, &$errors, &$failed
             ) {
+                $db = DB::connection($conn);
+
                 foreach (array_chunk($rows, $chunkSize) as $chunk) {
-                    foreach ($chunk as $idx => $row) {
+                    foreach ($chunk as $row) {
                         $keyValue = $row[$pk];
 
-                        // 1) Check existence
-                        $exists = DB::connection($conn)
-                            ->table($table)
-                            ->where($pk, $keyValue)
-                            ->exists();
+                        try {
+                            // Nested transaction => SAVEPOINT: a failure here rolls
+                            // back only this row, leaving the outer transaction usable.
+                            $wasUpdate = $db->transaction(function () use ($db, $table, $row, $pk, $keyValue, $updateColumns) {
+                                $exists = $db->table($table)->where($pk, $keyValue)->exists();
 
-                        if ($exists) {
-                            // 2) UPDATE existing row (exclude the PK from payload)
-                            $payload = Arr::only($row, $updateColumns);
-                            if (!empty($payload)) {
-                                DB::connection($conn)
-                                    ->table($table)
-                                    ->where($pk, $keyValue)
-                                    ->update($payload);
+                                if ($exists) {
+                                    $payload = Arr::only($row, $updateColumns);
+                                    if (!empty($payload)) {
+                                        $db->table($table)->where($pk, $keyValue)->update($payload);
+                                    }
+                                    return true;
+                                }
+
+                                $db->table($table)->insert($row);
+                                return false;
+                            });
+
+                            // Only counted once the row has actually survived.
+                            $wasUpdate ? $updated++ : $inserted++;
+                        } catch (\Throwable $e) {
+                            $failed++;
+                            if ($failed <= self::MAX_REPORTED_ERRORS) {
+                                $errors[] = [
+                                    'key' => "{$pk}={$keyValue}",
+                                    'message' => self::firstLine($e->getMessage()),
+                                ];
                             }
-                            $updated++;
-                        } else {
-                            // 3) INSERT new row (full payload, including PK if present)
-                            DB::connection($conn)
-                                ->table($table)
-                                ->insert($row);
-                            $inserted++;
                         }
                     }
                 }
             }, 3);
         } catch (\Throwable $e) {
-            // Keep going; record the error for the final report
-            $errors[] = [
-                'key' => $table,
-                'message' => $e->getMessage(),
-            ];
+            // The outer commit itself failed, so nothing was persisted.
+            $inserted = 0;
+            $updated = 0;
+            $errors[] = ['key' => $table, 'message' => 'Transaction failed: ' . self::firstLine($e->getMessage())];
         }
+
+        if ($failed > self::MAX_REPORTED_ERRORS) {
+            $errors[] = ['key' => $table, 'message' => '... and ' . ($failed - self::MAX_REPORTED_ERRORS) . ' more failing row(s).'];
+        }
+
         return [
             'model' => $modelClass,
             'table' => $table,
             'file' => $jsonPath,
             'inserted' => $inserted,
             'updated' => $updated,
-            'skipped' => $skipped,
+            'skipped' => $skipped + $failed,
             'errors' => $errors,
-            'duration_ms' => (int)round((microtime(true) - $started) * 1000),
+            'duration_ms' => (int) round((microtime(true) - $started) * 1000),
         ];
+    }
+
+    /** Keeps driver errors readable in the console table (they span many lines). */
+    private static function firstLine(string $message): string
+    {
+        $line = trim(strtok($message, "\n") ?: $message);
+        return mb_strlen($line) > 300 ? mb_substr($line, 0, 297) . '...' : $line;
     }
 
     /**
