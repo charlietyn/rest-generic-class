@@ -1,4 +1,4 @@
-# Cache Scenarios & Compatibility Matrix (Laravel 12)
+# Cache Scenarios & Compatibility Matrix (Laravel 12/13)
 
 ## Purpose
 

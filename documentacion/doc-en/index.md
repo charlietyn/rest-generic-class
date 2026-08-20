@@ -11,8 +11,8 @@ Welcome to the **Rest Generic Class** package documentation. This library provid
 
 | Component | Supported Version |
 | --- | --- |
-| PHP | ^8.0 |
-| Laravel (Illuminate components) | ^12.0 |
+| PHP | ^8.2 (Laravel 12) / ^8.3 (Laravel 13) |
+| Laravel | ^12.61.1 or ^13.12 |
 
 ## Table of contents
 

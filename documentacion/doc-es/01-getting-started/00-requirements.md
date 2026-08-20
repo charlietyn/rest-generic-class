@@ -2,8 +2,13 @@
 
 ## Requisitos de ejecución
 
-- **PHP**: ^8.0
-- **Laravel (componentes Illuminate)**: ^12.0
+| Laravel | PHP |
+| --- | --- |
+| 12.61.1+ | 8.2+ |
+| 13.12+ | 8.3+ |
+
+Composer fuerza la pareja compatible mediante `laravel/framework: ^12.61.1 || ^13.12.0`.
+Las instalaciones con PHP 8.2 resuelven Laravel 12; Laravel 13 requiere PHP 8.3 o superior.
 
 ## Integraciones opcionales
 

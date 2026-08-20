@@ -1,6 +1,8 @@
 # Testing
 
-The package includes a lightweight PHPUnit harness for pure unit tests. It intentionally avoids Testbench, Spatie database fixtures, and a host Laravel app.
+The package uses PHPUnit plus Orchestra Testbench. Most tests remain focused unit
+tests; the provider compatibility test boots the package in a real Laravel
+application container.
 
 Run package tests from the package root:
 
@@ -9,10 +11,9 @@ composer install
 vendor/bin/phpunit
 ```
 
-Current package tests cover:
-
-- `PermissionCompressor` wildcard behavior and edge cases.
-- Authenticated permission payload behavior for flat vs. compressed responses.
+The CI matrix covers Laravel 12 on PHP 8.2/8.3 and Laravel 13 on PHP 8.3/8.4/8.5.
+It exercises CRUD support, Eloquent relations, pagination, soft deletes,
+validation, authorization, permissions, cache behavior, and package-provider boot.
 
 Recommended checks for your host app:
 

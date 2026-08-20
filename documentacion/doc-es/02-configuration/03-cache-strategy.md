@@ -50,6 +50,31 @@ En operaciones de lectura, la identidad de caché debe variar por forma de reque
 
 Esto evita contaminación de caché entre distintos esquemas de consulta y contextos.
 
+## Laravel 13 y cache de objetos serializados
+
+Las aplicaciones nuevas de Laravel 13 definen `cache.serializable_classes` como
+`false`. El paquete respeta ese valor seguro: los resultados array de `list_all`
+y `get_one` se cachean normalmente, pero los resultados objeto, como paginadores
+offset o cursor, se devuelven sin almacenarse.
+
+Para cachear paginadores, define una allowlist limitada en `config/cache.php` de
+la aplicación host. Incluye el paginador, la colección, el modelo raíz y todos
+los modelos relacionados que puedan aparecer en el resultado:
+
+```php
+'serializable_classes' => [
+    Illuminate\Pagination\LengthAwarePaginator::class,
+    Illuminate\Pagination\CursorPaginator::class,
+    Illuminate\Database\Eloquent\Collection::class,
+    App\Models\Product::class,
+    App\Models\Category::class,
+],
+```
+
+Ejecuta `php artisan optimize:clear` tras modificar la allowlist. No uses `true`
+salvo que aceptes conscientemente deserialización de objetos sin restricciones.
+El paquete usa el namespace de claves `rgc:v2` desde este cambio.
+
 ## Control de caché por servicio
 
 Los servicios hijos pueden sobreescribir el comportamiento de caché sin cambiar la config global:

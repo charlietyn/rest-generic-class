@@ -5,14 +5,15 @@ Bienvenido/a a la documentación del paquete **Rest Generic Class**. Esta librer
 **Empieza aquí:**
 - [Introducción](00-overview/00-introduction.md)
 - [Requisitos](01-getting-started/00-requirements.md)
+- [Migración a Laravel 13 explicada para juniors](01-getting-started/03-migracion-laravel-13-para-juniors.md)
 - [Inicio rápido](01-getting-started/02-quickstart.md)
 
 ## Compatibilidad
 
 | Componente | Versión compatible |
 | --- | --- |
-| PHP | ^8.0 |
-| Laravel (componentes Illuminate) | ^12.0 |
+| PHP | ^8.2 (Laravel 12) / ^8.3 (Laravel 13) |
+| Laravel | ^12.61.1 o ^13.12 |
 
 ## Tabla de contenidos
 
@@ -24,6 +25,7 @@ Bienvenido/a a la documentación del paquete **Rest Generic Class**. Esta librer
 - [Requisitos](01-getting-started/00-requirements.md)
 - [Instalación](01-getting-started/01-installation.md)
 - [Inicio rápido](01-getting-started/02-quickstart.md)
+- [Migración a Laravel 13 explicada para juniors](01-getting-started/03-migracion-laravel-13-para-juniors.md)
 
 ### Configuración
 - [Referencia de configuración](02-configuration/00-configuration-reference.md)

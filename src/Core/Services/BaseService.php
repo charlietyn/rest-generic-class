@@ -43,7 +43,7 @@ class BaseService
      * Nota para junior: este prefijo ayuda a separar nuestras claves
      * de otras claves del proyecto y facilita versionar la estrategia.
      */
-    private string $cachePrefix = 'rgc:v1';
+    private string $cachePrefix = 'rgc:v2';
 
     /**
      * Per-service cache toggle.

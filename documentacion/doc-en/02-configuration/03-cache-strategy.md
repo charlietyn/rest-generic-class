@@ -50,6 +50,31 @@ For read operations, the cache identity should vary by request shape:
 
 This prevents cache pollution between different query schemas and contexts.
 
+## Laravel 13 and serialized object cache
+
+Fresh Laravel 13 applications set `cache.serializable_classes` to `false`.
+The package honors that security default: array results from `list_all` and
+`get_one` are cached normally, but object results such as offset or cursor
+paginators are returned without being stored.
+
+To cache paginator objects, define a narrow allowlist in the host application's
+`config/cache.php`. Include the paginator, collection, root model, and every
+related model that can appear in the cached result:
+
+```php
+'serializable_classes' => [
+    Illuminate\Pagination\LengthAwarePaginator::class,
+    Illuminate\Pagination\CursorPaginator::class,
+    Illuminate\Database\Eloquent\Collection::class,
+    App\Models\Product::class,
+    App\Models\Category::class,
+],
+```
+
+Run `php artisan optimize:clear` after changing the allowlist. Do not set the
+option to `true` unless you deliberately accept unrestricted object
+deserialization. The package uses the `rgc:v2` key namespace after this change.
+
 ## Per-service cache control
 
 Child services can override cache behavior without changing global config:

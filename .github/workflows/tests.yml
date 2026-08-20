@@ -1,0 +1,47 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  phpunit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php: '8.2'
+            laravel: '12.61.1'
+            testbench: '10.11.*'
+            phpunit: '^11.5.50'
+          - php: '8.3'
+            laravel: '^12.61.1'
+            testbench: '^10.9'
+            phpunit: '^11.5.50'
+          - php: '8.3'
+            laravel: '13.12.*'
+            testbench: '11.0.*'
+            phpunit: '^12.5.12'
+          - php: '8.4'
+            laravel: '^13.12'
+            testbench: '^11.0'
+            phpunit: '^12.5.12'
+          - php: '8.5'
+            laravel: '^13.12'
+            testbench: '^11.0'
+            phpunit: '^12.5.12'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - run: composer validate --strict
+      - run: composer require --no-update "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" "phpunit/phpunit:${{ matrix.phpunit }}"
+      - run: composer update --prefer-dist --no-interaction --no-progress --with-all-dependencies
+      - run: composer audit
+      - run: vendor/bin/phpunit
