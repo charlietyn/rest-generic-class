@@ -52,11 +52,30 @@ class CacheCoordinator
 
     public function remember(string $operation, array $params, callable $callback): mixed
     {
-        return $this->store()->remember(
-            $this->key($operation, $params),
-            $this->resolveTtl($operation, $params),
-            $callback
-        );
+        $store = $this->store();
+        $key = $this->key($operation, $params);
+
+        if ($store->has($key)) {
+            $cachedValue = $store->get($key);
+
+            if ($this->canStore($cachedValue)) {
+                return $cachedValue;
+            }
+
+            $store->forget($key);
+        }
+
+        $value = $callback();
+
+        // Laravel 13 disables object deserialization by default through
+        // cache.serializable_classes=false. REST array payloads remain safe to
+        // cache, while paginator objects are deliberately left uncached unless
+        // the host application opts into an explicit class allowlist.
+        if ($this->canStore($value)) {
+            $store->put($key, $value, $this->resolveTtl($operation, $params));
+        }
+
+        return $value;
     }
 
     public function store()
@@ -145,6 +164,30 @@ class CacheCoordinator
         $ttlByMethod = (int)config('rest-generic-class.cache.ttl_by_method.' . $operation, $defaultTtl);
 
         return now()->addSeconds($ttlByMethod);
+    }
+
+    private function canStore(mixed $value): bool
+    {
+        return config('cache.serializable_classes') !== false || !$this->containsObject($value);
+    }
+
+    private function containsObject(mixed $value): bool
+    {
+        if (is_object($value)) {
+            return true;
+        }
+
+        if (!is_array($value)) {
+            return false;
+        }
+
+        foreach ($value as $item) {
+            if ($this->containsObject($item)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function cacheInvalidatesFromConstant(): array

@@ -1,6 +1,6 @@
 # Reglas de Validación y Sistema de Validación en Base de Datos
 
-Este paquete incluye un sistema completo de validación de IDs y arrays contra la base de datos, compuesto por seis reglas de validación personalizadas y un trait reutilizable. Todas las reglas implementan `ValidationRule` y `ValidatorAwareRule` de Laravel 12 para una integración nativa con el sistema de validación.
+Este paquete incluye un sistema completo de validación de IDs y arrays contra la base de datos, compuesto por seis reglas de validación personalizadas y un trait reutilizable. Todas las reglas implementan los contratos `ValidationRule` y `ValidatorAwareRule` de Laravel 12 y 13 para una integración nativa con el sistema de validación.
 
 ---
 

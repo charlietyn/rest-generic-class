@@ -1,6 +1,6 @@
 # Validation Rules and Database Validation System
 
-This package ships a complete system for validating arrays of IDs against the database, composed of six custom validation rules and a reusable trait. All rules implement Laravel 12's `ValidationRule` and `ValidatorAwareRule` for native integration with the validation pipeline.
+This package ships a complete system for validating arrays of IDs against the database, composed of six custom validation rules and a reusable trait. All rules implement Laravel 12 and 13's `ValidationRule` and `ValidatorAwareRule` contracts for native integration with the validation pipeline.
 
 ---
 

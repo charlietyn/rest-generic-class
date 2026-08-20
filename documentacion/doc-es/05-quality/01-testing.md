@@ -1,6 +1,8 @@
 # Testing
 
-El paquete incluye un harness liviano de PHPUnit para tests unitarios puros. Evita intencionalmente Testbench, fixtures de base de datos Spatie y una app Laravel host.
+El paquete usa PHPUnit y Orchestra Testbench. La mayoría de pruebas siguen siendo
+unitarias y focalizadas; la prueba de compatibilidad del provider arranca el
+paquete dentro de un contenedor real de Laravel.
 
 Ejecuta los tests del paquete desde la raiz del paquete:
 
@@ -9,10 +11,9 @@ composer install
 vendor/bin/phpunit
 ```
 
-Los tests actuales del paquete cubren:
-
-- Comportamiento wildcard y casos borde de `PermissionCompressor`.
-- Payload de permisos autenticado en respuestas planas y comprimidas.
+La matriz CI cubre Laravel 12 con PHP 8.2/8.3 y Laravel 13 con PHP 8.3/8.4/8.5.
+Ejercita CRUD, relaciones Eloquent, paginación, soft delete, validación,
+autorización, permisos, caché y arranque del service provider.
 
 Checks recomendados para tu app host:
 

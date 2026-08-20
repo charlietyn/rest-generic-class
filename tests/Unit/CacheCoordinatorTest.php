@@ -21,6 +21,9 @@ final class CacheCoordinatorTest extends TestCase
         parent::setUp();
 
         $this->config = new ConfigRepository([
+            'cache' => [
+                'serializable_classes' => false,
+            ],
             'rest-generic-class' => [
                 'cache' => [
                     'enabled' => false,
@@ -130,6 +133,52 @@ final class CacheCoordinatorTest extends TestCase
         $this->assertSame(['calls' => 2], $third);
     }
 
+    public function testObjectPayloadIsNotCachedWhenLaravelDisablesObjectDeserialization(): void
+    {
+        $this->config->set('rest-generic-class.cache.enabled', true);
+        $coordinator = $this->coordinator();
+        $calls = 0;
+
+        $first = $coordinator->remember('list_all', ['pagination' => ['page' => 1]], function () use (&$calls) {
+            $calls++;
+            return ['data' => [(object) ['calls' => $calls]]];
+        });
+        $second = $coordinator->remember('list_all', ['pagination' => ['page' => 1]], function () use (&$calls) {
+            $calls++;
+            return ['data' => [(object) ['calls' => $calls]]];
+        });
+
+        $this->assertSame(1, $first['data'][0]->calls);
+        $this->assertSame(2, $second['data'][0]->calls);
+        $this->assertSame(2, $calls);
+    }
+
+    public function testObjectPayloadCanBeCachedWithAnExplicitLaravelAllowlist(): void
+    {
+        $this->config->set('cache.serializable_classes', [\stdClass::class]);
+        $this->config->set('rest-generic-class.cache.enabled', true);
+        $coordinator = $this->coordinator();
+        $calls = 0;
+
+        $callback = function () use (&$calls) {
+            $calls++;
+            return (object) ['calls' => $calls];
+        };
+
+        $first = $coordinator->remember('list_all', ['pagination' => ['page' => 1]], $callback);
+        $second = $coordinator->remember('list_all', ['pagination' => ['page' => 1]], $callback);
+
+        $this->assertSame(1, $first->calls);
+        $this->assertSame(1, $second->calls);
+        $this->assertSame(1, $calls);
+
+        $this->config->set('cache.serializable_classes', false);
+        $third = $coordinator->remember('list_all', ['pagination' => ['page' => 1]], $callback);
+
+        $this->assertSame(2, $third->calls);
+        $this->assertSame(2, $calls);
+    }
+
     private function coordinator(
         ?bool $cacheable = null,
         ?int $ttl = null,
@@ -137,7 +186,7 @@ final class CacheCoordinatorTest extends TestCase
     ): CacheCoordinator {
         return new CacheCoordinator(
             new HardItem(),
-            'rgc:v1',
+            'rgc:v2',
             $cacheable,
             $ttl,
             $operations,

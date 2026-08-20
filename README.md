@@ -3,13 +3,20 @@
 **A Laravel package that provides base classes for RESTful CRUD with dynamic filtering, relation loading, and hierarchical listing.**
 
 [![Latest Version](https://img.shields.io/packagist/v/ronu/rest-generic-class.svg?style=flat-square)](https://packagist.org/packages/ronu/rest-generic-class)
-[![Laravel](https://img.shields.io/badge/Laravel-12.x-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
+[![Laravel](https://img.shields.io/badge/Laravel-12.x%20%7C%2013.x-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 [![License](https://img.shields.io/packagist/l/ronu/rest-generic-class.svg?style=flat-square)](LICENSE.md)
 
 ## Requirements
 
-- PHP ^8.0
-- Laravel (Illuminate components) ^12.0
+| Laravel | PHP | Test runtime |
+| --- | --- | --- |
+| 12.61.1+ | 8.2+ | PHPUnit 11 |
+| 13.12+ | 8.3+ | PHPUnit 12 |
+
+The package keeps Laravel 12 support while adding Laravel 13 support. See the
+[Laravel 13 migration plan and audit](docs/laravel-13-migration-plan.md).
+There is also a detailed Spanish
+[Laravel 13 migration guide for junior developers](documentacion/doc-es/01-getting-started/03-migracion-laravel-13-para-juniors.md).
 
 ## Installation
 
@@ -148,6 +155,8 @@ This package now supports **generic cache integration** via Laravel Cache stores
 - Cache is applied in `BaseService` for read operations: `list_all` and `get_one`.
 - Cache key fingerprint includes: model, operation, route, query params, auth user, selected headers, normalized params, and a model cache version.
 - Any successful write (`create`, `update`, `destroy`, `destroybyid`) bumps a model-level cache version to avoid stale reads without needing tags.
+- Laravel 13's secure `cache.serializable_classes=false` default is honored: array payloads are cached, while paginator objects are not cached unless the host application supplies an explicit class allowlist.
+- Cache keys use the `rgc:v2` namespace so incompatible Laravel 12 cache entries are not reused after an upgrade.
 
 ### Store selection
 
@@ -240,6 +249,7 @@ Start with [Troubleshooting](documentacion/doc-en/05-quality/02-troubleshooting.
 
 - [Documentation index (EN)](documentacion/doc-en/index.md)
 - [Documentation index (ES)](documentacion/doc-es/index.md)
+- [Migración a Laravel 13 explicada para juniors](documentacion/doc-es/01-getting-started/03-migracion-laravel-13-para-juniors.md)
 - [Quickstart](documentacion/doc-en/01-getting-started/02-quickstart.md)
 - [Configuration reference](documentacion/doc-en/02-configuration/00-configuration-reference.md)
 - [Scenarios](documentacion/doc-en/03-usage/02-scenarios.md)

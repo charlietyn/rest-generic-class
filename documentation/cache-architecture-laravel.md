@@ -1,4 +1,4 @@
-# Generic Cache Architecture for `rest-generic-class` (Laravel 12)
+# Generic Cache Architecture for `rest-generic-class` (Laravel 12/13)
 
 ## Audience
 
