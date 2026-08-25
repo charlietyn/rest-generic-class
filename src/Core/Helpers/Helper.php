@@ -212,7 +212,7 @@ class Helper
                                     return true;
                                 }
 
-                                $db->table($table)->insert($row);
+                                self::insertRow($db, $table, $row);
                                 return false;
                             });
 
@@ -251,6 +251,43 @@ class Helper
             'errors' => $errors,
             'duration_ms' => (int) round((microtime(true) - $started) * 1000),
         ];
+    }
+
+    /**
+     * Insert a row preserving whatever explicit primary key it carries.
+     *
+     * On PostgreSQL a `GENERATED ALWAYS AS IDENTITY` column rejects every INSERT
+     * that names it (SQLSTATE 428C9) unless the statement carries
+     * `OVERRIDING SYSTEM VALUE`, a clause the query builder never emits. Seed
+     * files pin their ids on purpose -the foreign keys between them depend on it-
+     * so this clause is what lets a seeded id survive.
+     *
+     * It is added unconditionally on PostgreSQL: the clause is accepted and inert
+     * on identity BY DEFAULT, on serial and on tables with no generated column, so
+     * there is no need to probe the catalog per table. Every other driver keeps
+     * the query builder insert.
+     *
+     * SQL Server has the same gap on IDENTITY columns, but its remedy (SET IDENTITY_INSERT)
+     * is session scoped and per table, so it is deliberately left out of here.
+     *
+     * @param \Illuminate\Database\Connection $db
+     */
+    private static function insertRow($db, string $table, array $row): void
+    {
+        if ($db->getDriverName() !== 'pgsql') {
+            $db->table($table)->insert($row);
+            return;
+        }
+
+        $grammar = $db->getQueryGrammar();
+        $columns = array_keys($row);
+
+        $db->insert(
+            'insert into ' . $grammar->wrapTable($table)
+            . ' (' . $grammar->columnize($columns) . ') overriding system value values ('
+            . implode(', ', array_fill(0, count($columns), '?')) . ')',
+            array_values($row)
+        );
     }
 
     /** Keeps driver errors readable in the console table (they span many lines). */
