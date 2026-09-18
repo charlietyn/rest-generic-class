@@ -366,4 +366,40 @@ class Helper
         }, []));
     }
 
+    /**
+     * Normalize the `select` query parameter into a column array.
+     *
+     * Accepts a JSON array ('["id","code"]'), a comma separated list ('id,code'),
+     * an already decoded array, or an empty value (=> ['*']).
+     *
+     * @param mixed $select
+     * @return array
+     */
+    public static function parseSelect(mixed $select): array
+    {
+        if ($select === null || $select === '' || $select === []) {
+            return ['*'];
+        }
+
+        if (is_string($select)) {
+            $decoded = json_decode($select, true);
+
+            // Only an array or a plain string decode is accepted: json_decode('5')
+            // yields int 5, which must stay the column name '5', not the integer.
+            $select = (json_last_error() === JSON_ERROR_NONE && (is_array($decoded) || is_string($decoded)))
+                ? (array) $decoded
+                : explode(',', $select);
+        }
+
+        $columns = array_values(array_filter(
+            array_map(
+                static fn ($column) => is_string($column) ? trim($column) : $column,
+                (array) $select
+            ),
+            static fn ($column) => $column !== '' && $column !== null
+        ));
+
+        return $columns === [] ? ['*'] : $columns;
+    }
+
 }

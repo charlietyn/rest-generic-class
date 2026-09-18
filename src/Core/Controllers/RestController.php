@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Ronu\RestGenericClass\Core\Helpers\DatabaseErrorParser;
 use Ronu\RestGenericClass\Core\Helpers\DatabaseErrorParserException;
+use Ronu\RestGenericClass\Core\Helpers\Helper;
 use Ronu\RestGenericClass\Core\Models\BaseModel;
 use Ronu\RestGenericClass\Core\Requests\BaseFormRequest;
 use Ronu\RestGenericClass\Core\Services\BaseService;
@@ -93,7 +94,9 @@ class RestController extends BaseController
         } else {
             $parameters['attr'] = null;
         }
-        array_key_exists('select', $payloads) ? $parameters['select'] = $request['select'] : $parameters['select'] = "*";
+        array_key_exists('select', $payloads)
+            ? $parameters['select'] = Helper::parseSelect($request['select'])
+            : $parameters['select'] = ['*'];
         array_key_exists('pagination', $payloads) ? $parameters['pagination'] = $request['pagination'] : $parameters['pagination'] = null;
         array_key_exists('orderby', $payloads) ? $parameters['orderby'] = $request['orderby'] : $parameters['orderby'] = null;
         array_key_exists('oper', $payloads) ? $parameters['oper'] = $request['oper'] : $parameters['oper'] = null;

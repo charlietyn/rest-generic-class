@@ -319,16 +319,23 @@ class DatabaseErrorParser
     {
         $message = strtoupper($message);
 
-        if (Str::contains($message, ['INSERT', 'DUPLICATE KEY', 'DUPLICATE ENTRY', 'CANNOT ADD'])) {
+        // Column resolution errors are SELECT-side whatever the column is called.
+        // Checked first because a column named "deleted_at" contains "DELETE".
+        if (Str::contains($message, ['UNKNOWN COLUMN', 'INVALID COLUMN', 'UNDEFINED COLUMN'])) {
+            return 'SELECT';
+        }
+
+        // Word boundaries: "DELETED_AT" must not read as a DELETE statement.
+        if (preg_match('/\bINSERT\b|DUPLICATE KEY|DUPLICATE ENTRY|CANNOT ADD/', $message)) {
             return 'INSERT';
         }
-        if (Str::contains($message, ['UPDATE', 'CANNOT UPDATE', 'TRUNCATED'])) {
+        if (preg_match('/\bUPDATE\b|CANNOT UPDATE|TRUNCATED/', $message)) {
             return 'UPDATE';
         }
-        if (Str::contains($message, ['DELETE', 'CANNOT DELETE', 'REMOVE'])) {
+        if (preg_match('/\bDELETE\b|CANNOT DELETE|\bREMOVE\b/', $message)) {
             return 'DELETE';
         }
-        if (Str::contains($message, ['SELECT', 'UNKNOWN COLUMN', 'INVALID COLUMN', 'DOES NOT EXIST'])) {
+        if (preg_match('/\bSELECT\b|DOES NOT EXIST/', $message)) {
             return 'SELECT';
         }
 

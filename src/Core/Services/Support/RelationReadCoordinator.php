@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
+use Ronu\RestGenericClass\Core\Helpers\Helper;
 use Ronu\RestGenericClass\Core\Exports\ModelExport;
 
 class RelationReadCoordinator
@@ -235,18 +236,7 @@ class RelationReadCoordinator
 
     private function parseSelect(Request $request): array
     {
-        $select = $request->get('select');
-
-        if (!$select) {
-            return ['*'];
-        }
-
-        if (is_string($select)) {
-            $decoded = json_decode($select, true);
-            return $decoded ?: explode(',', $select);
-        }
-
-        return (array)$select;
+        return Helper::parseSelect($request->get('select'));
     }
 
     private function parseRelations(Request $request): array

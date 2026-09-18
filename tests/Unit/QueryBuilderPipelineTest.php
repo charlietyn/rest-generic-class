@@ -6,6 +6,7 @@ use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Events\Dispatcher;
 use PHPUnit\Framework\TestCase;
+use Ronu\RestGenericClass\Core\Helpers\Helper;
 use Ronu\RestGenericClass\Core\Services\Support\QueryBuilderPipeline;
 use Ronu\RestGenericClass\Tests\Unit\Fixtures\OrderTestClient;
 
@@ -97,5 +98,27 @@ final class QueryBuilderPipelineTest extends TestCase
             'paginated' => true,
             'params' => ['pagination' => ['pageSize' => 10]],
         ], $result);
+    }
+
+    public function testJsonSelectReachesEloquentAsSeparateColumns(): void
+    {
+        $pipeline = new QueryBuilderPipeline(
+            new OrderTestClient(),
+            fn ($query, $params) => $query,
+            fn ($query, $oper, $boolean, $modelClass) => $query,
+            fn ($query, $relations, $oper) => $query,
+            fn ($query, $params) => $query
+        );
+
+        $query = $pipeline->process(
+            ['select' => Helper::parseSelect('["id","name"]')],
+            OrderTestClient::query()
+        );
+
+        $sql = $query->toSql();
+
+        $this->assertStringContainsString('select "id", "name"', $sql);
+        // The 42703 regression: the whole JSON string used as one column name.
+        $this->assertStringNotContainsString('["id"', $sql);
     }
 }
