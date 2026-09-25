@@ -147,6 +147,11 @@ class CacheCoordinator
             'rel_versions' => $relationVersionsResolver($params),
         ];
 
+        // Older releases ignored aggregate parameters but could cache the record list.
+        if (AggregateSpecParser::requested($params)) {
+            $fingerprint['aggregate_contract'] = 1;
+        }
+
         return $this->prefix . ':' . sha1(json_encode($fingerprint));
     }
 

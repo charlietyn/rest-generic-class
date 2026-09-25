@@ -58,6 +58,7 @@ class HierarchyCoordinator
 
     public function list(array $params, bool $toJson = true): mixed
     {
+        AggregateSpecParser::reject($params, 'hierarchy');
         $this->assertSupportsHierarchy('listing');
 
         $hierarchyConfig = $this->normalizeListParams($params['hierarchy'] ?? null);
@@ -103,6 +104,7 @@ class HierarchyCoordinator
 
     public function show(array $params, mixed $id): array
     {
+        AggregateSpecParser::reject($params, 'hierarchy detail');
         $this->assertSupportsHierarchy('show');
 
         $hierarchyConfig = $this->normalizeShowParams($params['hierarchy'] ?? null);

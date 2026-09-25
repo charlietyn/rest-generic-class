@@ -15,6 +15,9 @@ use Illuminate\Support\Facades\Mail;
 use Nwidart\Modules\Facades\Module;
 use Ronu\RestGenericClass\Core\Contracts\HasRestRelations;
 use Ronu\RestGenericClass\Core\Services\Support\CacheCoordinator;
+use Ronu\RestGenericClass\Core\Services\Support\AggregateCoordinator;
+use Ronu\RestGenericClass\Core\Services\Support\AggregatePolicyResolver;
+use Ronu\RestGenericClass\Core\Services\Support\AggregateSpecParser;
 use Ronu\RestGenericClass\Core\Services\Support\ExportCoordinator;
 use Ronu\RestGenericClass\Core\Services\Support\HierarchyCoordinator;
 use Ronu\RestGenericClass\Core\Services\Support\OperFilterPipeline;
@@ -142,7 +145,7 @@ class BaseService
             fn (Builder $query, array|string $params): Builder => $this->eq_attr($query, $params),
             fn (Builder $query, mixed $oper, string $boolean = 'and', $modelClass = null): Builder => $this->applyOperTree($query, $oper, $boolean, $modelClass),
             fn (Builder $query, mixed $relations, mixed $oper = []): Builder => $this->relations($query, $relations, $oper),
-            fn (Builder $query, array|string $params): Builder => $this->order_by($query, $params)
+            fn (Builder $query, array|string $params, array $aliases = []): Builder => $this->order_by($query, $params, $aliases)
         );
     }
 
@@ -373,9 +376,11 @@ class BaseService
      *                             or an array of column-direction pairs.
      * @return Builder The query builder instance with applied ordering.
      */
-    private function order_by(Builder $query, array|string $params): Builder
+    private function order_by(Builder $query, array|string $params, array $aliases = []): Builder
     {
-        return $this->applyDynamicOrderBy($query, $params, $this->modelClass);
+        return $aliases
+            ? $this->applyDynamicAggregateOrderBy($query, $params, $this->modelClass, $aliases)
+            : $this->applyDynamicOrderBy($query, $params, $this->modelClass);
     }
 
 
@@ -454,6 +459,15 @@ class BaseService
 
     public function list_all($params, $toJson = true): mixed
     {
+        $params = (new AggregateSpecParser())->normalize((array) $params);
+        if (AggregateSpecParser::requested($params)) {
+            if (isset($params['eq'])) {
+                $params['attr'] = array_merge($params['eq'], $params['attr'] ?? []);
+                unset($params['eq']);
+            }
+            // Authorize before cache lookup as model policy may depend on request context.
+            (new AggregatePolicyResolver())->validate($this->modelClass, $params);
+        }
         if ($toJson && $this->shouldUseCache('list_all', (array)$params)) {
             return $this->rememberWithCache('list_all', (array)$params, function () use ($params, $toJson) {
                 return $this->listAllWithoutCache($params, $toJson);
@@ -465,6 +479,13 @@ class BaseService
 
     private function listAllWithoutCache($params, $toJson = true): mixed
     {
+        if (isset($params['aggregate'])) {
+            $this->currentDepth = 0;
+            $this->conditionCount = 0;
+            $query = $this->queryBuilderPipeline()->filter($params, $this->modelClass->newQuery());
+            $metrics = (new AggregateCoordinator())->global($query, $params['aggregate']);
+            return $toJson ? ['data' => $metrics] : $metrics;
+        }
         // Check if hierarchy mode is requested
         if (isset($params['hierarchy']) && $params['hierarchy']) {
             return $this->listHierarchy($params, $toJson);
@@ -509,6 +530,7 @@ class BaseService
 
     public function get_one($params, $toJson = true): mixed
     {
+        AggregateSpecParser::reject((array) $params, 'get_one');
         if ($toJson && $this->shouldUseCache('get_one', (array)$params)) {
             return $this->rememberWithCache('get_one', (array)$params, function () use ($params, $toJson) {
                 return $this->getOneWithoutCache($params, $toJson);
@@ -708,6 +730,7 @@ class BaseService
 
     public function show($params, $id): mixed
     {
+        AggregateSpecParser::reject((array) $params, 'show');
         // Check if hierarchy mode is requested
         if (isset($params['hierarchy']) && $params['hierarchy']) {
             return $this->showHierarchy($params, $id);
@@ -734,6 +757,7 @@ class BaseService
      */
     public function showHierarchy(array $params, mixed $id): array
     {
+        AggregateSpecParser::reject($params, 'showHierarchy');
         return $this->hierarchyCoordinator()->show($params, $id);
     }
 
@@ -877,7 +901,26 @@ class BaseService
      */
     private function shouldUseCache(string $operation, array $params): bool
     {
+        // Relation/pivot coordinators do not universally bump model cache versions.
+        // Bypass caching for dependent metrics until every write path is tracked.
+        if (AggregateSpecParser::requested($params)
+            && (!empty($params['with_aggregates']) || $this->hasAggregateRelationFilters($params['oper'] ?? []))) {
+            return false;
+        }
         return $this->cacheCoordinator()->shouldUse($operation, $params);
+    }
+
+    private function hasAggregateRelationFilters(array $oper): bool
+    {
+        foreach ($oper as $key => $value) {
+            if (is_string($key) && !in_array($key, ['and', 'or'], true)) {
+                return true;
+            }
+            if (is_array($value) && $this->hasAggregateRelationFilters($value)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -994,11 +1037,13 @@ class BaseService
 
     public function exportExcel($params)
     {
+        AggregateSpecParser::reject((array) $params, 'exportExcel');
         return $this->exportCoordinator()->exportExcel($params);
     }
 
     public function exportPdf($params)
     {
+        AggregateSpecParser::reject((array) $params, 'exportPdf');
         return $this->exportCoordinator()->exportPdf($params);
     }
 
@@ -1200,6 +1245,7 @@ class BaseService
      */
     public function listHierarchy(array $params, bool $toJson = true): mixed
     {
+        AggregateSpecParser::reject($params, 'listHierarchy');
         return $this->hierarchyCoordinator()->list($params, $toJson);
     }
 }

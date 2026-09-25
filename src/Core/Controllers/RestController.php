@@ -101,6 +101,16 @@ class RestController extends BaseController
         array_key_exists('orderby', $payloads) ? $parameters['orderby'] = $request['orderby'] : $parameters['orderby'] = null;
         array_key_exists('oper', $payloads) ? $parameters['oper'] = $request['oper'] : $parameters['oper'] = null;
         array_key_exists('hierarchy', $payloads) ? $parameters['hierarchy'] = $request['hierarchy'] : $parameters['hierarchy'] = null;
+        foreach (['aggregate', 'with_aggregates', 'groupby', 'groupBy', 'having', 'distinct'] as $key) {
+            if (array_key_exists($key, $payloads)) {
+                $parameters[$key] = $request[$key];
+            }
+        }
+        if (\Ronu\RestGenericClass\Core\Services\Support\AggregateSpecParser::requested($parameters)) {
+            $normalized = (new \Ronu\RestGenericClass\Core\Services\Support\AggregateSpecParser())->normalize($payloads);
+            $parameters = array_replace($parameters, array_intersect_key($normalized, $parameters));
+            $parameters['attr'] = array_merge($normalized['eq'] ?? [], $normalized['attr'] ?? []);
+        }
         return $parameters;
     }
 

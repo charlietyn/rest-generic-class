@@ -45,6 +45,7 @@ class ExportCoordinator
 
     public function payload($params): array
     {
+        AggregateSpecParser::reject((array) $params, 'export');
         $result = ($this->listAll)($params);
 
         return [

@@ -27,6 +27,10 @@ return [
         'column_cache_ttl' => 3600, // Cache column lists for 1 hour
     ],
 
+    'aggregations' => [
+        'max_metrics' => 10,
+    ],
+
     'validation' => [
         'cache_enabled' => env('REST_VALIDATION_CACHE_ENABLED', true),
         'cache_ttl' => (int)env('REST_VALIDATION_CACHE_TTL', 3600),

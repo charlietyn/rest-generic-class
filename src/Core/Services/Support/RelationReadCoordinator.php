@@ -39,6 +39,20 @@ class RelationReadCoordinator
         $query = $parent->{$config['relationship']}();
         $params = $this->parseParams($request);
 
+        if (AggregateSpecParser::requested($params)) {
+            $params = (new AggregateSpecParser())->normalize($params);
+            (new AggregatePolicyResolver())->validate($query->getRelated(), $params);
+            if (isset($params['aggregate'])) {
+                $this->queryFilter->applyAggregateFilters($query->getQuery(), $params['eq'], $params['oper']);
+                return ['data' => (new AggregateCoordinator())->global($query->getQuery(), $params['aggregate'])];
+            }
+            // Qualify fields for relations whose native query contains pivot/through joins.
+            $select = array_map(fn ($column) => $query->getRelated()->qualifyColumn($column), $params['select']);
+            $query->select($select);
+            (new AggregateCoordinator())->relations($query->getQuery(), $params['with_aggregates'], function ($related, $spec) {
+                $this->queryFilter->applyAggregateFilters($related, $spec['attr'] ?? [], $spec['oper'] ?? []);
+            });
+        }
         $this->applyQueryOptions($query, $params);
 
         if (!empty($params['pagination'])) {
@@ -50,6 +64,7 @@ class RelationReadCoordinator
 
     public function show(Request $request, mixed $parentIdOrRelatedId, mixed $relatedId = null): mixed
     {
+        AggregateSpecParser::reject($request->all(), 'relation detail');
         $relationName = $request->get('_relation');
         $config = ($this->resolveConfig)($relationName);
 
@@ -110,6 +125,7 @@ class RelationReadCoordinator
 
     public function exportPayload(Request $request, mixed $parentId = null): array
     {
+        AggregateSpecParser::reject($request->all(), 'relation export');
         $config = ($this->resolveConfig)($request->get('_relation'));
         $params = $this->parseParams($request);
 
@@ -123,7 +139,7 @@ class RelationReadCoordinator
 
     public function parseParams(Request $request): array
     {
-        return [
+        $params = [
             'eq' => $this->parseJsonParam($request, 'eq', 'attr'),
             'oper' => $this->parseJsonParam($request, 'oper'),
             'orderby' => $this->parseJsonParam($request, 'orderby'),
@@ -131,6 +147,18 @@ class RelationReadCoordinator
             'select' => $this->parseSelect($request),
             'relations' => $this->parseRelations($request),
         ];
+        foreach (['aggregate', 'with_aggregates', 'groupby', 'groupBy', 'having', 'distinct', 'hierarchy'] as $key) {
+            if (array_key_exists($key, $request->all())) {
+                $params[$key] = $request->input($key);
+            }
+        }
+        if (AggregateSpecParser::requested($params)) {
+            // Validate raw values before the legacy parser can turn malformed JSON into [].
+            $raw = (new AggregateSpecParser())->normalize($request->all());
+            $params = array_replace($params, array_intersect_key($raw, $params));
+            $params['eq'] = array_merge($raw['eq'] ?? [], $raw['attr'] ?? []);
+        }
+        return $params;
     }
 
     public function processPagination(array $params, $query): mixed
@@ -158,6 +186,7 @@ class RelationReadCoordinator
 
     public function buildExportData(array $config, array $params, mixed $parentId): array
     {
+        AggregateSpecParser::reject($params, 'relation export');
         $parent = ($this->resolveParent)($config, $parentId);
         $query = $parent->{$config['relationship']}();
 
@@ -214,9 +243,14 @@ class RelationReadCoordinator
 
     private function applyQueryOptions(Relation $query, array $params): void
     {
-        $this->queryFilter->applyEq($query, $params['eq']);
-        $this->queryFilter->applyOper($query, $params['oper']);
-        $this->queryFilter->applyOrdering($query, $params['orderby']);
+        if (isset($params['with_aggregates'])) {
+            $this->queryFilter->applyAggregateFilters($query->getQuery(), $params['eq'], $params['oper']);
+            $this->queryFilter->applyAggregateOrdering($query, $params['orderby'], array_column($params['with_aggregates'], 'as'));
+        } else {
+            $this->queryFilter->applyEq($query, $params['eq']);
+            $this->queryFilter->applyOper($query, $params['oper']);
+            $this->queryFilter->applyOrdering($query, $params['orderby']);
+        }
 
         if (!empty($params['relations'])) {
             $query->with($params['relations']);

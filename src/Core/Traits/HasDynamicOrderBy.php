@@ -35,6 +35,11 @@ trait HasDynamicOrderBy
      */
     protected function applyDynamicOrderBy($query, array|string $params, $modelContext)
     {
+        return $this->applyDynamicAggregateOrderBy($query, $params, $modelContext, []);
+    }
+
+    protected function applyDynamicAggregateOrderBy($query, array|string $params, $modelContext, array $aggregateAliases)
+    {
         if (is_string($params)) {
             $decoded = json_decode($params, true);
             $params = is_array($decoded) ? $decoded : [];
@@ -51,6 +56,10 @@ trait HasDynamicOrderBy
 
             foreach ($elements as $column => $direction) {
                 $direction = strtolower((string) $direction) === 'desc' ? 'desc' : 'asc';
+                if (in_array($column, $aggregateAliases, true)) {
+                    $query->orderBy($column, $direction);
+                    continue;
+                }
                 $query = $this->applyOrderByEntry($query, (string) $column, $direction, $modelContext);
             }
         }

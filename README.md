@@ -13,9 +13,7 @@
 | 12.61.1+ | 8.2+ | PHPUnit 11 |
 | 13.12+ | 8.3+ | PHPUnit 12 |
 
-The package keeps Laravel 12 support while adding Laravel 13 support. See the
-[Laravel 13 migration plan and audit](docs/laravel-13-migration-plan.md).
-There is also a detailed Spanish
+The package keeps Laravel 12 support while adding Laravel 13 support. See the detailed Spanish
 [Laravel 13 migration guide for junior developers](documentacion/doc-es/01-getting-started/03-migracion-laravel-13-para-juniors.md).
 
 ## Installation
@@ -125,6 +123,14 @@ GET /api/v1/products?select=["id","name"]&relations=["category:id,name"]
   }
 }
 ```
+
+## Parameter-driven aggregates
+
+List endpoints support `aggregate` for global metrics and `with_aggregates` for
+per-record relationship metrics (`count`, `sum`, `avg`, `min`, `max`). Models opt in
+through `HasRestAggregates`. Execution uses native Laravel aggregate methods,
+without accepting raw SQL. See [aggregation parameters and examples](documentation/aggregations.md)
+for authorization, filtering, pagination, cache behavior, and supported relations.
 
 ## Configuration
 

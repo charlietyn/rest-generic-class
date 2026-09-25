@@ -254,9 +254,6 @@ introducir errores.
 | Helpers globales `array_first` y `array_last` | Pueden colisionar con helpers definidos por una app. | El paquete no los define ni usa. |
 | Retirada de vistas Bootstrap 3 de paginación | Nombres internos antiguos dejan de existir. | No se referencian esas vistas. |
 
-La matriz técnica completa está en el
-[plan y auditoría de migración](../../../docs/laravel-13-migration-plan.md).
-
 ## 5. Por qué los mínimos son 12.61.1 y 13.12.0
 
 La guía general permitiría declarar Laravel 13 desde `^13.0`, pero durante la

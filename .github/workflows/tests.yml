@@ -45,3 +45,61 @@ jobs:
       - run: composer update --prefer-dist --no-interaction --no-progress --with-all-dependencies
       - run: composer audit
       - run: vendor/bin/phpunit
+
+  aggregation-databases:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [mysql, pgsql]
+        framework: [laravel12, laravel13]
+        include:
+          - framework: laravel12
+            php: '8.2'
+            laravel: '12.61.1'
+            testbench: '10.11.*'
+            phpunit: '^11.5.50'
+          - framework: laravel13
+            php: '8.3'
+            laravel: '13.12.*'
+            testbench: '11.0.*'
+            phpunit: '^12.5.12'
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: rgc_aggregates_test
+          MYSQL_USER: rgc
+          MYSQL_PASSWORD: rgc
+          MYSQL_ROOT_PASSWORD: rgc_test_root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: rgc_aggregates_test
+          POSTGRES_USER: rgc
+          POSTGRES_PASSWORD: rgc
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U rgc -d rgc_aggregates_test"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    env:
+      RGC_AGGREGATE_DRIVER: ${{ matrix.database }}
+      RGC_AGGREGATE_DATABASE: rgc_aggregates_test
+      RGC_AGGREGATE_USER: rgc
+      RGC_AGGREGATE_PASSWORD: rgc
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo_mysql, pdo_pgsql, pdo_sqlite
+          coverage: none
+      - run: composer require --no-update "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" "phpunit/phpunit:${{ matrix.phpunit }}"
+      - run: composer update --prefer-dist --no-interaction --no-progress --with-all-dependencies
+      - run: vendor/bin/phpunit --filter AggregationTest

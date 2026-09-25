@@ -216,3 +216,15 @@ For long-term maintainability in this library:
 - Keep backend choice pluggable via Laravel cache stores.
 
 That combination gives predictable correctness on complex queries and portability across cache databases.
+
+## Aggregate queries
+
+`aggregate` requests that depend only on the root model use the existing cache key
+and model version. Normalized metric specifications are included in `params` and
+authorization is checked before cache lookup.
+
+Requests using `with_aggregates`, or global metrics with relation filters, bypass
+the cache. Relation and pivot write paths do not yet universally bump dependency
+versions; bypassing prevents stale metrics after child writes, attach/detach/sync,
+or restores. External writes still require application-managed invalidation.
+See [aggregations](aggregations.md) for the full contract.
