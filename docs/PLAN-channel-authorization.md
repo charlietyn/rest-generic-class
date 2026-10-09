@@ -278,7 +278,7 @@ Gate::before(function ($user, string $ability) {
 
 - [x] Biblioteca: phpunit en verde, cubriendo los modos legacy y canales (255 tests, 662 assertions).
 - [x] Biblioteca: valores por defecto y flujo legacy cubiertos; correcciones de versión y rutas sin controlador documentadas (no se afirma identidad absoluta con v2.5.0).
-- [ ] Biblioteca: documentación en/es y notas de versión publicadas; tag v2.6.0.
+- [x] Biblioteca: documentación en/es y notas de versión incluidas en la entrega v2.6.0; publicación mediante tag `v2.6.0`.
 - [ ] kwikvet: la sincronización genera los nombres `<canal>.<módulo>.<entidad>.<acción>` sin choques entre canales.
 - [ ] kwikvet: `Client` recibe 403 en `/admin/...`; `Administrator` recibe 200.
 - [ ] kwikvet: `GET /admin/permissions` devuelve el catálogo comprimido real de cada usuario.

@@ -131,3 +131,7 @@ Local verification: 255 tests / 662 assertions passed with PHP 8.5 on both Larav
 Composer constraints cleared the initial audit advisories; `composer audit` now passes.
 Audited CI pins use patched Laravel 12.69/13.30 releases rather than the vulnerable
 12.61/13.12 pins. Public package dependency constraints remain unchanged.
+
+[CI verification](https://github.com/charlietyn/rest-generic-class/actions/runs/37964181991):
+all nine jobs passed, covering five PHP/Laravel combinations plus MySQL/PostgreSQL
+aggregation checks on Laravel 12 and 13.
