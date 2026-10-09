@@ -38,3 +38,11 @@ The middleware and permission synchronization now share `RouteMetaResolver`. Aut
 Named closures are supported in `route_name` mode, including names ending in `.create` or `.edit`. Derived mode preserves catalog exclusions for UI create/edit actions and routes without controllers. Version metadata is now honored by the middleware as well as synchronization: resynchronize and review grants when using versioned routes.
 
 See [configuration](../02-configuration/00-configuration-reference.md) for all defaults and [channel deployment](../03-usage/03-edge-and-extreme-scenarios.md) for the safe activation order.
+
+## Phase 2: legacy compatibility and catalog controls
+
+With `route_prefixes=null`, module inference again uses the exact v2.5.0 name and segment-count rules. Snake-case module names are accepted only with explicit channel prefixes. Applications that synchronized legacy names with v2.6.0 should resynchronize and review assignments to the restored names.
+
+`permissions.authorization.catalog_middleware` filters only `RoutePermissionRefresher`. For example, `['maybe.permission']` matches `maybe.permission:api`; a FQCN marker matches that class string with or without parameters. Markers are literal string prefixes, with no alias/group expansion; non-string middleware entries are ignored. `null` includes all scoped routes and `[]` includes none. The resolver and `SpatieAuthorize` do not apply this filter: a permission check cannot be bypassed by excluding its route from the catalog, even with `on_unresolved=allow`.
+
+`explicit_globals=true` stores as global (`restrict=false`) only routes whose action carries `'permission_global' => true` (group attribute or `setAction()`, not `->defaults()`); every other route is restricted, so a new route outside a module no longer becomes global silently. `false` (default) retains module-based globals. The Gate continues to read persisted global flags. Neither option deletes old permissions; filtered-out rows, their restrictions and assignments remain unchanged. Review and remove obsolete rows manually. No `--prune` option is introduced.

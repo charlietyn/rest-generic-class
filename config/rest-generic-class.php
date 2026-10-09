@@ -66,6 +66,12 @@ return [
             'on_unresolved' => env('REST_AUTHZ_ON_UNRESOLVED', 'allow'),
             'register_gate' => env('REST_AUTHZ_REGISTER_GATE', false),
             'gate_guard' => env('REST_AUTHZ_GATE_GUARD'),
+            // false: module-based globals; true: only permission_global action attributes.
+            'explicit_globals' => env('REST_AUTHZ_EXPLICIT_GLOBALS', false),
+            // Catalog only: null includes all scoped routes; [] includes none.
+            'catalog_middleware' => env('REST_AUTHZ_CATALOG_MIDDLEWARE') === null ? null : array_values(array_filter(array_map(
+                'trim', explode(',', env('REST_AUTHZ_CATALOG_MIDDLEWARE', ''))
+            ), static fn ($marker) => $marker !== '')),
         ],
 
         // Name of the Eloquent relation on the User model that returns its roles.

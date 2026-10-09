@@ -23,6 +23,8 @@ final class ServiceProviderCompatibilityTest extends TestCase
             'on_unresolved' => 'allow',
             'register_gate' => false,
             'gate_guard' => null,
+            'explicit_globals' => false,
+            'catalog_middleware' => null,
         ], config('rest-generic-class.permissions.authorization'));
         $user = new class {
             public function effectivePermissions(?string $guard = null): \Illuminate\Support\Collection

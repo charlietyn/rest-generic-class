@@ -70,4 +70,24 @@ final class SpatieAuthorizeTest extends ChannelAuthorizationTestCase
             $this->assertSame(403, $exception->getStatusCode());
         }
     }
+
+    public function testCatalogFilterCannotBypassRuntimeAuthorization(): void
+    {
+        config([
+            'rest-generic-class.permissions.authorization.catalog_middleware' => [],
+            'rest-generic-class.permissions.authorization.on_unresolved' => 'allow',
+        ]);
+        $user = new ChannelUser();
+        $user->id = 1;
+        $permission = $this->permission('client.users.index');
+        $user->enabled_permissions()->attach($permission->id);
+        $this->actingAs($user, 'web');
+        $this->assertSame('passed', $this->handle('client.users.index', 'client/users')->getContent());
+        try {
+            $this->handle('admin.users.index');
+            $this->fail('A catalog filter must never bypass the permission check');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+    }
 }

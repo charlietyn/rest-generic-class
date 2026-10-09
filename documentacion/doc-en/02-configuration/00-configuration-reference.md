@@ -93,10 +93,16 @@ All keys below live under `permissions.authorization`.
 | `on_unresolved` | `allow` | `allow` continues without checking a permission. `deny` returns 403 for every unresolved route carrying the middleware, including routes outside the configured prefixes. |
 | `register_gate` | `false` | Register an optional `Gate::before` for users exposing `effectivePermissions()` without Spatie's `checkPermissionTo()`. Also include global permissions in the trait's effective union. |
 | `gate_guard` | `null` | Filter the optional Gate's effective permissions by this guard; `null` accepts all guards. Use `api` when the authentication guard is `api`. |
+| `explicit_globals` | `false` | Phase 2: `false` preserves module-based globals (a route without a recognized module is global). `true` stores `restrict=false` only for routes whose **action** carries `'permission_global' => true` (even inside a module); every other synced permission is restricted (fail closed). |
+| `catalog_middleware` | `null` | Phase 2, catalog only: `null` includes all scoped routes. An array includes only routes whose `gatherMiddleware()` contains a string starting with one of the markers (alias or FQCN); `[]` includes none. Non-string middleware entries are ignored. |
 
 `route_prefixes` controls route selection; it does not define authentication guards. The middleware guard parameter and sync command `--guard` must remain real guard names. The obsolete `route-permissions` configuration key is no longer read. `passesFilters()` remains an overridable hook, with no built-in filter rules.
 
 The `allow` default is retained for compatibility but deprecated and unsafe on protected routes; migration to `deny` is planned for v3.0.0.
+
+The phase 2 legacy fix restores exact v2.5.0 module matching when `route_prefixes=null`: the URI must contain more than two non-empty segments, start with the literal guard segment, and use the exact module name. `api/mod_security/users` with module `ModSecurity` produces `users.index`; `api/ModSecurity/users` produces `ModSecurity.users.index`. Snake-case matching applies only with explicit channel prefixes. The version and controllerless-route alignment introduced in v2.6.0 remains unchanged.
+
+`explicit_globals` controls writes during synchronization, not the reader or Gate. Declare `permission_global` as a route group attribute or with `setAction()`; never with `->defaults()`, which Laravel turns into a route parameter passed to controllers (and the resolver ignores). Resynchronizing updates `restrict` on existing selected rows. The optional Gate still grants persisted `notRestricted()` permissions to every authenticated user of its guard. `catalog_middleware` does not change runtime authorization, expand aliases/groups or delete existing rows: remove obsolete permissions explicitly after reviewing assignments. Excluded rows are not updated, including their previous global status.
 
 ```php
 // config/rest-generic-class.php -> permissions.authorization
@@ -106,5 +112,19 @@ The `allow` default is retained for compatibility but deprecated and unsafe on p
     'on_unresolved' => 'deny',
     'register_gate' => true,
     'gate_guard' => 'api',
+    'explicit_globals' => true,
+    'catalog_middleware' => ['maybe.permission', \Ronu\RestGenericClass\Core\Middleware\SpatieAuthorize::class],
 ],
+```
+
+```php
+// routes/admin.php: group attribute, copied into every route action
+Route::group(['as' => 'admin.', 'permission_global' => true], function () {
+    Route::get('auth/permissions', [AuthController::class, 'permissions'])->name('auth.permissions');
+    Route::get('auth/user-profile', [AuthController::class, 'profile'])->name('auth.user-profile');
+});
+
+// a single route outside a group
+$route = Route::get('auth/modules', [AuthController::class, 'modules'])->name('admin.auth.modules');
+$route->setAction([...$route->getAction(), 'permission_global' => true]);
 ```

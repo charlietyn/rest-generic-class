@@ -93,10 +93,16 @@ Todas las claves siguientes pertenecen a `permissions.authorization`.
 | `on_unresolved` | `allow` | `allow` continúa sin comprobar permisos. `deny` devuelve 403 en cualquier ruta no resuelta que tenga el middleware, incluidas las rutas fuera de los prefijos configurados. |
 | `register_gate` | `false` | Registra un `Gate::before` opcional para usuarios con `effectivePermissions()` sin `checkPermissionTo()` de Spatie. También incorpora permisos globales a la unión efectiva del trait. |
 | `gate_guard` | `null` | Filtra los permisos efectivos del Gate por guard; `null` admite todos. Usa `api` si ese es tu guard de autenticación. |
+| `explicit_globals` | `false` | Fase 2: `false` conserva los globales por módulo (una ruta sin módulo reconocido es global). `true` guarda `restrict=false` solo en las rutas cuya **acción** lleva `'permission_global' => true` (incluso dentro de un módulo); el resto de permisos sincronizados queda restringido (falla cerrando). |
+| `catalog_middleware` | `null` | Fase 2, solo catálogo: `null` incluye todas las rutas del ámbito. Un array incluye solo las rutas cuyo `gatherMiddleware()` contiene un string que empieza por uno de los marcadores (alias o FQCN); `[]` no incluye ninguna. Ignora middleware que no sean string. |
 
 `route_prefixes` selecciona rutas; no define guards de autenticación. El parámetro del middleware y `--guard` del comando deben seguir usando guards reales. Ya no se lee la antigua clave `route-permissions`. `passesFilters()` permanece como punto de extensión sobrescribible, sin reglas de filtrado incorporadas.
 
 El valor `allow` se conserva por compatibilidad, pero queda obsoleto y es inseguro en rutas protegidas; se prevé cambiarlo a `deny` en v3.0.0.
+
+La corrección legacy de fase 2 recupera la coincidencia exacta de módulos de v2.5.0 cuando `route_prefixes=null`: la URI debe tener más de dos segmentos no vacíos, empezar por el segmento literal del guard y usar el nombre exacto del módulo. `api/mod_security/users` con módulo `ModSecurity` produce `users.index`; `api/ModSecurity/users` produce `ModSecurity.users.index`. La coincidencia snake_case solo se aplica con prefijos de canales explícitos. Se conservan las correcciones de versión y rutas sin controlador introducidas en v2.6.0.
+
+`explicit_globals` controla lo que escribe la sincronización, no el lector ni el Gate. Declara `permission_global` como atributo de un grupo de rutas o con `setAction()`; nunca con `->defaults()`, que Laravel convierte en un parámetro de ruta que llega a los controladores (y el resolver lo ignora). Resincronizar actualiza `restrict` en las filas existentes seleccionadas. El Gate opcional sigue concediendo los permisos persistidos `notRestricted()` a cualquier usuario autenticado de su guard. `catalog_middleware` no cambia la autorización de peticiones, no expande alias/grupos y no elimina filas: borra explícitamente los permisos obsoletos tras revisar sus asignaciones. Las filas excluidas no se actualizan, incluido su estado global anterior.
 
 ```php
 // config/rest-generic-class.php -> permissions.authorization
@@ -106,5 +112,19 @@ El valor `allow` se conserva por compatibilidad, pero queda obsoleto y es insegu
     'on_unresolved' => 'deny',
     'register_gate' => true,
     'gate_guard' => 'api',
+    'explicit_globals' => true,
+    'catalog_middleware' => ['maybe.permission', \Ronu\RestGenericClass\Core\Middleware\SpatieAuthorize::class],
 ],
+```
+
+```php
+// routes/admin.php: atributo de grupo, copiado a la acción de cada ruta
+Route::group(['as' => 'admin.', 'permission_global' => true], function () {
+    Route::get('auth/permissions', [AuthController::class, 'permissions'])->name('auth.permissions');
+    Route::get('auth/user-profile', [AuthController::class, 'profile'])->name('auth.user-profile');
+});
+
+// una ruta suelta fuera de un grupo
+$route = Route::get('auth/modules', [AuthController::class, 'modules'])->name('admin.auth.modules');
+$route->setAction([...$route->getAction(), 'permission_global' => true]);
 ```
