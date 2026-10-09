@@ -287,7 +287,7 @@ excluded rows and runtime authorization independent of catalog filtering.
 
 # v2.7.1 — Fixes found while migrating kwikvet / Correcciones de la migración de kwikvet
 
-Status / Estado: **prepared locally; not published / preparada localmente; sin publicar**.
+Status / Estado: **released / publicada** (2026-10-09).
 Patch release: no behaviour changes with the default configuration.
 Versión de parche: sin cambios de comportamiento con la configuración por defecto.
 
