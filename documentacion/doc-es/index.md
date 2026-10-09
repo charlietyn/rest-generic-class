@@ -41,6 +41,7 @@ Bienvenido/a a la documentación del paquete **Rest Generic Class**. Esta librer
 - [Escenarios de caché](03-usage/04-cache-scenarios.md)
 - [Relaciones muchos a muchos](03-usage/05-many-to-many.md)
 - [Permisos: arquitectura, contratos y escenarios](03-usage/06-permissions.md)
+- [Activar la autorización por canales con el script de migración](03-usage/07-enable-channel-authorization-script.md)
 
 ### Referencia
 - [API pública](04-reference/00-public-api.md)

@@ -217,7 +217,7 @@ class BaseModelMongo extends Model
      * @param bool $specific Whether to validate only set attributes
      * @return array|null Validation errors or null if validation passes
      */
-    private function parents_validate(array $attributes, string $scenario = null, bool $specific = false): ?array
+    private function parents_validate(array $attributes, ?string $scenario = null, bool $specific = false): ?array
     {
         $result = null;
         $parents = $this->get_parents($attributes, $scenario, $specific);
@@ -238,7 +238,7 @@ class BaseModelMongo extends Model
      * @param bool $specific Whether to validate only set attributes
      * @return array Array of parent validation results
      */
-    public function get_parents(array $attributes = null, string $scenario = 'create', bool $specific = false): array
+    public function get_parents(?array $attributes = null, string $scenario = 'create', bool $specific = false): array
     {
         $parent_array = [];
         if ($this->hasHierarchy()) {

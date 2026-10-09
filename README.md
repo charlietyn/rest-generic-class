@@ -6,6 +6,10 @@
 [![Laravel](https://img.shields.io/badge/Laravel-12.x%20%7C%2013.x-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 [![License](https://img.shields.io/packagist/l/ronu/rest-generic-class.svg?style=flat-square)](LICENSE.md)
 
+## v2.7.1 — Fixes
+
+`GET /<channel>/modules` no longer fails (with `?enabled=` and the new `?format=uri`), no PHP 8.4 implicit-nullable deprecations, and the [channel authorization migration script](documentacion/doc-en/03-usage/07-enable-channel-authorization-script.md) now ships in `scripts/`.
+
 ## v2.7.0 — Explicit global permissions
 
 Opt-in `explicit_globals` (only routes marked with the `permission_global` action attribute are global; everything else fails closed), `catalog_middleware` to keep public routes out of the permission catalog, and the v2.5.0 legacy module-name fix. See the [release notes](docs/release-notes-channel-authorization.md#v270--explicit-globals-and-catalog-scope--globales-y-catálogo-explícitos).

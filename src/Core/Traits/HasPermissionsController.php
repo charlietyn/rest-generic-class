@@ -3,6 +3,7 @@
 namespace Ronu\RestGenericClass\Core\Traits;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Nwidart\Modules\Facades\Module;
@@ -15,19 +16,30 @@ trait HasPermissionsController
     private ?string $generalModule = "--site--";
 
     /**
-     * Refreshes the permissions for the specified guard.
+     * GET /<channel>/modules
      *
-     * This method processes all application routes, determines the associated
-     * permissions, and updates the database accordingly. It supports a dry-run
-     * mode to preview changes without persisting them.
+     * Returns the module names plus the general module (`--site--`).
+     *
+     * Query params:
+     * - enabled: true|1 only enabled modules, false|0 only disabled ones; absent or unrecognized → all.
+     * - format: `uri` returns the URI segment of each module (`ModSecurity` → `mod_security`), which is
+     *   what `permissions.module` stores with naming=route_name. Any other value keeps the module names.
      *
      * @param Request $request
-     * @return array A unique collection of permissions with their associated details.
+     * @return array<int, string>
      */
     public function modules(Request $request): array
     {
-        $enabled = $request->get('enabled', null);
-        return array_merge($this->service->getModules($enabled),[$this->generalModule]);
+        // filter_var() maps '' to false; an empty value means "all", like an absent one.
+        $raw = $request->query('enabled');
+        $enabled = is_string($raw) && trim($raw) !== ''
+            ? filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE)
+            : null;
+        $modules = static::getModules($enabled);
+        if ($request->query('format') === 'uri') {
+            $modules = array_map(static fn (string $name) => Str::snake($name), $modules);
+        }
+        return array_merge($modules, [$this->generalModule]);
     }
 
     /**
@@ -37,11 +49,11 @@ trait HasPermissionsController
      *                        - `true`: Only enabled modules.
      *                        - `false`: Only disabled modules.
      *                        - `null`: All modules (default).
-     * @return array An array of modules filtered by the specified type.
+     * @return array An array of modules filtered by the specified type; empty without nwidart/laravel-modules.
      */
-    public static function getModules(bool $type = null): array
+    public static function getModules(?bool $type = null): array
     {
-        $result = Module::toCollection();
+        $result = static::moduleCollection();
         if ($type === true) {
             $result = $result->filter->isEnabled();
         }
@@ -49,6 +61,15 @@ trait HasPermissionsController
             $result = $result->reject->isEnabled();
         }
         return $result->map->getName()->values()->all();
+    }
+
+    /**
+     * The installed modules (objects exposing getName() and isEnabled()), or an empty collection
+     * when nwidart/laravel-modules is not installed.
+     */
+    protected static function moduleCollection(): Collection
+    {
+        return class_exists(Module::class) ? Module::toCollection() : new Collection();
     }
 
     /**
