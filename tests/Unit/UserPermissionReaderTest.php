@@ -3,11 +3,30 @@
 namespace Ronu\RestGenericClass\Tests\Unit;
 
 use Illuminate\Support\Collection;
+use Illuminate\Config\Repository;
+use Illuminate\Container\Container;
 use PHPUnit\Framework\TestCase;
 use Ronu\RestGenericClass\Core\Support\Permissions\UserPermissionReader;
 
 final class UserPermissionReaderTest extends TestCase
 {
+    private Container $previousContainer;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->previousContainer = Container::getInstance();
+        $container = new Container();
+        $container->instance('config', new Repository());
+        Container::setInstance($container);
+    }
+
+    protected function tearDown(): void
+    {
+        Container::setInstance($this->previousContainer);
+        parent::tearDown();
+    }
+
     public function testMergeUnionsDirectAndRolePermissionsDedupedById(): void
     {
         $reader = new UserPermissionReader();
