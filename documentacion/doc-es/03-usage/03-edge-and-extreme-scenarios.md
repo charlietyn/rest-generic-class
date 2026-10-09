@@ -200,3 +200,30 @@ Escribe un test que valide el mensaje de error cuando se solicita una relación 
 - Archivo: src/Core/Middleware/SpatieAuthorize.php
   - Símbolo: SpatieAuthorize::handle()
   - Notas: Usa PermissionRegistrar de Spatie y checks de permisos por guard.
+
+## Autorización por canales (v2.6.0)
+
+Una aplicación puede tener rutas `admin/`, `client/` y `mobile/` autenticadas con el mismo guard `api`. Los prefijos explícitos y `route_name` conservan permisos separados como `admin.mod_security.users.index` y `client.mod_security.users.index`. El módulo `ModSecurity` también coincide con el segmento `mod_security`.
+
+No se requiere dependencia de `ronu/laravel-app-context`: cada aplicación puede proporcionar la lista directamente o construirla a partir de su configuración de canales.
+
+1. Despliega la biblioteca y configura prefijos/nombres para sincronizar. Mantén el tráfico protegido en mantenimiento mientras preparas los permisos.
+2. Revisa `php artisan permissions:sync-from-routes --guard=api --dry-run --dump`.
+3. Ejecuta `php artisan permissions:sync-from-routes --guard=api` y asigna permisos explícitos a cada rol. La biblioteca no decide los canales permitidos por el nombre del rol.
+4. Activa el Gate, configura `gate_guard=api` y `on_unresolved=deny`, y limpia las cachés de permisos/configuración antes de admitir tráfico.
+5. Comprueba que un cliente con asignaciones solo `client.*` recibe 403 en rutas restringidas de `admin`, que un administrador autorizado accede y que el payload de permisos coincide con el Gate.
+
+**Permisos globales:** con `register_gate=true`, `HasReadableUserPermissions::effectivePermissions()` une permisos directos, de roles y `notRestricted()`, deduplicados por ID y filtrados por guard. Se mantienen las comprobaciones de pivots activos y roles. Un permiso global corresponde a cualquier usuario autenticado del guard, incluso entre canales. La sincronización marca como globales (`restrict=false`) las rutas sin módulo reconocido: revisa esas filas en la previsualización, especialmente `admin.auth.*`. Los prefijos por sí solos no aíslan los permisos globales. Los modelos con `checkPermissionTo()` conservan la autorización de Spatie.
+
+Sin `register_gate`, se mantiene la unión legacy de permisos directos y de roles. El Gate carga los permisos efectivos una vez por objeto usuario/guard y petición (esa carga puede ejecutar varias consultas SQL); las siguientes comprobaciones reutilizan el resultado. Usa almacenamiento `scoped` y limpia la caché con `RequestHandled`. Si cambias permisos dentro de una petición, llama a `app(EffectivePermissionGate::class)->clear()` antes de volver a comprobarlos.
+
+```php
+// config/rest-generic-class.php -> permissions.authorization
+'authorization' => [
+    'route_prefixes' => ['admin', 'client', 'mobile'],
+    'naming' => 'route_name',
+    'on_unresolved' => 'deny',
+    'register_gate' => true,
+    'gate_guard' => 'api',
+],
+```

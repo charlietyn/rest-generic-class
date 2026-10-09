@@ -3,6 +3,9 @@
 namespace Ronu\RestGenericClass\Core\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Foundation\Http\Events\RequestHandled;
+use Illuminate\Support\Facades\Gate;
+use Ronu\RestGenericClass\Core\Support\Authorization\EffectivePermissionGate;
 use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\PermissionCompressorContract;
 use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRolePermissions;
 use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRoles;
@@ -17,10 +20,20 @@ class RestGenericClassServiceProvider extends ServiceProvider
         $this->mergeConfigFrom($this->configPath(), 'rest-generic-class');
         $this->app->singleton(PermissionCompressorContract::class, PermissionCompressor::class);
         $this->app->singleton(UserRolesResolver::class);
+        $this->app->scoped(EffectivePermissionGate::class);
     }
 
     public function boot(): void
     {
+        if (config('rest-generic-class.permissions.authorization.register_gate', false)) {
+            Gate::before(static fn ($user, string $ability) => app(EffectivePermissionGate::class)->allows($user, $ability));
+            $this->app['events']->listen(RequestHandled::class, function (): void {
+                if ($this->app->resolved(EffectivePermissionGate::class)) {
+                    $this->app->make(EffectivePermissionGate::class)->clear();
+                }
+            });
+        }
+
         $this->publishes([
             $this->configPath() => config_path('rest-generic-class.php'),
         ], 'rest-generic-class-config');

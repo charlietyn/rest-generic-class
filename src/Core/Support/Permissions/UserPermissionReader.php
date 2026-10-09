@@ -5,7 +5,7 @@ namespace Ronu\RestGenericClass\Core\Support\Permissions;
 use Illuminate\Support\Collection;
 
 /**
- * Computes a user's effective permissions (direct ∪ via roles).
+ * Computes direct/role permissions, plus globals when the optional Gate is enabled.
  *
  * Extracted from HasReadableUserPermissions so the trait stops coordinating the
  * union of direct and role-based permissions itself. The trait keeps the same
@@ -14,7 +14,7 @@ use Illuminate\Support\Collection;
 final class UserPermissionReader
 {
     /**
-     * Effective permissions for the given user: direct ∪ via roles, unique by id.
+     * Effective permissions for the given user, optionally filtered by guard, unique by id.
      *
      * Reads the user's own public surface (the time-filtered direct relation and
      * the role-based resolution), leaving contract enforcement to UserRolesResolver.
@@ -23,6 +23,16 @@ final class UserPermissionReader
     {
         $direct = $user->enabled_permissions()->get();
         $via = $user->getEnabledPermissionsViaRoles();
+
+        // Opt in with the Gate so existing integrations retain their legacy union.
+        if (config('rest-generic-class.permissions.authorization.register_gate', false)) {
+            $permissionClass = config('permission.models.permission');
+            $query = $permissionClass::query()->notRestricted();
+            if ($guard !== null) {
+                $query->where('guard_name', $guard);
+            }
+            $via = $via->concat($query->get());
+        }
 
         return $this->merge($direct, $via, $guard);
     }

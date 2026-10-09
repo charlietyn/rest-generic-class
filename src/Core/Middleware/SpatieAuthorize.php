@@ -13,43 +13,11 @@ use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * AutoAuthorize Middleware
- *
- * Purpose:
- *   Centralize authorization by deriving required permission(s) from:
- *     1) Route action overrides (explicit)
- *     2) Route name conventions (resource.verb -> resource.permission)
- *     3) Controller@method conventions
- *     4) HTTP verb + URI conventions (last resort)
- *
- * Key ideas:
- *   - Uses Spatie's in-memory cache via PermissionRegistrar (NO DB hits here).
- *   - Supports guard-awareness and Teams/Tenants (if set before this middleware).
- *   - Supports multiple permissions with "any" (OR) or "all" (AND) logic.
- *
- * How to override on a specific route (in routes/web.php or routes/api.php):
- *   Route::post('/articles', [C::class, 'store'])
- *     ->name('articles.store')
- *     ->defaults('authorize', [
- *          'permissions' => ['articles.create', 'articles.publish'], // or string 'articles.create'
- *          'mode'        => 'all', // 'any' | 'all'  (default: 'any')
- *          'guard'       => 'api', // optional; falls back to middleware param or app default
- *     ]);
- *
- * Guard selection priority (highest to lowest):
- *   1) Route override 'guard'
- *   2) Middleware parameter: auto.authorize:api
- *   3) config('auth.defaults.guard')
- *
- * Strict mode (config/permission_map.php):
- *   return [
- *     'strict' => true, // if true, abort when a required permission doesn't exist in cache (prevents typos)
- *   ];
- *
- * Notes for Teams/Tenants:
- *   Ensure a previous middleware sets the current TeamId:
- *     app(PermissionRegistrar::class)->setPermissionsTeamId($teamId);
- *   This ensures the registrar cache key is tenant-aware.
+ * Resolves the same canonical permission as the route catalog and checks user->can().
+ * Configure permissions.authorization for channel prefixes and fail-closed behavior.
+ * Authenticate first; the middleware parameter selects the authentication guard.
+ * Protected compatibility helpers below are available to subclasses, but handle()
+ * uses RouteMetaResolver rather than RequiredPermissionResolver.
  */
 class SpatieAuthorize
 {
@@ -62,11 +30,15 @@ class SpatieAuthorize
     {
         $guard = $guardParam ?: (string) config('auth.defaults.guard');
 
-        $modules = Module::toCollection()->map->getName()->values()->all();
+        $modules = class_exists(Module::class) ? Module::toCollection()->map->getName()->values()->all() : [];
+        $cfg = config('rest-generic-class.permissions.authorization', []);
         $resolver = app(RouteMetaResolver::class);
-        $meta = $resolver->resolve($request, $guard, $modules, /* $cfg */[]);
+        $meta = $resolver->resolve($request, $guard, $modules, $cfg);
 
         if (!$meta) {
+            if (($cfg['on_unresolved'] ?? 'allow') === 'deny') {
+                abort(403, config('app.debug') ? 'Forbidden: route has no resolvable permission' : 'Forbidden');
+            }
             return $next($request);
         }
         $requiredPermission = $meta->canonicalName;

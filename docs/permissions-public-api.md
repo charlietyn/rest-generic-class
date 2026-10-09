@@ -76,18 +76,16 @@ No dependas directamente de estas clases; pueden cambiar de firma o ubicacion:
 
 | Dimension | Estado | Nota |
 |---|---|---|
-| Spatie (models/pivots/registrar/cache) | Compatible | Se sigue usando; middleware no toca DB, usa cache/registrar |
+| Spatie (models/pivots/registrar/cache) | Compatible | Se sigue usando; la comprobación usa user->can(); el Gate opcional carga y cachea permisos por petición |
 | Contratos propios (`ProvidesRoles`, `ProvidesRolePermissions`) | Compatible | Sin cambios; enforcement en `UserRolesResolver` |
 | Rutas / `refreshPermissions` | Compatible | Logica movida a `RoutePermissionRefresher`; misma salida |
 | Payload autenticado | Compatible | `permissionsPayload()` identico; delega en builder |
-| Middleware `SpatieAuthorize` | Compatible | `handle()` intacto byte a byte |
+| Middleware `SpatieAuthorize` | Compatible | v2.6.0: configuración opcional por canales; véase sección 7 |
 | Compresion de permisos | Compatible | `effectivePermissionsCompressed()` identico |
 
-Nota sobre `strict mode`: el docblock de `SpatieAuthorize` menciona un modo
-estricto (abortar si un permiso no existe en cache). Ese comportamiento **no**
-esta implementado en `handle()` hoy, y este refactor lo mantuvo asi para no
-alterar el comportamiento HTTP. Si se decide implementarlo, debe ir en un corte
-posterior con su propia cobertura.
+La antigua opción `permission_map.strict` no se interpreta en `handle()`.
+Desde v2.6.0, `permissions.authorization.on_unresolved=deny` rechaza rutas
+sin permiso resoluble; un permiso resuelto que el usuario no tiene devuelve 403.
 
 ## 5. Guia de migracion para consumidores
 
@@ -119,3 +117,35 @@ app Laravel completa; usando SQLite en memoria donde hay consulta):
   ademas de los previos `PermissionFilterTest`, `PermissionPayloadBuilderTest`,
   `AuthenticatedPermissionsPayloadTest`, `UserRolesResolutionTest`,
   `PermissionCompressorTest`.
+
+## 7. Autorización por canales y Gate opcional (v2.6.0)
+
+Configura `rest-generic-class.permissions.authorization`; consulta las
+[notas de versión](release-notes-channel-authorization.md) para activar los cambios en orden.
+
+`Ronu\RestGenericClass\Core\Support\Authorization\EffectivePermissionGate` ofrece
+`allows(object $user, string $ability): ?bool` y `clear(): void`. Devuelve `true` para
+nombres efectivos exactos y `null` cuando no concede, permitiendo continuar con policies
+y otros Gates. No interpreta comodines de presentación ni concede por nombre de rol.
+Los modelos que exponen `checkPermissionTo()` quedan a cargo de Spatie.
+
+El provider registra el servicio como `scoped`; solo instala `Gate::before` cuando
+`register_gate=true`. Una `WeakMap` aísla objetos usuario, incluso con el mismo ID en
+modelos/conexiones diferentes, y separa los guards. Se carga una vez por objeto/guard
+por petición (no necesariamente una única consulta SQL), se limpia con `RequestHandled`
+y se descarta al reiniciar el scope en workers. Un cambio de permisos dentro de una
+petición requiere `clear()` si se necesita una comprobación inmediata.
+
+Al activar `register_gate`, el lector compartido incorpora permisos `notRestricted()`
+al conjunto efectivo, incluso para usuarios sin roles; mantiene el filtro de guard
+y deduplica por ID. Sin activarlo, conserva la unión anterior. Los modelos de permisos
+deben proporcionar el scope `notRestricted`, igual que para la lectura por roles.
+La implementación del paquete incluye restricciones `false`, `0` y `null`.
+Los permisos globales pertenecen a cualquier usuario del guard, incluidos otros canales.
+
+`RouteMetaResolver::resolve()` delega en `resolveFromRoute()` y sigue siendo extensible;
+`matchedPrefix()` y `passesFilters()` son puntos de extensión. `handle()` utiliza ese
+resolver; los helpers de `RequiredPermissionResolver` siguen disponibles para subclases,
+pero sus overrides no cambian por sí solos la resolución canónica del middleware.
+La sincronización identifica permisos por `(name, guard_name)` y su dry-run no modifica
+el catálogo ni invalida la caché.

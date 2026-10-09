@@ -200,3 +200,30 @@ Write a test that asserts the error message when a forbidden relation is request
 - File: src/Core/Middleware/SpatieAuthorize.php
   - Symbol: SpatieAuthorize::handle()
   - Notes: Uses Spatie PermissionRegistrar and guard-based permission checks.
+
+## Channel authorization (v2.6.0)
+
+Applications with `admin/`, `client/` and `mobile/` routes may authenticate all channels with the same `api` guard. Explicit prefixes plus `route_name` preserve permissions such as `admin.mod_security.users.index` and `client.mod_security.users.index` as separate entries. `ModSecurity` also matches URI segment `mod_security`.
+
+No dependency on `ronu/laravel-app-context` is required: applications can supply prefixes directly or construct the list from their own channel configuration.
+
+1. Deploy the library and configure the prefixes/naming used by synchronization. Keep protected traffic in maintenance while permissions are prepared.
+2. Preview with `php artisan permissions:sync-from-routes --guard=api --dry-run --dump`.
+3. Synchronize with `php artisan permissions:sync-from-routes --guard=api`, then assign explicit permissions to each role. The library does not decide channel access by role name.
+4. Enable the Gate, set `gate_guard=api` and `on_unresolved=deny`, and clear permission/config caches before serving traffic.
+5. Verify that a client with only `client.*` assignments gets 403 on restricted `admin` routes, an authorized administrator succeeds, and the permission payload agrees with the Gate.
+
+**Global permissions:** with `register_gate=true`, `HasReadableUserPermissions::effectivePermissions()` merges direct, role-based and `notRestricted()` permissions, deduplicated by ID and filtered by guard. Existing active-pivot and role checks remain in place. A global permission is available to every authenticated user of that guard, across channels. Sync marks routes without a recognized module as global (`restrict=false`), so review these rows in the preview, especially `admin.auth.*`. Channel prefixes alone are not a grant boundary for globals. Spatie models with `checkPermissionTo()` retain Spatie's authorization behavior.
+
+Without `register_gate`, the existing effective union of direct and role permissions remains unchanged. The Gate performs one effective-permission load per user object/guard per request (that load can execute multiple SQL queries); repeated abilities do not reload it. It uses scoped storage for workers and clears on `RequestHandled`. If permissions change within a request, call `app(EffectivePermissionGate::class)->clear()` before checking again.
+
+```php
+// config/rest-generic-class.php -> permissions.authorization
+'authorization' => [
+    'route_prefixes' => ['admin', 'client', 'mobile'],
+    'naming' => 'route_name',
+    'on_unresolved' => 'deny',
+    'register_gate' => true,
+    'gate_guard' => 'api',
+],
+```

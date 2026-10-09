@@ -23,3 +23,13 @@ El paquete lee variables de entorno unicamente desde el archivo de configuracion
 **Siguiente:** [Estrategia de cache](03-cache-strategy.md)
 
 [Volver al indice de documentacion](../index.md)
+
+## Autorización por canales (v2.6.0)
+
+| Variable | Predeterminado | Función |
+| --- | --- | --- |
+| `REST_AUTHZ_ROUTE_PREFIXES` | sin definir (`null`) | Prefijos separados por comas; elimina espacios. Un valor vacío produce `[]`. |
+| `REST_AUTHZ_NAMING` | `derived` | `derived` o `route_name`. |
+| `REST_AUTHZ_ON_UNRESOLVED` | `allow` | `allow` o `deny`; usa `deny` en rutas protegidas. |
+| `REST_AUTHZ_REGISTER_GATE` | `false` | Activa el Gate de permisos efectivos y la unión con globales. |
+| `REST_AUTHZ_GATE_GUARD` | sin definir (`null`) | Guard opcional, por ejemplo `api`. |

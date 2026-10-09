@@ -23,3 +23,13 @@ The package reads environment variables only from the configuration file. This i
 **Next:** [Cache strategy](03-cache-strategy.md)
 
 [Back to documentation index](../index.md)
+
+## Channel authorization (v2.6.0)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `REST_AUTHZ_ROUTE_PREFIXES` | unset (`null`) | Comma-separated prefixes; whitespace is trimmed. An empty value yields `[]`. |
+| `REST_AUTHZ_NAMING` | `derived` | `derived` or `route_name`. |
+| `REST_AUTHZ_ON_UNRESOLVED` | `allow` | `allow` or `deny`; use `deny` on protected routes. |
+| `REST_AUTHZ_REGISTER_GATE` | `false` | Enable the effective-permission Gate and global union. |
+| `REST_AUTHZ_GATE_GUARD` | unset (`null`) | Optional guard filter, for example `api`. |

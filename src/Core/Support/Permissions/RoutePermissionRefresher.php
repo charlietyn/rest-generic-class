@@ -29,11 +29,10 @@ final class RoutePermissionRefresher
      */
     public function refresh($guard, $dry): array
     {
-        Artisan::call('cache:forget spatie.permission.cache');
-        $cfg = config('route-permissions', []);
+        $cfg = config('rest-generic-class.permissions.authorization', []);
         $permissionClass = app(config('permission.models.permission'));
         $routes = Route::getRoutes();
-        $modules = Module::toCollection()->map->getName()->values()->all();
+        $modules = class_exists(Module::class) ? Module::toCollection()->map->getName()->values()->all() : [];
         $rows = [];
         /** @var RouteMetaResolver $resolver */
         $resolver = app(RouteMetaResolver::class);
@@ -65,11 +64,18 @@ final class RoutePermissionRefresher
                 'restrict' => $meta->module !== $this->generalModule,
                 'action' => $meta->controllerAction,
             ];
-            $permission_entity = $permissionClass::query()->where(['name' => $permissionName])->get()->first();
+            $permission_entity = $permissionClass::query()->where(['name' => $permissionName, 'guard_name' => $guard])->first();
             if (!$permission_entity) {
                 $permissionClass::create($attributes);
             } else {
                 $permission_entity->fill($attributes)->save();
+            }
+        }
+        if (!$dry) {
+            if (class_exists(\Spatie\Permission\PermissionRegistrar::class)) {
+                app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+            } else {
+                Artisan::call('cache:forget', ['key' => 'spatie.permission.cache']);
             }
         }
         return collect($rows)->unique('permission')->values()->all();

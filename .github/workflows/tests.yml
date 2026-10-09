@@ -10,9 +10,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Audited pins use patched releases within the unchanged package ranges.
         include:
           - php: '8.2'
-            laravel: '12.61.1'
+            laravel: '12.69.0'
             testbench: '10.11.*'
             phpunit: '^11.5.50'
           - php: '8.3'
@@ -20,7 +21,7 @@ jobs:
             testbench: '^10.9'
             phpunit: '^11.5.50'
           - php: '8.3'
-            laravel: '13.12.*'
+            laravel: '13.30.*'
             testbench: '11.0.*'
             phpunit: '^12.5.12'
           - php: '8.4'
@@ -56,12 +57,12 @@ jobs:
         include:
           - framework: laravel12
             php: '8.2'
-            laravel: '12.61.1'
+            laravel: '12.69.0'
             testbench: '10.11.*'
             phpunit: '^11.5.50'
           - framework: laravel13
             php: '8.3'
-            laravel: '13.12.*'
+            laravel: '13.30.*'
             testbench: '11.0.*'
             phpunit: '^12.5.12'
     services:

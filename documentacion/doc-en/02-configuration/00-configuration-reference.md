@@ -81,3 +81,30 @@ If any of these classes does not implement the expected interface, the applicati
 **Next:** [Environment variables](01-env-vars.md)
 
 [Back to documentation index](../index.md)
+
+## Channel authorization (v2.6.0)
+
+All keys below live under `permissions.authorization`.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `route_prefixes` | `null` | Legacy: match the Laravel group prefix starting with the guard name. An array matches URI prefixes on segment boundaries (`admin` never matches `administration`); `[]` matches nothing. Nested prefixes such as `api/admin` are supported; the first matching prefix wins. |
+| `naming` | `derived` | Infer `{version}.{module}.{model}.{action}` (optional version/module). `route_name` uses the exact route name, including `store`/`destroy`, without mapping or version prepending; unnamed routes cannot resolve. |
+| `on_unresolved` | `allow` | `allow` continues without checking a permission. `deny` returns 403 for every unresolved route carrying the middleware, including routes outside the configured prefixes. |
+| `register_gate` | `false` | Register an optional `Gate::before` for users exposing `effectivePermissions()` without Spatie's `checkPermissionTo()`. Also include global permissions in the trait's effective union. |
+| `gate_guard` | `null` | Filter the optional Gate's effective permissions by this guard; `null` accepts all guards. Use `api` when the authentication guard is `api`. |
+
+`route_prefixes` controls route selection; it does not define authentication guards. The middleware guard parameter and sync command `--guard` must remain real guard names. The obsolete `route-permissions` configuration key is no longer read. `passesFilters()` remains an overridable hook, with no built-in filter rules.
+
+The `allow` default is retained for compatibility but deprecated and unsafe on protected routes; migration to `deny` is planned for v3.0.0.
+
+```php
+// config/rest-generic-class.php -> permissions.authorization
+'authorization' => [
+    'route_prefixes' => ['admin', 'client', 'mobile'],
+    'naming' => 'route_name',
+    'on_unresolved' => 'deny',
+    'register_gate' => true,
+    'gate_guard' => 'api',
+],
+```

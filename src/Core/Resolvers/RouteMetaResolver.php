@@ -56,69 +56,32 @@ class RouteMetaResolver
      * Resolve Route meta from the Request.
      *
      * @param Request $request
-     * @param string $guard Guard prefix in URI (e.g. 'api')
+     * @param string $guard Authentication guard; legacy URI prefix (e.g. 'api')
      * @param string[] $modules Allowed module names (e.g. Module::toCollection()->map->getName()->all())
-     * @param array $cfg Optional filters config (same shape you already use)
+     * @param array $cfg permissions.authorization configuration; also passed to filter hooks
      */
     public function resolve(Request $request, string $guard, array $modules = [], array $cfg = []): ?RouteMeta
     {
         $route = $request->route();
-        if (!$route) {
-            return null;
+        return $route ? $this->resolveFromRoute($route, $guard, $modules, $cfg) : null;
+    }
+
+    /** Match a configured URI prefix on segment boundaries, or use legacy scope. */
+    protected function matchedPrefix(Route $route, string $guard, array $cfg): ?string
+    {
+        $prefixes = $cfg['route_prefixes'] ?? null;
+        if ($prefixes === null) {
+            return Str::startsWith((string) $route->getPrefix(), $guard) ? $guard : null;
         }
 
-        $prefix = (string)$route->getPrefix();
-        if (!Str::startsWith($prefix, $guard)) {
-            // Guard-based filtering: mimic your generator behavior
-            return null;
+        $uri = trim($route->uri(), '/');
+        foreach ($prefixes as $prefix) {
+            $prefix = trim($prefix, '/');
+            if ($prefix !== '' && ($uri === $prefix || Str::startsWith($uri, $prefix . '/'))) {
+                return $prefix;
+            }
         }
-
-        $uri = $route->uri();                 // e.g. 'api/{{security_module}}/roles/{role}'
-        $name = $route->getName();             // e.g. '{{security_module}}.role.index'
-        $verbs = $route->methods();             // e.g. ['GET','HEAD']
-        $actionArr = $route->getAction();           // array
-        $mw = $route->gatherMiddleware();    // array
-
-        // Exclude UI resource pages if requested
-        if ($name && $this->isExcludedByAction($name)) {
-            return null;
-        }
-
-        if (!$this->passesFilters($uri, $name, $mw, $cfg)) {
-            return null;
-        }
-
-        [$controllerClass, $methodName] = $this->extractControllerAndMethod($actionArr);
-
-        $model = $this->inferModel($controllerClass, $name, $uri, $cfg)
-            ?: $this->firstUriSegment($uri)
-                ?: 'misc';
-
-        $type = $this->inferAction($methodName, $verbs, $name, $cfg)
-            ?: 'read'; // fallback (optionally return null to skip)
-
-        // Determine module by URI after guard segment, matching known module names
-        $module = $this->resolveModuleFromUri($uri, $guard, $modules) ?: $this->defaultModule;
-
-        // Canonical, hyphenated (like your seeder)
-        $canonical = $this->toCanonicalName($module, $model, $type);
-
-        $controllerAction = $controllerClass
-            ? (class_basename($controllerClass) . '@' . ($methodName ?? '-'))
-            : '-';
-
-        return new RouteMeta(
-            routeName: $name,
-            uri: $uri,
-            verbs: $verbs,
-            controller: $controllerClass,
-            method: $methodName,
-            module: $module,
-            model: $model,
-            action: $type,
-            canonicalName: $canonical,
-            controllerAction: $controllerAction
-        );
+        return null;
     }
 
     /** Exclude routes like *.create / *.edit when listing resource pages (UI) */
@@ -136,8 +99,8 @@ class RouteMetaResolver
     /** Pass-through filter hook (replicates your passesFilters signature) */
     protected function passesFilters(string $uri, ?string $name, array $mw, array $cfg): bool
     {
-        // Implement your own filters here (whitelists/blacklists by uri/name/middleware)
-        // For now just return true to keep parity with your sample.
+        // Extension hook: override for application-specific filtering.
+        // No built-in URI/name/middleware filter configuration is interpreted here.
         return true;
     }
 
@@ -225,11 +188,14 @@ class RouteMetaResolver
     /** Determine module from uri after guard, matching known module list */
     protected function resolveModuleFromUri(string $uri, string $guard, array $modules): ?string
     {
-        $parts = array_values(array_filter(explode('/', $uri))); // ['api','{{security_module}}','roles',...]
-        if (count($parts) > 2 && ($parts[0] === $guard)) {
-            $candidate = $parts[1];
-            if (in_array($candidate, $modules, true)) {
-                return $candidate;
+        $prefix = trim($guard, '/');
+        $uri = trim($uri, '/');
+        if (Str::startsWith($uri, $prefix . '/')) {
+            $candidate = explode('/', substr($uri, strlen($prefix) + 1))[0];
+            foreach ($modules as $module) {
+                if ($candidate === $module || $candidate === Str::snake($module)) {
+                    return $candidate;
+                }
             }
         }
         return null;
@@ -255,19 +221,23 @@ class RouteMetaResolver
         array        $cfg = []
     ): ?RouteMeta
     {
-        $prefix = (string)$route->getPrefix();
-        if (!Str::startsWith($prefix, $guard)) {
+        $prefix = $this->matchedPrefix($route, $guard, $cfg);
+        if ($prefix === null) {
             return null;
         }
 
         $uri = $route->uri();
-        $version= preg_replace('/[^A-Za-z0-9]/', '', Str::of(Arr::get($route->getAction(), 'version'))->value());
+        $version = preg_replace('/[^A-Za-z0-9]/', '', (string) Arr::get($route->getAction(), 'version', ''));
         $name = $route->getName();
+        $routeNaming = ($cfg['naming'] ?? 'derived') === 'route_name';
+        if ($routeNaming && ($name === null || $name === '')) {
+            return null;
+        }
         $verbs = $route->methods();
         $actionArr = $route->getAction();
         $mw = $route->gatherMiddleware();
 
-        if ($name && $this->isExcludedByAction($name)) {
+        if (!$routeNaming && $name && $this->isExcludedByAction($name)) {
             return null;
         }
 
@@ -281,18 +251,23 @@ class RouteMetaResolver
             ?: $this->firstUriSegment($uri)
                 ?: 'misc';
 
-        $type = $this->inferAction($methodName, $verbs, $name, $cfg)
-            ?: 'read';
+        $type = $routeNaming
+            ? (string) Str::afterLast($name, '.')
+            : ($this->inferAction($methodName, $verbs, $name, $cfg) ?: 'read');
 
-        $module = $this->resolveModuleFromUri($uri, $guard, $modules) ?: $this->defaultModule;
+        $module = $this->resolveModuleFromUri($uri, $prefix, $modules) ?: $this->defaultModule;
 
         $canonical = $this->toCanonicalName($module, $model, $type);
-        $canonical=$version?$version.'.'.$canonical:$canonical;
+        $canonical = $routeNaming ? $name : ($version ? $version . '.' . $canonical : $canonical);
         $controllerAction = $controllerClass
             ? class_basename($controllerClass) . '@' . ($methodName ?? '-')
             : '-';
 
-        return $controllerAction!='-'?new RouteMeta(
+        if (!$routeNaming && $controllerAction === '-') {
+            return null;
+        }
+
+        return new RouteMeta(
             routeName: $name,
             uri: $uri,
             verbs: $verbs,
@@ -303,6 +278,6 @@ class RouteMetaResolver
             action: $type,
             canonicalName: $canonical,
             controllerAction: $controllerAction
-        ):null;
+        );
     }
 }

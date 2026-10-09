@@ -81,3 +81,30 @@ Si una de estas clases no implementa la interface esperada, la app falla en arra
 **Siguiente:** [Variables de entorno](01-env-vars.md)
 
 [Volver al índice de documentación](../index.md)
+
+## Autorización por canales (v2.6.0)
+
+Todas las claves siguientes pertenecen a `permissions.authorization`.
+
+| Clave | Predeterminado | Significado |
+| --- | --- | --- |
+| `route_prefixes` | `null` | Legacy: el prefijo del grupo Laravel empieza por el nombre del guard. Un array compara prefijos de URI por segmentos (`admin` nunca coincide con `administration`); `[]` no selecciona rutas. Admite prefijos anidados como `api/admin`; gana la primera coincidencia. |
+| `naming` | `derived` | Infiere `{version}.{module}.{model}.{action}` (versión/módulo opcionales). `route_name` usa el nombre literal de la ruta, incluidos `store`/`destroy`, sin traducción ni versión adicional; una ruta sin nombre no se resuelve. |
+| `on_unresolved` | `allow` | `allow` continúa sin comprobar permisos. `deny` devuelve 403 en cualquier ruta no resuelta que tenga el middleware, incluidas las rutas fuera de los prefijos configurados. |
+| `register_gate` | `false` | Registra un `Gate::before` opcional para usuarios con `effectivePermissions()` sin `checkPermissionTo()` de Spatie. También incorpora permisos globales a la unión efectiva del trait. |
+| `gate_guard` | `null` | Filtra los permisos efectivos del Gate por guard; `null` admite todos. Usa `api` si ese es tu guard de autenticación. |
+
+`route_prefixes` selecciona rutas; no define guards de autenticación. El parámetro del middleware y `--guard` del comando deben seguir usando guards reales. Ya no se lee la antigua clave `route-permissions`. `passesFilters()` permanece como punto de extensión sobrescribible, sin reglas de filtrado incorporadas.
+
+El valor `allow` se conserva por compatibilidad, pero queda obsoleto y es inseguro en rutas protegidas; se prevé cambiarlo a `deny` en v3.0.0.
+
+```php
+// config/rest-generic-class.php -> permissions.authorization
+'authorization' => [
+    'route_prefixes' => ['admin', 'client', 'mobile'],
+    'naming' => 'route_name',
+    'on_unresolved' => 'deny',
+    'register_gate' => true,
+    'gate_guard' => 'api',
+],
+```

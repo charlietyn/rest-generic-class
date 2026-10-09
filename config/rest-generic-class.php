@@ -56,6 +56,18 @@ return [
     ],
 
     'permissions' => [
+        'authorization' => [
+            // null preserves legacy guard-prefix matching; [] matches no routes.
+            'route_prefixes' => env('REST_AUTHZ_ROUTE_PREFIXES') === null ? null : array_values(array_filter(array_map(
+                'trim', explode(',', env('REST_AUTHZ_ROUTE_PREFIXES', ''))
+            ), static fn ($prefix) => $prefix !== '')),
+            'naming' => env('REST_AUTHZ_NAMING', 'derived'),
+            // Legacy fail-open is deprecated; use deny for protected routes.
+            'on_unresolved' => env('REST_AUTHZ_ON_UNRESOLVED', 'allow'),
+            'register_gate' => env('REST_AUTHZ_REGISTER_GATE', false),
+            'gate_guard' => env('REST_AUTHZ_GATE_GUARD'),
+        ],
+
         // Name of the Eloquent relation on the User model that returns its roles.
         // This is the global fallback; each User model may override it by declaring
         // `const ROLES_RELATION = '...'`. Default 'roles' keeps backward compatibility.
