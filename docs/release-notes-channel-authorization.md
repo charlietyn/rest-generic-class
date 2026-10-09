@@ -190,9 +190,9 @@ Status / Estado: **released / publicada** (2026-10-09). Includes the v2.6.1 lega
 incluye la corrección legacy de v2.6.1 descrita arriba.
 
 The pattern list `global_permissions` from the earlier draft was discarded before release and
-replaced by `explicit_globals` plus the `permission_global` route action attribute (plan §7.2).
+replaced by `explicit_globals` plus the `permission_global` route action attribute.
 El borrador previo con la lista de patrones `global_permissions` se descartó antes de publicar;
-se sustituye por `explicit_globals` y el atributo de acción de ruta `permission_global` (plan §7.2).
+se sustituye por `explicit_globals` y el atributo de acción de ruta `permission_global`.
 
 ## Español
 
@@ -284,3 +284,52 @@ Tests cover exact legacy names/counts, channel matching and extension compatibil
 ignored and not leaking into controller parameters, `RouteMeta` backward compatibility,
 null/empty catalog settings, alias/FQCN matching, non-string middleware, preservation of
 excluded rows and runtime authorization independent of catalog filtering.
+
+# v2.7.1 — Fixes found while migrating kwikvet / Correcciones de la migración de kwikvet
+
+Status / Estado: **prepared locally; not published / preparada localmente; sin publicar**.
+Patch release: no behaviour changes with the default configuration.
+Versión de parche: sin cambios de comportamiento con la configuración por defecto.
+
+## Español
+
+- **`GET /<canal>/modules` respondía siempre 500** (`Call to undefined method ...PermissionsService::getModules()`):
+  `HasPermissionsController::modules()` llamaba al servicio en vez de al método `getModules()` del propio trait.
+  Ya fallaba en v2.5.0, pero quedaba oculto hasta activar la autorización. Ahora:
+  - `?enabled=true|1|on` devuelve solo los módulos habilitados, `false|0|off` solo los deshabilitados;
+    ausente, vacío o un valor no reconocido devuelve todos. El texto se convierte de forma explícita a `?bool`.
+  - Nuevo `?format=uri`: devuelve el segmento de URI de cada módulo (`ModSecurity` → `mod_security`), que es
+    lo que guarda la columna `permissions.module` con `naming=route_name`. Sin el parámetro, la respuesta
+    sigue siendo el array de nombres de nwidart más `--site--`.
+  - Sin `nwidart/laravel-modules` instalado devuelve `['--site--']` en vez de un error, como ya hacían
+    `SpatieAuthorize` y `RoutePermissionRefresher`. El acceso a nwidart queda en el hook
+    `protected static moduleCollection()`, sobrescribible.
+- **Parámetros nullable explícitos** (`?string`, `?array`, `?bool`) en `BaseModel`, `BaseModelMongo` y
+  `HasPermissionsController::getModules()`: desaparecen los avisos de PHP ≥ 8.4 por nullable implícito.
+  La firma efectiva no cambia, así que las subclases no se ven afectadas.
+- **Script `scripts/enable-channel-authorization.php`**, distribuido con la biblioteca
+  ([guía](../documentacion/doc-es/03-usage/07-enable-channel-authorization-script.md)):
+  - el informe de `--apply` muestra en cada archivo de rutas solo los nombres de su canal (antes listaba los
+    de todos los canales en cada archivo; los cambios en disco ya eran correctos);
+  - detecta también las declaraciones que van justo después de `<?php`;
+  - `--grant=Rol:@archivo.json` (o `.yml`) asigna una lista explícita de permisos mediante
+    `roles:assign-permissions --from`, para cuando conceder un prefijo entero da demasiado;
+  - al terminar, o si falla un paso, lista los pasos de `--apply` completados (`✔`), el interrumpido (`✘`)
+    y los pendientes (`·`).
+  - Las funciones puras están en `scripts/channel-authorization-functions.php` y tienen tests.
+
+## English
+
+- **`GET /<channel>/modules` always returned 500**: `HasPermissionsController::modules()` called the service
+  instead of the trait's own `getModules()`. It now converts `?enabled=` explicitly (`true|1|on`, `false|0|off`;
+  absent, empty or unrecognized means all), adds `?format=uri` (`ModSecurity` → `mod_security`, the value stored
+  in `permissions.module` with `naming=route_name`) and returns `['--site--']` without nwidart instead of failing.
+  The nwidart lookup lives in the overridable `protected static moduleCollection()` hook.
+- **Explicit nullable parameters** in `BaseModel`, `BaseModelMongo` and `getModules()`: no more PHP ≥ 8.4
+  implicit-nullable deprecations. The effective signatures are unchanged, so subclasses are unaffected.
+- **`scripts/enable-channel-authorization.php`** now ships with the library
+  ([guide](../documentacion/doc-en/03-usage/07-enable-channel-authorization-script.md)): per-file `--apply`
+  report with only that channel's names, detection of declarations right after `<?php`,
+  `--grant=Role:@file.json` for explicit permission lists, and a completed/interrupted step summary.
+
+`vendor/bin/phpunit --display-deprecations`: **289 tests, 790 assertions, no failures, errors or deprecations**.

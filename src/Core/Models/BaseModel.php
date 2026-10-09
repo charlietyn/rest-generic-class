@@ -449,7 +449,7 @@ class BaseModel extends Model implements HasRestCache, HasRestFieldPermissions, 
         return ['success' => false, 'errors' => $validate];
     }
 
-    private function parents_validate(array $attributes, string $scenario = null, bool $specific = false): ?array
+    private function parents_validate(array $attributes, ?string $scenario = null, bool $specific = false): ?array
     {
         $result  = null;
         $parents = $this->get_parents($attributes, $scenario, $specific);
@@ -465,7 +465,7 @@ class BaseModel extends Model implements HasRestCache, HasRestFieldPermissions, 
         return $result;
     }
 
-    public function get_parents(array $attributes = null, string $scenario = 'create', bool $specific = false): array
+    public function get_parents(?array $attributes = null, string $scenario = 'create', bool $specific = false): array
     {
         $parent_array = [];
 

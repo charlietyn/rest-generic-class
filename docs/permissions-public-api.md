@@ -185,3 +185,11 @@ contexto mediante `finally`, también ante excepciones o llamadas anidadas.
 Con prefijos `null` aplica la coincidencia exacta y `count($parts)>2` de v2.5.0; con
 prefijos explícitos admite snake_case. Se mantienen las correcciones de versión y
 rutas sin controlador introducidas en v2.6.0, sin alterar las firmas públicas.
+
+## 9. Módulos (`HasPermissionsController::modules()`)
+
+`GET /<canal>/modules` devuelve los nombres de los módulos de nwidart más el módulo general `--site--`.
+`?enabled=true|false` filtra por estado (ausente, vacío o no reconocido: todos) y `?format=uri` devuelve
+el segmento de URI (`ModSecurity` → `mod_security`), el valor que guarda `permissions.module` con
+`naming=route_name`. Sin `nwidart/laravel-modules` la respuesta es `['--site--']`. `getModules(?bool $type)`
+es estático y lee los módulos del hook `protected static moduleCollection(): Collection`.
