@@ -33,3 +33,14 @@ El paquete lee variables de entorno unicamente desde el archivo de configuracion
 | `REST_AUTHZ_ON_UNRESOLVED` | `allow` | `allow` o `deny`; usa `deny` en rutas protegidas. |
 | `REST_AUTHZ_REGISTER_GATE` | `false` | Activa el Gate de permisos efectivos y la unión con globales. |
 | `REST_AUTHZ_GATE_GUARD` | sin definir (`null`) | Guard opcional, por ejemplo `api`. |
+| `REST_AUTHZ_GLOBAL_PERMISSIONS` | sin definir (`null`) | Fase 2: patrones `Str::is` de nombres globales separados por comas. Sin definir conserva los globales de rutas sin módulo; un valor vacío produce `[]` (ningún global). |
+| `REST_AUTHZ_CATALOG_MIDDLEWARE` | sin definir (`null`) | Fase 2: marcadores de middleware, alias o FQCN, separados por comas. Sin definir incluye todas las rutas del ámbito; vacío produce `[]` (ninguna ruta en el catálogo). |
+
+Ambas listas recortan espacios, descartan entradas vacías y conservan valores como `0`. `null` y una lista vacía tienen significados distintos. Ejemplo:
+
+```dotenv
+REST_AUTHZ_GLOBAL_PERMISSIONS=*.auth.permissions,*.auth.user-profile,*.auth.modules
+REST_AUTHZ_CATALOG_MIDDLEWARE=maybe.permission
+```
+
+Actualiza la caché de configuración y después sincroniza permisos para aplicar estas opciones. Cambiar el entorno por sí solo no actualiza restricciones persistidas ni elimina permisos obsoletos. Consulta la [referencia de configuración](00-configuration-reference.md).

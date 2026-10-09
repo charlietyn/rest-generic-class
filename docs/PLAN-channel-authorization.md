@@ -9,6 +9,11 @@
 > La incorporación de globales se activa con `register_gate` para conservar la unión legacy por defecto.
 > El middleware derivado adopta versión/exclusiones del catálogo; esas correcciones se documentan expresamente.
 > Kwikvet no se ha modificado: su migración es una fase independiente pendiente de confirmación del alcance.
+>
+> **Fase 2 (§7): alcance solicitado implementado y validado localmente; diseño de §7.2 y publicación pendientes de revisión.**
+> La solicitud expresa pide `global_permissions`; una edición concurrente de este plan lo sustituyó por `explicit_globals`.
+> Se conserva esa propuesta, pero el código implementa `global_permissions` hasta recibir otra indicación.
+> La §5 (kwikvet) se revisará cuando se publique la fase 2.
 
 ---
 
@@ -283,3 +288,224 @@ Gate::before(function ($user, string $ability) {
 - [ ] kwikvet: `Client` recibe 403 en `/admin/...`; `Administrator` recibe 200.
 - [ ] kwikvet: `GET /admin/permissions` devuelve el catálogo comprimido real de cada usuario.
 - [ ] kwikvet: `.agents/security/authorization.md` corregido.
+
+---
+
+## 7. Fase 2 — correcciones tras validar v2.6.0 en kwikvet
+
+> Estado: **ALCANCE SOLICITADO IMPLEMENTADO Y VALIDADO LOCALMENTE; PUBLICACIÓN PENDIENTE**.
+> Rama: `fix/authorization-phase-2`. Commits separados para §7.1 y para las opciones/tests/documentación.
+> Validación: 271 tests, 720 assertions, sin fallos ni errores; permanecen los 2 avisos previos de `BaseModel`.
+> No se han creado tags, hecho push ni merge a `main`. §7.5 (kwikvet) no ejecutada.
+> Diferencia pendiente: se ha implementado `global_permissions`, requerido expresamente en el mensaje,
+> en lugar de `explicit_globals`, introducido en una edición de este plan durante la ejecución.
+>
+> Detectadas el 2026-10-09 al activar v2.6.0 en kwikvet con
+> `route_prefixes=admin,client,mobile`, `naming=route_name`, `on_unresolved=deny` y `register_gate=true`.
+> La validación (sincronización + asignación + peticiones reales dentro de una transacción que se deshizo
+> al terminar) confirmó que **la autorización funciona**: Client → 403 en `/admin/...`, Administrator → 200.
+> Los puntos siguientes son lo que quedó por corregir.
+
+### 7.1 [Corrección — v2.6.1] El modo legacy cambia los nombres de los permisos
+
+**Problema.** `RouteMetaResolver::resolveModuleFromUri()` acepta ahora el nombre del módulo en
+`snake_case` (`mod_security` ↔ `ModSecurity`) **también con `route_prefixes = null`**. Un proyecto
+legacy con rutas `api/mod_security/...` pasaría de exigir `users.index` (v2.5.0) a exigir
+`mod_security.users.index` (v2.6.0), y sus asignaciones a roles dejarían de servir. Contradice
+§2.6 («los valores por defecto = comportamiento de v2.5.0»).
+
+**Arreglo** (`src/Core/Resolvers/RouteMetaResolver.php`): aplicar el `snake_case` solo en el modo con
+prefijos. Se añade un parámetro opcional para no romper a quien ya extienda el método:
+
+```php
+protected function resolveModuleFromUri(string $uri, string $guard, array $modules, bool $matchSnake = false): ?string
+{
+    // ...
+    if ($candidate === $module || ($matchSnake && $candidate === Str::snake($module))) {
+        return $candidate;
+    }
+}
+```
+
+```php
+// resolveFromRoute()
+$matchSnake = ($cfg['route_prefixes'] ?? null) !== null;
+$module = $this->resolveModuleFromUri($uri, $prefix, $modules, $matchSnake) ?: $this->defaultModule;
+```
+
+Revisar también la condición legacy de v2.5.0, que exigía `count($parts) > 2`: con `route_prefixes = null`
+debe dar exactamente el mismo resultado que antes.
+
+**Diferencia de implementación:** la firma protegida de tres parámetros se conserva.
+La propuesta anterior de añadir el parámetro opcional al método heredable provoca un error fatal
+en PHP para subclases que mantienen tres argumentos (verificado con una prueba de firma).
+`$matchSnake=false` se aplica en un helper privado; el hook original se ejecuta en ambos modos
+y su contexto se restaura con `finally`. Hay pruebas de herencia y restauración tras excepciones.
+La equivalencia con v2.5.0 se refiere a la resolución de módulos/nombres legacy de esta sección;
+se conservan las correcciones de versión y rutas sin controlador de v2.6.0.
+
+**Tests** (`tests/Unit/RouteMetaResolverScopeTest.php`):
+- legacy (`route_prefixes=null`), `api/mod_security/users` con el módulo `ModSecurity` → `users.index`
+  (mismo nombre que v2.5.0, sin módulo).
+- legacy, `api/ModSecurity/users` → `ModSecurity.users.index` (la coincidencia exacta sigue funcionando).
+- prefijos `['admin']`, `admin/mod_security/users` → el módulo es `mod_security`.
+
+**Notas de versión:** v2.6.1 corrige un cambio de nombres no intencionado en el modo legacy. Avisar a
+quien ya sincronizó permisos con v2.6.0 en modo legacy de que debe volver a sincronizarlos.
+
+### 7.2 [Nueva opción — v2.7.0] Permisos globales marcados en la ruta (`explicit_globals`)
+
+> **Propuesta editada durante la ejecución; no implementada en este cambio.** El mensaje del usuario
+> pide `global_permissions` con `null`/patrones `Str::is`/`[]`, y esa variante está implementada y probada.
+> Se conserva el diseño siguiente para decidir su sustitución antes de publicar, sin atribuirle tests
+> ni comportamiento que todavía no tiene el código.
+
+**Problema.** `RoutePermissionRefresher` marca `restrict = false` (global: lo tiene cualquier usuario
+autenticado si `register_gate=true`) toda ruta cuyo módulo no se resuelve. En kwikvet eso incluye
+`*.auth.permissions`, `*.auth.user-profile` y `*.auth.modules`, que es lo deseado, pero también **cualquier
+ruta futura que se registre fuera de un módulo**: queda abierta a todos los usuarios autenticados sin
+que nadie lo decida ni se note. Es un fallo que abre en vez de cerrar, justo lo que v2.6.0 venía a eliminar.
+
+**Decisión (2026-10-09).** Se descartó una lista de patrones en la configuración (`global_permissions`).
+Lo global se declara **en la propia ruta**, como atributo de la acción, junto al código que lo justifica:
+
+```php
+Route::group(['prefix' => '/', 'as' => 'admin.', 'permission_global' => true], function () {
+    Route::get('/permissions', ...)->name('auth.permissions');
+    Route::get('/user-profile', ...)->name('auth.user-profile');
+});
+```
+
+- **Atributo de la acción, NO `->defaults()`.** Laravel convierte los `defaults` en parámetros de la ruta,
+  así que llegarían a los controladores como un argumento extra. Los atributos de un `Route::group()` se
+  copian a la acción de cada ruta (es lo mismo que ya se hace con `version`, que el resolver lee con
+  `Arr::get($route->getAction(), 'version')`).
+- Para una sola ruta fuera de un grupo: `Route::get(...)->setAction([...$r->getAction(), 'permission_global' => true])`,
+  o meterla en un grupo. Documentar las dos formas.
+
+**Arreglo.**
+
+`config/rest-generic-class.php` → `permissions.authorization`:
+
+```php
+// false → comportamiento actual (global = ruta sin módulo).
+// true  → SOLO las rutas con el atributo de acción 'permission_global' => true son globales;
+//         todo lo demás queda restringido (falla cerrando).
+'explicit_globals' => env('REST_AUTHZ_EXPLICIT_GLOBALS', false),
+```
+
+`src/Core/Resolvers/RouteMetaResolver.php`: exponer el dato en `RouteMeta` para que el refresher no tenga
+que volver a leer la ruta. Añadir al final del constructor de `RouteMeta` un parámetro **opcional**
+`public readonly bool $global = false` (opcional y al final, para no romper a quien construya `RouteMeta`)
+y rellenarlo en `resolveFromRoute()` con `(bool) Arr::get($route->getAction(), 'permission_global', false)`.
+
+`src/Core/Support/Permissions/RoutePermissionRefresher.php`:
+
+```php
+$explicit = (bool) ($cfg['explicit_globals'] ?? false);
+// ...
+'restrict' => $explicit
+    ? !$meta->global                              // solo lo marcado es global
+    : $meta->module !== $this->generalModule,     // legacy
+```
+
+- Al volver a sincronizar se actualiza `restrict` en las filas existentes (el refresher ya hace `fill()->save()`).
+- `UserPermissionReader` no cambia: sigue sumando los `notRestricted()` cuando `register_gate=true`.
+- `SpatieAuthorize` no cambia: un permiso global se comprueba igual que cualquier otro; lo único que
+  cambia es quién lo tiene (todos los usuarios autenticados, a través del Gate).
+
+**Tests** (`tests/Unit/RoutePermissionRefresherTest.php` y `RouteMetaResolverScopeTest.php`):
+- `explicit_globals=false` → `restrict` igual que en v2.6.0 (la ruta sin módulo es global).
+- `explicit_globals=true`:
+  - ruta sin módulo **con** `'permission_global' => true` en el grupo → `restrict=false`.
+  - ruta sin módulo **sin** el atributo → `restrict=true` (el caso que hoy falla abriendo).
+  - ruta de un módulo con el atributo → `restrict=false` (el atributo manda sobre el módulo).
+- `RouteMeta::$global` refleja el atributo, y `new RouteMeta(...)` sin el parámetro nuevo sigue funcionando.
+- El atributo no llega como parámetro a la ruta (`$route->parameters()` no lo contiene).
+
+**Documentación:** sección `permissions.authorization` (en/es) con el ejemplo del grupo y la advertencia
+sobre `->defaults()`; `docs/permissions-public-api.md` (qué significa «global» y cómo lo usa el Gate); la
+variable `REST_AUTHZ_EXPLICIT_GLOBALS` en `01-env-vars.md`.
+
+### 7.3 [Nueva opción — v2.7.0] Catálogo solo con rutas protegidas (`catalog_middleware`)
+
+**Problema.** En modo `route_name`, el catálogo incluye las rutas públicas de cada canal
+(`*.auth.login`, `*.auth.refresh`, `*.auth.logout`, `*.auth.register`, `*.root`, `*.auth.google.login.*`).
+No hacen daño, porque esas rutas no pasan por el middleware, pero ensucian el catálogo, aparecen en
+`GET /permissions` y en la pantalla de asignación de roles, y alguien podría asignarlas creyendo que
+controlan algo. En kwikvet son 22 de los 2.072 permisos.
+
+**Arreglo.** Filtrar en el **refresher** (no en el resolver): si el middleware se está ejecutando, la ruta
+ya está protegida, así que el filtro solo tiene sentido al generar el catálogo.
+
+```php
+// null → todas las rutas en el ámbito (actual).
+// array → solo las rutas cuyo middleware empieza por alguno de estos valores (alias o FQCN).
+'catalog_middleware' => env('REST_AUTHZ_CATALOG_MIDDLEWARE') === null ? null : array_values(array_filter(array_map(
+    'trim', explode(',', env('REST_AUTHZ_CATALOG_MIDDLEWARE', ''))
+), static fn ($m) => $m !== '')),
+```
+
+```php
+// RoutePermissionRefresher::refresh(), antes de resolveFromRoute()
+$markers = $cfg['catalog_middleware'] ?? null;
+if ($markers !== null && !collect($route->gatherMiddleware())->contains(
+    static fn ($mw) => is_string($mw) && Str::startsWith($mw, $markers)
+)) {
+    continue;
+}
+```
+
+- `gatherMiddleware()` devuelve los alias tal como se escribieron (`maybe.permission:api`), así que
+  `'maybe.permission'` funciona como prefijo. Aceptar también el FQCN
+  (`Ronu\RestGenericClass\Core\Middleware\SpatieAuthorize`) para quien registre el middleware por clase.
+- Este filtro no elimina permisos ya existentes en la base de datos. Documentar que las filas sobrantes
+  hay que borrarlas a mano, o añadir una opción `--prune` como mejora aparte (fuera del alcance de esta fase).
+
+**Tests** (`tests/Unit/RoutePermissionRefresherTest.php`):
+- `catalog_middleware=null` → incluye una ruta sin el middleware (como v2.6.0).
+- `['maybe.permission']` → incluye la ruta con `maybe.permission:api` y excluye la ruta sin él.
+- un middleware de tipo closure u objeto en la lista no provoca error.
+
+### 7.4 Pasos
+
+**Control de publicación solicitado por el usuario:** tags, push, merge y Packagist quedan pendientes.
+Decidir entre publicar v2.6.1/v2.7.0 por separado o todo en v2.7.0, confirmar si se integra en `main`
+y resolver la discrepancia de §7.2. Los dos commits locales mantienen separada la corrección legacy.
+
+1. Rama `fix/authorization-phase-2` desde `main` (v2.6.0).
+2. §7.1 + tests, commit, tag **v2.6.1** y push. (Si nadie más usa v2.6.0 todavía, se puede juntar con
+   §7.2–7.3 en una sola v2.7.0; decidir antes de empezar.)
+3. §7.2 (`explicit_globals`) + §7.3 + tests + documentación (en/es) + `docs/release-notes-channel-authorization.md`
+   (sección v2.7.0). Commit, tag **v2.7.0** y push.
+4. `vendor/bin/phpunit`: todo en verde. Los 2 avisos de PHP obsoleto de `BaseModel` (parámetros
+   nullable implícitos) no son de esta fase; corregirlos aparte si se quiere.
+5. Comprobar que la nueva versión aparece en Packagist.
+6. Actualizar el estado de este plan y avisar para planificar la parte de kwikvet.
+
+### 7.5 Lo que queda para kwikvet (se planificará cuando la biblioteca esté publicada)
+
+Solo para tenerlo en cuenta. No se ejecuta desde aquí.
+
+- **Login por canal (`AuthController`):** hoy cualquier usuario con usuario y contraseña válidos obtiene un
+  token de cualquier canal (comprobado: `login()` no mira roles ni canal). Propuesta: solo puede entrar en
+  un canal quien tenga al menos un permiso restringido `<canal>.*`. Aplicarlo en `login`, `refresh` y el
+  login con Google. No es cosa de la biblioteca.
+- `composer.json`: `^2.3.2` → `^2.7` (`composer.lock` está en `.gitignore`, así que la restricción del
+  `composer.json` es lo único que fija la versión).
+- Configuración: `route_prefixes`, `naming`, `on_unresolved`, `register_gate`, `gate_guard`,
+  `explicit_globals=true` (más `'permission_global' => true` en el grupo de `auth.*` de cada
+  `routes/{admin,client,mobile}.php`) y
+  `catalog_middleware=maybe.permission`.
+- Sincronizar, asignar los permisos a los roles (D5), tests de regresión, y corregir
+  `.agents/security/authorization.md` y `.agents/architecture/channels.md`.
+- Revisar la §5 de este plan: ya no se esperan 1.336 permisos, sino unos 2.050 (sin las rutas públicas).
+
+### 7.6 Criterios de terminado — fase 2
+
+- [x] Modo legacy: mismos nombres que v2.5.0 para `api/mod_x/...` (test).
+- [x] Alcance expreso del mensaje: `global_permissions` con `null`, patrones `Str::is` y `[]`; actualiza `restrict` al resincronizar (test).
+- [ ] `explicit_globals`: solo las rutas marcadas con `permission_global` quedan con `restrict=false` (test).
+- [x] `catalog_middleware`: las rutas públicas no entran en el catálogo (test).
+- [x] phpunit en verde; documentación en/es y notas de versión actualizadas para el alcance implementado.
+- [ ] Versiones publicadas en Packagist.

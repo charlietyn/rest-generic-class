@@ -38,3 +38,11 @@ El middleware y la sincronización comparten ahora `RouteMetaResolver`. La autor
 El modo `route_name` admite closures con nombre, incluidos los sufijos `.create` y `.edit`. El modo derivado conserva las exclusiones del catálogo para acciones UI create/edit y rutas sin controlador. El middleware ahora respeta la versión igual que la sincronización: resincroniza y revisa las asignaciones si tus rutas tienen metadatos de versión.
 
 Consulta la [configuración](../02-configuration/00-configuration-reference.md) y el [despliegue por canales](../03-usage/03-edge-and-extreme-scenarios.md) para activar los cambios en orden.
+
+## Fase 2: compatibilidad legacy y control del catálogo
+
+Con `route_prefixes=null`, la inferencia de módulo vuelve a las reglas de nombre exacto y número de segmentos de v2.5.0. Los nombres de módulo snake_case solo se aceptan con prefijos de canales explícitos. Si sincronizaste nombres legacy con v2.6.0, resincroniza y revisa las asignaciones a los nombres restaurados.
+
+`permissions.authorization.catalog_middleware` filtra únicamente `RoutePermissionRefresher`. Por ejemplo, `['maybe.permission']` coincide con `maybe.permission:api`; un marcador FQCN coincide con ese string de clase, con o sin parámetros. Los marcadores son prefijos literales de strings, sin expansión de alias/grupos; se ignoran middleware que no sean string. `null` incluye todas las rutas del ámbito y `[]` no incluye ninguna. El resolver y `SpatieAuthorize` no aplican ese filtro: excluir una ruta del catálogo no permite saltarse la comprobación de permisos, ni siquiera con `on_unresolved=allow`.
+
+`global_permissions` selecciona nombres globales durante la sincronización mediante patrones `Str::is`. `null` conserva los globales por módulo y `[]` restringe todos los permisos seleccionados. El Gate sigue leyendo las restricciones persistidas. Ninguna opción elimina permisos antiguos; las filas excluidas, sus restricciones y asignaciones quedan intactas. Revisa y elimina manualmente las filas obsoletas. No se introduce una opción `--prune`.

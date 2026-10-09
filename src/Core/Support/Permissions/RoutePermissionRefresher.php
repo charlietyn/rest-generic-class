@@ -4,6 +4,7 @@ namespace Ronu\RestGenericClass\Core\Support\Permissions;
 
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
 use Nwidart\Modules\Facades\Module;
 use Ronu\RestGenericClass\Core\Resolvers\RouteMetaResolver;
 
@@ -30,6 +31,8 @@ final class RoutePermissionRefresher
     public function refresh($guard, $dry): array
     {
         $cfg = config('rest-generic-class.permissions.authorization', []);
+        $globals = $cfg['global_permissions'] ?? null;
+        $markers = $cfg['catalog_middleware'] ?? null;
         $permissionClass = app(config('permission.models.permission'));
         $routes = Route::getRoutes();
         $modules = class_exists(Module::class) ? Module::toCollection()->map->getName()->values()->all() : [];
@@ -37,6 +40,11 @@ final class RoutePermissionRefresher
         /** @var RouteMetaResolver $resolver */
         $resolver = app(RouteMetaResolver::class);
         foreach ($routes as $route) {
+            if ($markers !== null && !collect($route->gatherMiddleware())->contains(
+                static fn ($middleware) => is_string($middleware) && Str::startsWith($middleware, $markers)
+            )) {
+                continue;
+            }
             $meta = $resolver->resolveFromRoute($route, $guard, $modules, $cfg);
             if (!$meta) {
                 continue;
@@ -61,7 +69,9 @@ final class RoutePermissionRefresher
                 'route' => $meta->uri,
                 'type' => $meta->action,
                 'model' => $meta->model,
-                'restrict' => $meta->module !== $this->generalModule,
+                'restrict' => $globals === null
+                    ? $meta->module !== $this->generalModule
+                    : !Str::is($globals, $permissionName),
                 'action' => $meta->controllerAction,
             ];
             $permission_entity = $permissionClass::query()->where(['name' => $permissionName, 'guard_name' => $guard])->first();

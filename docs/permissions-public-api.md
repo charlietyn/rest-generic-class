@@ -149,3 +149,37 @@ resolver; los helpers de `RequiredPermissionResolver` siguen disponibles para su
 pero sus overrides no cambian por sí solos la resolución canónica del middleware.
 La sincronización identifica permisos por `(name, guard_name)` y su dry-run no modifica
 el catálogo ni invalida la caché.
+
+## 8. Fase 2: globales explícitos y selección del catálogo
+
+`permissions.authorization.global_permissions` controla `restrict` al sincronizar:
+`null` conserva la regla anterior (sin módulo reconocido = global), un array de patrones
+`Str::is` marca como globales solo los nombres canónicos coincidentes y `[]` restringe todos.
+Los patrones pueden declarar global un permiso dentro de un módulo. Al resincronizar se
+actualizan las filas existentes seleccionadas, manteniendo su ID y sus asignaciones.
+`UserPermissionReader` y `EffectivePermissionGate` no cambian: continúan usando los
+`notRestricted()` persistidos cuando `register_gate=true`, con el filtro de guard.
+Esta opción no es una lista de permisos del usuario ni un filtro de lectura del Gate.
+
+`permissions.authorization.catalog_middleware` selecciona rutas solo en
+`RoutePermissionRefresher::refresh()`, antes de llamar al resolver. `null` incluye todas
+las rutas del ámbito; un array exige una coincidencia de prefijo de string entre los
+marcadores y `gatherMiddleware()`; `[]` no selecciona ninguna. Acepta alias como
+`maybe.permission` y FQCN como `Ronu\RestGenericClass\Core\Middleware\SpatieAuthorize`,
+incluidos parámetros `:api`, sin expandir alias/grupos. Ignora closures y objetos.
+El resolver y el middleware de autorización no aplican este filtro.
+
+Las variables son `REST_AUTHZ_GLOBAL_PERMISSIONS` y `REST_AUTHZ_CATALOG_MIDDLEWARE`,
+separadas por comas; sin definir significan `null`, vacías significan `[]`.
+Después de actualizar la caché de configuración, sincroniza y revisa las asignaciones.
+No hay borrado ni `--prune`: las filas excluidas no se actualizan, incluso si previamente
+eran globales. Elimina los permisos obsoletos manualmente tras revisar sus asignaciones.
+
+La corrección legacy conserva la firma protegida de tres argumentos de
+`resolveModuleFromUri()`. El indicador opcional `$matchSnake=false` se coloca en un helper
+privado: añadirlo a la firma heredable causaría un error fatal en subclases que mantienen
+tres argumentos. El hook existente se ejecuta en ambos modos, con restauración de su
+contexto mediante `finally`, también ante excepciones o llamadas anidadas.
+Con prefijos `null` aplica la coincidencia exacta y `count($parts)>2` de v2.5.0; con
+prefijos explícitos admite snake_case. Se mantienen las correcciones de versión y
+rutas sin controlador introducidas en v2.6.0, sin alterar las firmas públicas.
