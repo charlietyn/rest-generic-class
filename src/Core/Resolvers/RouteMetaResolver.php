@@ -21,7 +21,8 @@ final class RouteMeta
         public readonly string  $model,         // e.g. role
         public readonly string  $action,        // e.g. view|create|update|delete (o index/show si prefieres)
         public readonly string  $canonicalName, // e.g. {{security_module}}.role.view
-        public readonly string  $controllerAction // e.g. RolesController@index
+        public readonly string  $controllerAction, // e.g. RolesController@index
+        public readonly bool    $global = false // permission_global route action attribute
     )
     {
     }
@@ -308,7 +309,8 @@ class RouteMetaResolver
             model: $model,
             action: $type,
             canonicalName: $canonical,
-            controllerAction: $controllerAction
+            controllerAction: $controllerAction,
+            global: (bool) Arr::get($actionArr, 'permission_global', false)
         );
     }
 }

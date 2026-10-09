@@ -31,7 +31,7 @@ final class RoutePermissionRefresher
     public function refresh($guard, $dry): array
     {
         $cfg = config('rest-generic-class.permissions.authorization', []);
-        $globals = $cfg['global_permissions'] ?? null;
+        $explicit = (bool) ($cfg['explicit_globals'] ?? false);
         $markers = $cfg['catalog_middleware'] ?? null;
         $permissionClass = app(config('permission.models.permission'));
         $routes = Route::getRoutes();
@@ -69,9 +69,9 @@ final class RoutePermissionRefresher
                 'route' => $meta->uri,
                 'type' => $meta->action,
                 'model' => $meta->model,
-                'restrict' => $globals === null
-                    ? $meta->module !== $this->generalModule
-                    : !Str::is($globals, $permissionName),
+                'restrict' => $explicit
+                    ? !$meta->global
+                    : $meta->module !== $this->generalModule,
                 'action' => $meta->controllerAction,
             ];
             $permission_entity = $permissionClass::query()->where(['name' => $permissionName, 'guard_name' => $guard])->first();

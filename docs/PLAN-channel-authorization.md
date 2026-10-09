@@ -10,9 +10,8 @@
 > El middleware derivado adopta versión/exclusiones del catálogo; esas correcciones se documentan expresamente.
 > Kwikvet no se ha modificado: su migración es una fase independiente pendiente de confirmación del alcance.
 >
-> **Fase 2 (§7): alcance solicitado implementado y validado localmente; diseño de §7.2 y publicación pendientes de revisión.**
-> La solicitud expresa pide `global_permissions`; una edición concurrente de este plan lo sustituyó por `explicit_globals`.
-> Se conserva esa propuesta, pero el código implementa `global_permissions` hasta recibir otra indicación.
+> **Fase 2 (§7): implementada y publicada en v2.7.0** (incluye la corrección legacy de §7.1; sin tag v2.6.1 independiente).
+> Se implementó `explicit_globals` + atributo `permission_global` (§7.2); la lista de patrones `global_permissions` se descartó.
 > La §5 (kwikvet) se revisará cuando se publique la fase 2.
 
 ---
@@ -293,12 +292,9 @@ Gate::before(function ($user, string $ability) {
 
 ## 7. Fase 2 — correcciones tras validar v2.6.0 en kwikvet
 
-> Estado: **ALCANCE SOLICITADO IMPLEMENTADO Y VALIDADO LOCALMENTE; PUBLICACIÓN PENDIENTE**.
-> Rama: `fix/authorization-phase-2`. Commits separados para §7.1 y para las opciones/tests/documentación.
-> Validación: 271 tests, 720 assertions, sin fallos ni errores; permanecen los 2 avisos previos de `BaseModel`.
-> No se han creado tags, hecho push ni merge a `main`. §7.5 (kwikvet) no ejecutada.
-> Diferencia pendiente: se ha implementado `global_permissions`, requerido expresamente en el mensaje,
-> en lugar de `explicit_globals`, introducido en una edición de este plan durante la ejecución.
+> Estado: **PUBLICADA EN v2.7.0** (merge de `fix/authorization-phase-2` en `main`, tag `v2.7.0`).
+> Validación: 275 tests, 730 assertions, sin fallos ni errores; permanecen los 2 avisos previos de `BaseModel`.
+> §7.5 (kwikvet) no ejecutada.
 >
 > Detectadas el 2026-10-09 al activar v2.6.0 en kwikvet con
 > `route_prefixes=admin,client,mobile`, `naming=route_name`, `on_unresolved=deny` y `register_gate=true`.
@@ -355,10 +351,7 @@ quien ya sincronizó permisos con v2.6.0 en modo legacy de que debe volver a sin
 
 ### 7.2 [Nueva opción — v2.7.0] Permisos globales marcados en la ruta (`explicit_globals`)
 
-> **Propuesta editada durante la ejecución; no implementada en este cambio.** El mensaje del usuario
-> pide `global_permissions` con `null`/patrones `Str::is`/`[]`, y esa variante está implementada y probada.
-> Se conserva el diseño siguiente para decidir su sustitución antes de publicar, sin atribuirle tests
-> ni comportamiento que todavía no tiene el código.
+> **Implementada en v2.7.0** según este diseño; sustituye a la lista de patrones `global_permissions` del borrador previo.
 
 **Problema.** `RoutePermissionRefresher` marca `restrict = false` (global: lo tiene cualquier usuario
 autenticado si `register_gate=true`) toda ruta cuyo módulo no se resuelve. En kwikvet eso incluye
@@ -469,9 +462,7 @@ if ($markers !== null && !collect($route->gatherMiddleware())->contains(
 
 ### 7.4 Pasos
 
-**Control de publicación solicitado por el usuario:** tags, push, merge y Packagist quedan pendientes.
-Decidir entre publicar v2.6.1/v2.7.0 por separado o todo en v2.7.0, confirmar si se integra en `main`
-y resolver la discrepancia de §7.2. Los dos commits locales mantienen separada la corrección legacy.
+**Decisión de publicación:** §7.1–§7.3 se publican juntas en **v2.7.0** (sin tag v2.6.1 independiente).
 
 1. Rama `fix/authorization-phase-2` desde `main` (v2.6.0).
 2. §7.1 + tests, commit, tag **v2.6.1** y push. (Si nadie más usa v2.6.0 todavía, se puede juntar con
@@ -504,8 +495,7 @@ Solo para tenerlo en cuenta. No se ejecuta desde aquí.
 ### 7.6 Criterios de terminado — fase 2
 
 - [x] Modo legacy: mismos nombres que v2.5.0 para `api/mod_x/...` (test).
-- [x] Alcance expreso del mensaje: `global_permissions` con `null`, patrones `Str::is` y `[]`; actualiza `restrict` al resincronizar (test).
-- [ ] `explicit_globals`: solo las rutas marcadas con `permission_global` quedan con `restrict=false` (test).
+- [x] `explicit_globals`: solo las rutas marcadas con `permission_global` quedan con `restrict=false` (test).
 - [x] `catalog_middleware`: las rutas públicas no entran en el catálogo (test).
 - [x] phpunit en verde; documentación en/es y notas de versión actualizadas para el alcance implementado.
 - [ ] Versiones publicadas en Packagist.

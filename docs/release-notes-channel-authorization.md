@@ -138,9 +138,7 @@ aggregation checks on Laravel 12 and 13.
 
 # v2.6.1 — Legacy module matching / Módulos legacy
 
-Status / Estado: **prepared locally; publication pending / preparado localmente; publicación pendiente**.
-The final release split is subject to approval; these changes may ship together in v2.7.0.
-La separación de versiones está pendiente de aprobación; estos cambios pueden publicarse juntos en v2.7.0.
+Status / Estado: **released as part of v2.7.0; no separate v2.6.1 tag / publicada dentro de v2.7.0; sin tag v2.6.1 independiente**.
 
 ## Español
 
@@ -188,23 +186,41 @@ No public signatures, dependencies or class extensibility change.
 
 # v2.7.0 — Explicit globals and catalog scope / Globales y catálogo explícitos
 
-Status / Estado: **prepared locally; no tags, push or merge performed / preparado localmente; sin tags, push ni merge**.
+Status / Estado: **released / publicada** (2026-10-09). Includes the v2.6.1 legacy fix above /
+incluye la corrección legacy de v2.6.1 descrita arriba.
 
-This draft implements `global_permissions` as explicitly requested. During implementation,
-the plan was edited to propose `explicit_globals` with route attributes instead. That alternative
-is preserved in the plan but is not implemented in this draft; confirm the design before publishing.
-Este borrador implementa `global_permissions` conforme a la solicitud expresa. Durante el trabajo,
-el plan cambió a `explicit_globals` con atributos de ruta. Esa alternativa se conserva en el plan,
-pero no está implementada en este borrador; confirmar el diseño antes de publicar.
+The pattern list `global_permissions` from the earlier draft was discarded before release and
+replaced by `explicit_globals` plus the `permission_global` route action attribute (plan §7.2).
+El borrador previo con la lista de patrones `global_permissions` se descartó antes de publicar;
+se sustituye por `explicit_globals` y el atributo de acción de ruta `permission_global` (plan §7.2).
 
 ## Español
 
-Dos opciones nuevas bajo `permissions.authorization`, ambas `null` por defecto:
+Dos opciones nuevas bajo `permissions.authorization`; con sus valores por defecto el
+comportamiento es el de v2.6.0:
 
-| Opción | `null` | Array | `[]` |
-| --- | --- | --- | --- |
-| `global_permissions` | Regla anterior: rutas sin módulo reconocido son globales. | Solo los nombres canónicos que coinciden con algún patrón `Str::is` se guardan con `restrict=false`, incluso dentro de un módulo. | Ningún permiso sincronizado es global. |
-| `catalog_middleware` | Todas las rutas del ámbito del resolver. | Solo rutas cuyo `gatherMiddleware()` contiene un string que empieza por un marcador, alias o FQCN. | Ninguna ruta entra en la sincronización. |
+| Opción | Por defecto | Activada |
+| --- | --- | --- |
+| `explicit_globals` | `false`: las rutas sin módulo reconocido son globales (`restrict=false`). | `true`: solo las rutas cuya acción lleva `'permission_global' => true` son globales, incluso dentro de un módulo; el resto queda restringido (falla cerrando). |
+| `catalog_middleware` | `null`: todas las rutas del ámbito del resolver. | Array: solo rutas cuyo `gatherMiddleware()` contiene un string que empieza por un marcador, alias o FQCN; `[]` no selecciona ninguna. |
+
+Lo global se declara en la propia ruta, junto al código que lo justifica:
+
+```php
+Route::group(['as' => 'admin.', 'permission_global' => true], function () {
+    Route::get('auth/permissions', ...)->name('auth.permissions');
+    Route::get('auth/user-profile', ...)->name('auth.user-profile');
+});
+
+// Ruta suelta
+$route = Route::get('auth/modules', ...)->name('admin.auth.modules');
+$route->setAction([...$route->getAction(), 'permission_global' => true]);
+```
+
+No uses `->defaults('permission_global', true)`: Laravel convierte los defaults en parámetros
+de ruta que llegan al controlador, y el resolver los ignora. `RouteMeta` incorpora la propiedad
+opcional `public readonly bool $global = false` al final del constructor; las llamadas existentes
+siguen funcionando.
 
 `catalog_middleware` ignora entradas no string y acepta parámetros, por ejemplo
 `maybe.permission:api` con marcador `maybe.permission`. No expande alias ni grupos.
@@ -220,24 +236,29 @@ Las filas excluidas por middleware quedan intactas, incluidas sus restricciones.
 los que ya no deban existir; cambiar la configuración no revoca sus asignaciones.
 
 ```dotenv
-REST_AUTHZ_GLOBAL_PERMISSIONS=*.auth.permissions,*.auth.user-profile,*.auth.modules
+REST_AUTHZ_EXPLICIT_GLOBALS=true
 REST_AUTHZ_CATALOG_MIDDLEWARE=maybe.permission
 ```
 
-Sin definir, las variables equivalen a `null`; un valor vacío equivale a `[]`.
-Los valores se separan por comas y se recortan espacios/entradas vacías.
-Actualiza la caché de configuración y resincroniza para aplicar las opciones.
-Con las tres opciones de ámbito en `null` se conservan los nombres y la clasificación
-legacy de módulos, sin filtros adicionales de catálogo. No se migra kwikvet en esta fase.
+`REST_AUTHZ_CATALOG_MIDDLEWARE` sin definir equivale a `null` y vacía a `[]`; los valores se
+separan por comas y se recortan. Actualiza la caché de configuración y resincroniza para aplicar
+las opciones. Antes de activar `explicit_globals`, marca con `permission_global` las rutas que
+deban seguir siendo globales: tras resincronizar, el resto pasa a estar restringido.
 
 ## English
 
-Adds two opt-in `permissions.authorization` options, both defaulting to `null`:
+Adds two opt-in `permissions.authorization` options; defaults keep v2.6.0 behaviour:
 
-| Option | `null` | Array | `[]` |
-| --- | --- | --- | --- |
-| `global_permissions` | Preserve module-based global flags. | Only canonical names matching a `Str::is` pattern are stored with `restrict=false`, including names inside modules. | No synchronized permission is global. |
-| `catalog_middleware` | Include every route in resolver scope. | Include routes with a string in `gatherMiddleware()` starting with an alias/FQCN marker. | Synchronize no routes. |
+| Option | Default | Enabled |
+| --- | --- | --- |
+| `explicit_globals` | `false`: routes without a recognized module are global (`restrict=false`). | `true`: only routes whose action carries `'permission_global' => true` are global, even inside a module; everything else is restricted (fail closed). |
+| `catalog_middleware` | `null`: every route in resolver scope. | Array: routes with a string in `gatherMiddleware()` starting with an alias/FQCN marker; `[]` selects none. |
+
+Declare globals on the route itself, as a `Route::group()` attribute or with
+`setAction([...$route->getAction(), 'permission_global' => true])` (see the example above).
+Do not use `->defaults()`: Laravel turns defaults into route parameters passed to controllers,
+and the resolver ignores them. `RouteMeta` gains a trailing optional
+`public readonly bool $global = false`; existing constructor calls keep working.
 
 Middleware markers accept parameters (`maybe.permission` matches `maybe.permission:api`),
 ignore non-string entries and do not expand aliases/groups. The filter runs only in
@@ -249,16 +270,17 @@ The effective reader and Gate continue using stored `notRestricted()` flags when
 Excluded rows retain their previous restrictions. There is no deletion or `--prune`;
 review and remove obsolete permissions manually. Configuration alone does not revoke grants.
 
-Use the environment variables shown above: unset means `null`, empty means `[]`, and
-comma-separated entries are trimmed. Refresh configuration caches and resynchronize.
-Null scope options preserve legacy module names/classification with no extra catalog filter.
-No application migration, dependency changes or public API changes are included.
+Use the environment variables shown above (`REST_AUTHZ_CATALOG_MIDDLEWARE`: unset means `null`,
+empty means `[]`, comma-separated entries are trimmed). Refresh configuration caches and
+resynchronize. Mark routes that must stay global before enabling `explicit_globals`.
+No dependency changes are included.
 
 ## Phase 2 verification / Validación de fase 2
 
-`php vendor/bin/phpunit --display-deprecations`: **271 tests, 720 assertions, zero failures/errors**
-on PHP 8.5 / Laravel 13.35. Two pre-existing `BaseModel` implicit-nullability deprecations remain.
-16 new tests cover exact legacy names/counts, channel matching and extension compatibility,
-global patterns and resync, null/empty settings, alias/FQCN matching, non-string middleware,
-preservation of excluded rows and runtime authorization independent of catalog filtering.
-Publishing, tags, push, merge to `main` and Packagist verification await approval.
+`vendor/bin/phpunit`: **275 tests, 730 assertions, zero failures/errors**.
+Two pre-existing `BaseModel` implicit-nullability deprecations remain.
+Tests cover exact legacy names/counts, channel matching and extension compatibility,
+`explicit_globals` on/off with resync, group and `setAction()` attributes, `->defaults()` being
+ignored and not leaking into controller parameters, `RouteMeta` backward compatibility,
+null/empty catalog settings, alias/FQCN matching, non-string middleware, preservation of
+excluded rows and runtime authorization independent of catalog filtering.

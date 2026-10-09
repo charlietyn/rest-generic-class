@@ -33,13 +33,13 @@ The package reads environment variables only from the configuration file. This i
 | `REST_AUTHZ_ON_UNRESOLVED` | `allow` | `allow` or `deny`; use `deny` on protected routes. |
 | `REST_AUTHZ_REGISTER_GATE` | `false` | Enable the effective-permission Gate and global union. |
 | `REST_AUTHZ_GATE_GUARD` | unset (`null`) | Optional guard filter, for example `api`. |
-| `REST_AUTHZ_GLOBAL_PERMISSIONS` | unset (`null`) | Phase 2: comma-separated `Str::is` patterns for global permission names. Unset preserves globals for routes without a module; an empty value yields `[]` (no globals). |
+| `REST_AUTHZ_EXPLICIT_GLOBALS` | `false` | Phase 2: `true` makes only routes marked with the `permission_global` action attribute global; `false` preserves globals for routes without a module. |
 | `REST_AUTHZ_CATALOG_MIDDLEWARE` | unset (`null`) | Phase 2: comma-separated middleware markers, aliases or FQCNs. Unset includes all scoped routes; an empty value yields `[]` (no catalog routes). |
 
-Both lists trim whitespace, discard empty entries and retain values such as `0`. `null` and an empty list have different meanings. Example:
+Prefix and middleware lists trim whitespace, discard empty entries and retain values such as `0`. `null` and an empty list have different meanings. Example:
 
 ```dotenv
-REST_AUTHZ_GLOBAL_PERMISSIONS=*.auth.permissions,*.auth.user-profile,*.auth.modules
+REST_AUTHZ_EXPLICIT_GLOBALS=true
 REST_AUTHZ_CATALOG_MIDDLEWARE=maybe.permission
 ```
 

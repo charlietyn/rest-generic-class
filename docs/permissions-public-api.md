@@ -152,10 +152,12 @@ el catálogo ni invalida la caché.
 
 ## 8. Fase 2: globales explícitos y selección del catálogo
 
-`permissions.authorization.global_permissions` controla `restrict` al sincronizar:
-`null` conserva la regla anterior (sin módulo reconocido = global), un array de patrones
-`Str::is` marca como globales solo los nombres canónicos coincidentes y `[]` restringe todos.
-Los patrones pueden declarar global un permiso dentro de un módulo. Al resincronizar se
+`permissions.authorization.explicit_globals` controla `restrict` al sincronizar:
+`false` conserva la regla anterior (sin módulo reconocido = global); `true` marca como globales
+solo las rutas cuya acción lleva `'permission_global' => true` y restringe todas las demás.
+El atributo se declara en un `Route::group()` o con `setAction()`, nunca con `->defaults()`
+(se convertiría en parámetro del controlador). Puede declarar global una ruta dentro de un módulo.
+`RouteMeta` expone el dato en la propiedad opcional `public readonly bool $global = false`. Al resincronizar se
 actualizan las filas existentes seleccionadas, manteniendo su ID y sus asignaciones.
 `UserPermissionReader` y `EffectivePermissionGate` no cambian: continúan usando los
 `notRestricted()` persistidos cuando `register_gate=true`, con el filtro de guard.
@@ -169,8 +171,8 @@ marcadores y `gatherMiddleware()`; `[]` no selecciona ninguna. Acepta alias como
 incluidos parámetros `:api`, sin expandir alias/grupos. Ignora closures y objetos.
 El resolver y el middleware de autorización no aplican este filtro.
 
-Las variables son `REST_AUTHZ_GLOBAL_PERMISSIONS` y `REST_AUTHZ_CATALOG_MIDDLEWARE`,
-separadas por comas; sin definir significan `null`, vacías significan `[]`.
+Las variables son `REST_AUTHZ_EXPLICIT_GLOBALS` (booleana) y `REST_AUTHZ_CATALOG_MIDDLEWARE`
+(separada por comas; sin definir significa `null`, vacía significa `[]`).
 Después de actualizar la caché de configuración, sincroniza y revisa las asignaciones.
 No hay borrado ni `--prune`: las filas excluidas no se actualizan, incluso si previamente
 eran globales. Elimina los permisos obsoletos manualmente tras revisar sus asignaciones.

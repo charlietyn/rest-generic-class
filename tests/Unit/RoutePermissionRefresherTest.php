@@ -40,10 +40,10 @@ final class RoutePermissionRefresherTest extends ChannelAuthorizationTestCase
         $this->assertSame('unchanged', cache()->get('spatie.permission.cache'));
     }
 
-    public function testNullGlobalsPreserveModuleBasedRestrictions(): void
+    public function testDisabledExplicitGlobalsPreserveModuleBasedRestrictions(): void
     {
         $this->useKnownModules();
-        config(['rest-generic-class.permissions.authorization.global_permissions' => null]);
+        config(['rest-generic-class.permissions.authorization.explicit_globals' => false]);
         Route::get('admin/auth/permissions', fn () => 'ok')->name('admin.auth.permissions');
         Route::get('admin/mod_security/users', fn () => 'ok')->name('admin.mod_security.users.index');
 
@@ -66,49 +66,68 @@ final class RoutePermissionRefresherTest extends ChannelAuthorizationTestCase
         $this->assertRestrictions(['users.index' => false, 'ModSecurity.users.index' => true]);
     }
 
-    public function testExplicitGlobalsRestrictEveryNonMatchingPermissionAndResyncExistingRows(): void
+    public function testExplicitGlobalsUseGroupAttributesAndResyncExistingRows(): void
     {
         $this->useKnownModules();
-        Route::get('admin/auth/permissions', fn () => 'ok')->name('admin.auth.permissions');
-        Route::get('client/auth/permissions', fn () => 'ok')->name('client.auth.permissions');
+        Route::group(['prefix' => 'admin', 'as' => 'admin.', 'permission_global' => true], function () {
+            Route::get('auth/permissions', fn () => 'ok')->name('auth.permissions');
+            Route::get('mod_security/users', fn () => 'ok')->name('mod_security.users.index');
+        });
         Route::get('admin/auth/user-profile', fn () => 'ok')->name('admin.auth.user-profile');
         Route::get('admin/other/thing', fn () => 'ok')->name('admin.other.thing');
-        Route::get('admin/mod_security/users', fn () => 'ok')->name('admin.mod_security.users.index');
         $refresher = new RoutePermissionRefresher();
         $refresher->refresh('api', false);
         $ids = ChannelPermission::orderBy('id')->pluck('id')->all();
+        $this->assertRestrictions([
+            'admin.auth.permissions' => false,
+            'admin.mod_security.users.index' => true,
+            'admin.auth.user-profile' => false,
+            'admin.other.thing' => false,
+        ]);
 
-        config(['rest-generic-class.permissions.authorization.global_permissions' => ['*.auth.permissions']]);
+        config(['rest-generic-class.permissions.authorization.explicit_globals' => true]);
         $refresher->refresh('api', false);
         $this->assertRestrictions([
             'admin.auth.permissions' => false,
-            'client.auth.permissions' => false,
+            'admin.mod_security.users.index' => false,
             'admin.auth.user-profile' => true,
             'admin.other.thing' => true,
-            'admin.mod_security.users.index' => true,
         ]);
         $this->assertSame($ids, ChannelPermission::orderBy('id')->pluck('id')->all());
-
-        // Explicit patterns take precedence even for a route inside a module.
-        config(['rest-generic-class.permissions.authorization.global_permissions' => ['admin.mod_security.*', 'client.auth.permissions']]);
-        $refresher->refresh('api', false);
-        $this->assertRestrictions([
-            'admin.auth.permissions' => true,
-            'client.auth.permissions' => false,
-            'admin.auth.user-profile' => true,
-            'admin.other.thing' => true,
-            'admin.mod_security.users.index' => false,
-        ]);
     }
 
-    public function testEmptyGlobalsMakeEveryPermissionRestricted(): void
+    public function testExplicitGlobalsWithoutMarkedRoutesRestrictEverything(): void
     {
         Route::get('admin/auth/permissions', fn () => 'ok')->name('admin.auth.permissions');
         $refresher = new RoutePermissionRefresher();
         $refresher->refresh('api', false);
-        config(['rest-generic-class.permissions.authorization.global_permissions' => []]);
+        config(['rest-generic-class.permissions.authorization.explicit_globals' => true]);
         $refresher->refresh('api', false);
         $this->assertRestrictions(['admin.auth.permissions' => true]);
+    }
+
+    public function testStandaloneActionAttributeIsGlobalButDefaultsAreNot(): void
+    {
+        config(['rest-generic-class.permissions.authorization.explicit_globals' => true]);
+        $route = Route::get('admin/auth/permissions', fn () => 'ok')->name('admin.auth.permissions');
+        $route->setAction([...$route->getAction(), 'permission_global' => true]);
+        Route::get('admin/auth/user-profile', fn () => 'ok')->name('admin.auth.user-profile')->defaults('permission_global', true);
+        (new RoutePermissionRefresher())->refresh('api', false);
+        $this->assertRestrictions(['admin.auth.permissions' => false, 'admin.auth.user-profile' => true]);
+    }
+
+    public function testGlobalGroupAttributeDoesNotBecomeAControllerParameter(): void
+    {
+        Route::group(['prefix' => 'admin', 'permission_global' => true], function () {
+            Route::get('users/{id}', fn ($id) => $id)->name('admin.users.show');
+        });
+        $request = \Illuminate\Http\Request::create('/admin/users/42');
+        $route = Route::getRoutes()->match($request);
+        $this->assertTrue($route->getAction('permission_global'));
+        $this->assertSame(['id' => '42'], $route->parameters());
+        $this->assertSame('42', $route->run());
+        $meta = app(RouteMetaResolver::class)->resolveFromRoute($route, 'api', [], config('rest-generic-class.permissions.authorization'));
+        $this->assertTrue($meta->global);
     }
 
     public function testNullCatalogMiddlewareIncludesRoutesWithoutMiddleware(): void

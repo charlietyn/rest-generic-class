@@ -6,6 +6,10 @@
 [![Laravel](https://img.shields.io/badge/Laravel-12.x%20%7C%2013.x-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 [![License](https://img.shields.io/packagist/l/ronu/rest-generic-class.svg?style=flat-square)](LICENSE.md)
 
+## v2.7.0 — Explicit global permissions
+
+Opt-in `explicit_globals` (only routes marked with the `permission_global` action attribute are global; everything else fails closed), `catalog_middleware` to keep public routes out of the permission catalog, and the v2.5.0 legacy module-name fix. See the [release notes](docs/release-notes-channel-authorization.md#v270--explicit-globals-and-catalog-scope--globales-y-catálogo-explícitos).
+
 ## v2.6.0 — Channel authorization
 
 Optional channel prefixes, literal route permission names, fail-closed middleware, and an effective-permission Gate. Review the [release notes and activation order](docs/release-notes-channel-authorization.md) before enabling authorization for channel-based applications.

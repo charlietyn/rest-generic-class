@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use PHPUnit\Framework\TestCase;
 use Ronu\RestGenericClass\Core\Resolvers\RouteMetaResolver;
+use Ronu\RestGenericClass\Core\Resolvers\RouteMeta;
 
 final class RouteMetaResolverScopeTest extends TestCase
 {
@@ -23,7 +24,7 @@ final class RouteMetaResolverScopeTest extends TestCase
     public function testDefaultNullConfigurationPreservesV250ModuleNames(): void
     {
         $resolver = new RouteMetaResolver();
-        $cfg = ['route_prefixes' => null, 'global_permissions' => null, 'catalog_middleware' => null];
+        $cfg = ['route_prefixes' => null, 'explicit_globals' => false, 'catalog_middleware' => null];
         foreach ([
             'api/mod_security' => ['--site--', 'users.index'],
             'api/ModSecurity' => ['ModSecurity', 'ModSecurity.users.index'],
@@ -191,5 +192,27 @@ final class RouteMetaResolverScopeTest extends TestCase
     private function route(string $prefix, string $name = 'users.index', string $method = 'index'): Route
     {
         return (new Route('GET', 'users', ['controller' => 'UsersController@' . $method]))->prefix($prefix)->name($name);
+    }
+
+    public function testRouteMetaReadsOnlyTheActionGlobalAttribute(): void
+    {
+        $resolver = new RouteMetaResolver();
+        $route = $this->route('admin');
+        $cfg = ['route_prefixes' => ['admin']];
+        $this->assertFalse($resolver->resolveFromRoute($route, 'api', [], $cfg)->global);
+        $route->defaults('permission_global', true);
+        $this->assertFalse($resolver->resolveFromRoute($route, 'api', [], $cfg)->global);
+        $route->setAction([...$route->getAction(), 'permission_global' => true]);
+        $this->assertTrue($resolver->resolveFromRoute($route, 'api', [], $cfg)->global);
+        $route->setAction([...$route->getAction(), 'permission_global' => false]);
+        $this->assertFalse($resolver->resolveFromRoute($route, 'api', [], $cfg)->global);
+    }
+
+    public function testExistingRouteMetaConstructionDefaultsToNonGlobal(): void
+    {
+        // Load the resolver, which also declares RouteMeta, as existing callers do.
+        new RouteMetaResolver();
+        $meta = new RouteMeta(null, 'api/users', ['GET'], null, null, '--site--', 'users', 'index', 'users.index', '-');
+        $this->assertFalse($meta->global);
     }
 }
