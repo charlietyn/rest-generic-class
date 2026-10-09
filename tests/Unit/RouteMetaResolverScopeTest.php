@@ -20,6 +20,105 @@ final class RouteMetaResolverScopeTest extends TestCase
         $this->assertNull($resolver->resolve(Request::create('/api/users'), 'api'));
     }
 
+    public function testDefaultNullConfigurationPreservesV250ModuleNames(): void
+    {
+        $resolver = new RouteMetaResolver();
+        $cfg = ['route_prefixes' => null, 'global_permissions' => null, 'catalog_middleware' => null];
+        foreach ([
+            'api/mod_security' => ['--site--', 'users.index'],
+            'api/ModSecurity' => ['ModSecurity', 'ModSecurity.users.index'],
+            'api/mod_other' => ['--site--', 'users.index'],
+            'apiv2/ModSecurity' => ['--site--', 'users.index'],
+        ] as $prefix => [$module, $name]) {
+            $route = $this->route($prefix);
+            $meta = $resolver->resolveFromRoute($route, 'api', ['ModSecurity'], $cfg);
+            $this->assertSame($module, $meta->module);
+            $this->assertSame($name, $meta->canonicalName);
+            $this->assertEquals($meta, $resolver->resolveFromRoute($route, 'api', ['ModSecurity']));
+            $request = Request::create('/' . $route->uri());
+            $request->setRouteResolver(fn () => $route);
+            $this->assertEquals($meta, $resolver->resolve($request, 'api', ['ModSecurity'], $cfg));
+        }
+    }
+
+    public function testLegacyModuleResolutionMatchesV250ForShortAndIrregularUris(): void
+    {
+        $resolver = new class extends RouteMetaResolver {
+            public function module(string $uri, string $guard, array $modules): ?string
+            {
+                return $this->resolveModuleFromUri($uri, $guard, $modules);
+            }
+        };
+        // These expectations come from the exact v2.5.0 segment/count checks.
+        foreach ([
+            ['api', 'api', null],
+            ['api/ModSecurity', 'api', null],
+            ['api/ModSecurity/', 'api', null],
+            ['api/ModSecurity/users', 'api', 'ModSecurity'],
+            ['/api//ModSecurity/users', 'api', 'ModSecurity'],
+            ['api/mod_security/users', 'api', null],
+            ['apiv2/ModSecurity/users', 'api', null],
+            ['api/ModSecurity/users', 'api/', null],
+            ['api/admin/ModSecurity/users', 'api/admin', null],
+        ] as [$uri, $guard, $expected]) {
+            $this->assertSame($expected, $resolver->module($uri, $guard, ['ModSecurity']), $uri);
+        }
+        $route = (new Route('GET', 'ModSecurity', ['controller' => 'UsersController@index']))->prefix('api');
+        $this->assertSame('users.index', $resolver->resolveFromRoute($route, 'api', ['ModSecurity'])->canonicalName);
+    }
+
+    public function testNestedChannelPrefixesStillAcceptSnakeCaseModules(): void
+    {
+        $meta = (new RouteMetaResolver())->resolveFromRoute(
+            $this->route('api/admin/mod_security'), 'api', ['ModSecurity'], ['route_prefixes' => ['api/admin']]
+        );
+        $this->assertSame('mod_security', $meta->module);
+        $this->assertSame('mod_security.users.index', $meta->canonicalName);
+    }
+
+    public function testExistingThreeArgumentModuleOverridesWorkInBothModesWithoutLeakingState(): void
+    {
+        $resolver = new class extends RouteMetaResolver {
+            public int $calls = 0;
+            protected function resolveModuleFromUri(string $uri, string $guard, array $modules): ?string
+            {
+                $this->calls++;
+                return parent::resolveModuleFromUri($uri, $guard, $modules);
+            }
+        };
+        $channel = $resolver->resolveFromRoute($this->route('admin/mod_security'), 'api', ['ModSecurity'], ['route_prefixes' => ['admin']]);
+        $legacy = $resolver->resolveFromRoute($this->route('api/mod_security'), 'api', ['ModSecurity']);
+        $this->assertSame('mod_security', $channel->module);
+        $this->assertSame('--site--', $legacy->module);
+        $this->assertSame(2, $resolver->calls);
+    }
+
+    public function testModuleMatchingModeIsRestoredAfterAnOverrideThrows(): void
+    {
+        $resolver = new class extends RouteMetaResolver {
+            public bool $shouldThrow = true;
+            protected function resolveModuleFromUri(string $uri, string $guard, array $modules): ?string
+            {
+                if ($this->shouldThrow) {
+                    throw new \RuntimeException('Application override failed');
+                }
+                return parent::resolveModuleFromUri($uri, $guard, $modules);
+            }
+            public function module(): ?string
+            {
+                return $this->resolveModuleFromUri('api/mod_security/users', 'api', ['ModSecurity']);
+            }
+        };
+        try {
+            $resolver->resolveFromRoute($this->route('admin/mod_security'), 'api', ['ModSecurity'], ['route_prefixes' => ['admin']]);
+            $this->fail('The override should throw');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Application override failed', $exception->getMessage());
+        }
+        $resolver->shouldThrow = false;
+        $this->assertNull($resolver->module());
+    }
+
     public function testChannelScopeUsesUriBoundariesAndSnakeCaseModules(): void
     {
         $resolver = new RouteMetaResolver();

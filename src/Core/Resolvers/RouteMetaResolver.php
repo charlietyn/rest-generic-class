@@ -37,6 +37,8 @@ final class RouteMeta
  */
 class RouteMetaResolver
 {
+    private bool $matchSnakeModule = false;
+
     public function __construct(
         private readonly string $defaultModule = '--site--',
         private readonly array  $restToPermMap = [
@@ -188,6 +190,21 @@ class RouteMetaResolver
     /** Determine module from uri after guard, matching known module list */
     protected function resolveModuleFromUri(string $uri, string $guard, array $modules): ?string
     {
+        return $this->matchModuleFromUri($uri, $guard, $modules, $this->matchSnakeModule);
+    }
+
+    /** Keep the three-argument extension hook compatible with existing subclasses. */
+    private function matchModuleFromUri(string $uri, string $guard, array $modules, bool $matchSnake = false): ?string
+    {
+        if (!$matchSnake) {
+            // Match v2.5.0 exactly, including short URIs and the literal guard segment.
+            $parts = array_values(array_filter(explode('/', $uri)));
+            if (count($parts) > 2 && $parts[0] === $guard && in_array($parts[1], $modules, true)) {
+                return $parts[1];
+            }
+            return null;
+        }
+
         $prefix = trim($guard, '/');
         $uri = trim($uri, '/');
         if (Str::startsWith($uri, $prefix . '/')) {
@@ -199,6 +216,19 @@ class RouteMetaResolver
             }
         }
         return null;
+    }
+
+    private function resolveModuleForRoute(string $uri, string $prefix, array $modules, bool $matchSnake): ?string
+    {
+        // Preserve overridden resolveModuleFromUri() in both modes. Restore the mode
+        // even after a nested resolution or an exception in an application override.
+        $previous = $this->matchSnakeModule;
+        $this->matchSnakeModule = $matchSnake;
+        try {
+            return $this->resolveModuleFromUri($uri, $prefix, $modules);
+        } finally {
+            $this->matchSnakeModule = $previous;
+        }
     }
 
     /** Build canonical "permission-like" name with hyphenated segments */
@@ -255,7 +285,8 @@ class RouteMetaResolver
             ? (string) Str::afterLast($name, '.')
             : ($this->inferAction($methodName, $verbs, $name, $cfg) ?: 'read');
 
-        $module = $this->resolveModuleFromUri($uri, $prefix, $modules) ?: $this->defaultModule;
+        $matchSnake = ($cfg['route_prefixes'] ?? null) !== null;
+        $module = $this->resolveModuleForRoute($uri, $prefix, $modules, $matchSnake) ?: $this->defaultModule;
 
         $canonical = $this->toCanonicalName($module, $model, $type);
         $canonical = $routeNaming ? $name : ($version ? $version . '.' . $canonical : $canonical);
