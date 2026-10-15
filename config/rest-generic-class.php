@@ -72,6 +72,12 @@ return [
             'catalog_middleware' => env('REST_AUTHZ_CATALOG_MIDDLEWARE') === null ? null : array_values(array_filter(array_map(
                 'trim', explode(',', env('REST_AUTHZ_CATALOG_MIDDLEWARE', ''))
             ), static fn ($marker) => $marker !== '')),
+            // ?relations= eager loads. off: only the RELATIONS whitelist applies (v2.7 behaviour).
+            // require_read: each to-many relation needs <resource>.<relation>.read or ….manage;
+            // a denied one is a 403 with filtering.strict_relations=true and is left out otherwise.
+            'eager_relations' => env('REST_AUTHZ_EAGER_RELATIONS', 'off'),
+            // allow: to-one relations (belongsTo, hasOne, ...) are exempt; require_read: checked too.
+            'eager_relations_to_one' => env('REST_AUTHZ_EAGER_RELATIONS_TO_ONE', 'allow'),
         ],
 
         // Name of the Eloquent relation on the User model that returns its roles.

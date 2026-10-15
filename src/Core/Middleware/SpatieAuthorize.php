@@ -5,6 +5,7 @@ namespace Ronu\RestGenericClass\Core\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 use Nwidart\Modules\Facades\Module;
 use Ronu\RestGenericClass\Core\Resolvers\RouteMetaResolver;
 use Ronu\RestGenericClass\Core\Support\Authorization\PermissionDecisionEvaluator;
@@ -13,7 +14,9 @@ use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Resolves the same canonical permission as the route catalog and checks user->can().
+ * Resolves the same actions as the route catalog and checks them with user->can(): one of the route's
+ * abilities (permission_ability alternatives, canAny) and every permission_requires action (canAll).
+ * On success the authorized route context is stored in the CONTEXT_ATTRIBUTE request attribute.
  * Configure permissions.authorization for channel prefixes and fail-closed behavior.
  * Authenticate first; the middleware parameter selects the authentication guard.
  * Protected compatibility helpers below are available to subclasses, but handle()
@@ -21,6 +24,9 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class SpatieAuthorize
 {
+    /** Request attribute with the authorized route context, read by eager relation authorization. */
+    public const CONTEXT_ATTRIBUTE = 'rest-generic-class.authorization';
+
     public function __construct(private PermissionRegistrar $registrar) {}
 
     /**
@@ -41,12 +47,27 @@ class SpatieAuthorize
             }
             return $next($request);
         }
-        $requiredPermission = $meta->canonicalName;
         $user = auth($guard)->user();
-        if (!$user || !$user->can($requiredPermission)) {
-            abort(403, config('app.debug') ? "Forbidden: {$requiredPermission}" : 'Forbidden');
+        $evaluator = app(PermissionDecisionEvaluator::class);
+        if (!$evaluator->canAny($user, $meta->abilities)) {
+            abort(403, config('app.debug') ? 'Forbidden: ' . $this->describeMissingAbilities($meta->abilities) : 'Forbidden');
         }
+        if (!$evaluator->canAll($user, $meta->requires)) {
+            $missing = array_values(array_filter($meta->requires, static fn (string $action) => !$user->can($action)));
+            abort(403, config('app.debug') ? 'Forbidden: missing ' . implode(', ', $missing) : 'Forbidden');
+        }
+        $request->attributes->set(self::CONTEXT_ATTRIBUTE, [
+            'guard' => $guard,
+            'action' => $meta->canonicalName,
+            'resource' => str_contains($meta->canonicalName, '.') ? Str::beforeLast($meta->canonicalName, '.') : null,
+        ]);
         return $next($request);
+    }
+
+    /** One alternative keeps the v2.7 message ("Forbidden: admin.users.index"). */
+    private function describeMissingAbilities(array $abilities): string
+    {
+        return count($abilities) === 1 ? $abilities[0] : 'missing one of ' . implode(', ', $abilities);
     }
 
     /**

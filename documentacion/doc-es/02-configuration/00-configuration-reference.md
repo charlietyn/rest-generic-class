@@ -95,6 +95,8 @@ Todas las claves siguientes pertenecen a `permissions.authorization`.
 | `gate_guard` | `null` | Filtra los permisos efectivos del Gate por guard; `null` admite todos. Usa `api` si ese es tu guard de autenticación. |
 | `explicit_globals` | `false` | Fase 2: `false` conserva los globales por módulo (una ruta sin módulo reconocido es global). `true` guarda `restrict=false` solo en las rutas cuya **acción** lleva `'permission_global' => true` (incluso dentro de un módulo); el resto de permisos sincronizados queda restringido (falla cerrando). |
 | `catalog_middleware` | `null` | Fase 2, solo catálogo: `null` incluye todas las rutas del ámbito. Un array incluye solo las rutas cuyo `gatherMiddleware()` contiene un string que empieza por uno de los marcadores (alias o FQCN); `[]` no incluye ninguna. Ignora middleware que no sean string. |
+| `eager_relations` | `off` | v2.8.0: `require_read` hace que cada relación a muchos pedida con `?relations=` exija `<recurso>.<relación>.read` o `….manage` (recurso = acción autorizada sin su último segmento). Una relación denegada es un 403 con `filtering.strict_relations=true` y se omite en caso contrario. Se comprueba antes de la caché. |
+| `eager_relations_to_one` | `allow` | v2.8.0: `allow` exime a las relaciones a uno (`belongsTo`, `hasOne`, `morphOne`, `hasOneThrough`, `morphTo`) de `eager_relations`; `require_read` también las comprueba. |
 
 `route_prefixes` selecciona rutas; no define guards de autenticación. El parámetro del middleware y `--guard` del comando deben seguir usando guards reales. Ya no se lee la antigua clave `route-permissions`. `passesFilters()` permanece como punto de extensión sobrescribible, sin reglas de filtrado incorporadas.
 

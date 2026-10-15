@@ -26,6 +26,7 @@ trait HasPermissionsService
     private ?string $generalModule = "--site--";
     private mixed $permissionClass;
     private mixed $roleClass;
+    private array $permissionSyncReport = [];
 
     public function __construct()
     {
@@ -450,10 +451,24 @@ trait HasPermissionsService
 
     // ----------------- Helpers (private) -----------------
 
-    public function refreshPermissions($guard, $dry): array
+    /**
+     * Sync the action catalog from the routes. With $prune, actions no route produces are deleted
+     * unless a role or model holds them; permissionSyncReport() then lists the kept orphans.
+     */
+    public function refreshPermissions($guard, $dry, bool $prune = false): array
     {
-        return app(RoutePermissionRefresher::class, ['generalModule' => $this->generalModule])
-            ->refresh($guard, $dry);
+        $refresher = app(RoutePermissionRefresher::class, ['generalModule' => $this->generalModule]);
+        $rows = $refresher->refresh($guard, $dry, $prune);
+        $this->permissionSyncReport = $refresher->report();
+        return $rows;
+    }
+
+    /**
+     * Report of the last refreshPermissions(): created, updated, unchanged, pruned, orphans, dry_run.
+     */
+    public function permissionSyncReport(): array
+    {
+        return $this->permissionSyncReport;
     }
 
     protected function passesFilters(string $uri, ?string $name, array $middlewares, array $cfg): bool

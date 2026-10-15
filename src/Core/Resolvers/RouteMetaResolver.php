@@ -11,6 +11,16 @@ use Illuminate\Support\Str;
 
 final class RouteMeta
 {
+    /** @var string[] Absolute alternative actions; holding any one of them is enough (canAny). */
+    public readonly array $abilities;
+
+    /** @var string[] Absolute additional actions; all of them are required (canAll). */
+    public readonly array $requires;
+
+    /**
+     * @param string[] $abilities Defaults to [$canonicalName].
+     * @param string[] $requires
+     */
     public function __construct(
         public readonly ?string $routeName,     // e.g. {{security_module}}.role.index
         public readonly string  $uri,           // e.g. api/{{security_module}}/roles/{id}
@@ -20,11 +30,15 @@ final class RouteMeta
         public readonly string  $module,        // e.g. {{security_module}} | --site--
         public readonly string  $model,         // e.g. role
         public readonly string  $action,        // e.g. view|create|update|delete (o index/show si prefieres)
-        public readonly string  $canonicalName, // e.g. {{security_module}}.role.view
+        public readonly string  $canonicalName, // e.g. {{security_module}}.role.view; the first ability
         public readonly string  $controllerAction, // e.g. RolesController@index
-        public readonly bool    $global = false // permission_global route action attribute
+        public readonly bool    $global = false, // permission_global route action attribute
+        array $abilities = [],
+        array $requires = []
     )
     {
+        $this->abilities = $abilities !== [] ? array_values($abilities) : [$canonicalName];
+        $this->requires = array_values($requires);
     }
 }
 
@@ -299,6 +313,22 @@ class RouteMetaResolver
             return null;
         }
 
+        $abilities = [];
+        $requires = [];
+        if ($routeNaming) {
+            $abilities = $this->resolveAbilities($name, $actionArr['permission_ability'] ?? null);
+            $requires = $this->resolveRequires($name, $actionArr['permission_requires'] ?? null);
+            if ($abilities === null || $requires === null) {
+                return null; // misconfigured attributes: unresolvable (403 with on_unresolved=deny)
+            }
+            if ($abilities !== []) {
+                $canonical = $abilities[0];
+                $type = (string) Str::afterLast($canonical, '.');
+            }
+        } elseif (isset($actionArr['permission_ability']) || isset($actionArr['permission_requires'])) {
+            self::warnIgnoredAttributesOnce();
+        }
+
         return new RouteMeta(
             routeName: $name,
             uri: $uri,
@@ -310,7 +340,101 @@ class RouteMetaResolver
             action: $type,
             canonicalName: $canonical,
             controllerAction: $controllerAction,
-            global: (bool) Arr::get($actionArr, 'permission_global', false)
+            global: (bool) Arr::get($actionArr, 'permission_global', false),
+            abilities: $abilities,
+            requires: $requires
         );
+    }
+
+    /**
+     * permission_ability (string|string[]) replaces the last segment of the route name; a list is a set
+     * of alternatives. Returns [] when the attribute is absent and null when it is invalid.
+     *
+     * @return string[]|null
+     */
+    protected function resolveAbilities(string $routeName, mixed $attribute): ?array
+    {
+        if ($attribute === null) {
+            return [];
+        }
+        $values = is_array($attribute) ? array_values($attribute) : [$attribute];
+        if ($values === [] || !str_contains($routeName, '.')) {
+            return null;
+        }
+        $base = Str::beforeLast($routeName, '.');
+        $abilities = [];
+        foreach ($values as $value) {
+            if (!is_string($value) || !self::isSegmentPath($value) || str_contains($value, '.')) {
+                return null;
+            }
+            $abilities[] = $base . '.' . $value;
+        }
+        return array_values(array_unique($abilities));
+    }
+
+    /**
+     * permission_requires (string[]): `^` removes one trailing segment of the route name before appending
+     * the rest (`^^show` on admin.crm.clients.pets.list → admin.crm.clients.show); `=name` is absolute.
+     * Returns null when a value is invalid or runs out of segments.
+     *
+     * @return string[]|null
+     */
+    protected function resolveRequires(string $routeName, mixed $attribute): ?array
+    {
+        if ($attribute === null) {
+            return [];
+        }
+        $requires = [];
+        foreach (is_array($attribute) ? $attribute : [$attribute] as $value) {
+            $resolved = is_string($value) ? self::resolveRelativeAction($routeName, $value) : null;
+            if ($resolved === null) {
+                return null;
+            }
+            $requires[] = $resolved;
+        }
+        return array_values(array_unique($requires));
+    }
+
+    /** Apply the permission_requires grammar to one value; null when it is invalid. */
+    public static function resolveRelativeAction(string $routeName, string $value): ?string
+    {
+        if (str_starts_with($value, '=')) {
+            $absolute = substr($value, 1);
+            return self::isSegmentPath($absolute) ? $absolute : null;
+        }
+        $carets = strspn($value, '^');
+        $suffix = substr($value, $carets);
+        if ($carets === 0 || !self::isSegmentPath($suffix)) {
+            return null;
+        }
+        $segments = explode('.', $routeName);
+        if ($carets >= count($segments)) {
+            return null;
+        }
+        return implode('.', array_slice($segments, 0, -$carets)) . '.' . $suffix;
+    }
+
+    /** Non-empty dot-separated segments without wildcards or whitespace. */
+    private static function isSegmentPath(string $value): bool
+    {
+        return $value !== '' && preg_match('/^[^.\s*^=]+(\.[^.\s*^=]+)*$/', $value) === 1;
+    }
+
+    private static bool $warnedIgnoredAttributes = false;
+
+    private static function warnIgnoredAttributesOnce(): void
+    {
+        if (self::$warnedIgnoredAttributes) {
+            return;
+        }
+        self::$warnedIgnoredAttributes = true;
+        if (function_exists('logger')) {
+            try {
+                logger()->warning('rest-generic-class: permission_ability/permission_requires route attributes '
+                    . 'are only applied with permissions.authorization.naming=route_name; they are ignored.');
+            } catch (\Throwable) {
+                // Logging must never break authorization.
+            }
+        }
     }
 }

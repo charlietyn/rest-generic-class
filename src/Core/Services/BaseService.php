@@ -24,6 +24,7 @@ use Ronu\RestGenericClass\Core\Services\Support\OperFilterPipeline;
 use Ronu\RestGenericClass\Core\Services\Support\PaginationCoordinator;
 use Ronu\RestGenericClass\Core\Services\Support\QueryBuilderPipeline;
 use Ronu\RestGenericClass\Core\Services\Support\RelationResolver;
+use Ronu\RestGenericClass\Core\Support\Authorization\EagerRelationAuthorizer;
 use Ronu\RestGenericClass\Core\Traits\HasDynamicFilter;
 use Ronu\RestGenericClass\Core\Traits\HasDynamicOrderBy;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -250,6 +251,13 @@ class BaseService
             }
         }
 
+        // permissions.authorization.eager_relations=require_read: who may load each to-many relation.
+        $processed = app(EagerRelationAuthorizer::class)
+            ->filter($this->modelClass, $processed, static fn (array $parsed) => $parsed['relation']);
+        if ($processed === []) {
+            return $query;
+        }
+
         // Extract relation-specific filters
         $normalized = $this->normalizeOperNode($oper);
         $relationFilters = !empty($normalized)
@@ -293,6 +301,29 @@ class BaseService
         }
 
         return $query->with($with);
+    }
+
+    /**
+     * With eager_relations=require_read, reduce params['relations'] to the authorized ones (or 403 in
+     * strict mode) BEFORE the cache lookup: the cache key then reflects what the user may load, and a
+     * cached response never bypasses the check.
+     */
+    private function authorizeRequestedRelations(array $params): array
+    {
+        $authorizer = app(EagerRelationAuthorizer::class);
+        if (empty($params['relations']) || !$authorizer->enabled()) {
+            return $params;
+        }
+        $allowed = $authorizer->filter(
+            $this->modelClass,
+            $this->normalizeRelations($params['relations']),
+            static fn (array $parsed) => $parsed['relation']
+        );
+        $params['relations'] = array_map(
+            static fn (array $parsed) => $parsed['relation'] . ($parsed['fields'] ? ':' . implode(',', $parsed['fields']) : ''),
+            $allowed
+        );
+        return $params;
     }
 
     /**
@@ -468,6 +499,7 @@ class BaseService
             // Authorize before cache lookup as model policy may depend on request context.
             (new AggregatePolicyResolver())->validate($this->modelClass, $params);
         }
+        $params = $this->authorizeRequestedRelations($params);
         if ($toJson && $this->shouldUseCache('list_all', (array)$params)) {
             return $this->rememberWithCache('list_all', (array)$params, function () use ($params, $toJson) {
                 return $this->listAllWithoutCache($params, $toJson);
@@ -531,6 +563,7 @@ class BaseService
     public function get_one($params, $toJson = true): mixed
     {
         AggregateSpecParser::reject((array) $params, 'get_one');
+        $params = $this->authorizeRequestedRelations((array) $params);
         if ($toJson && $this->shouldUseCache('get_one', (array)$params)) {
             return $this->rememberWithCache('get_one', (array)$params, function () use ($params, $toJson) {
                 return $this->getOneWithoutCache($params, $toJson);

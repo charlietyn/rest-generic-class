@@ -333,3 +333,86 @@ Versión de parche: sin cambios de comportamiento con la configuración por defe
   `--grant=Role:@file.json` for explicit permission lists, and a completed/interrupted step summary.
 
 `vendor/bin/phpunit --display-deprecations`: **289 tests, 790 assertions, no failures, errors or deprecations**.
+
+# v2.8.0 — Actions by ability, generic notation and batch catalog / Acciones por capacidad, notación genérica y catálogo en lote
+
+Status / Estado: **released / publicada** (2026-10-15).
+Everything new is opt-in: without the new route attributes and configuration, authorization behaves as
+in v2.7.1. / Todo lo nuevo es opt-in: sin los atributos y la configuración nuevos, la autorización se
+comporta como en v2.7.1. Reference / referencia: [permissions-public-api.md §10](permissions-public-api.md).
+
+## Español
+
+**Vocabulario.** Una **acción** es algo que se puede hacer (`admin.crm.clients.pets.read`); el
+**catálogo** es el conjunto de acciones válidas (tabla `permissions` de Spatie). Un **permiso** es la
+relación entre una acción y un rol o usuario (`role_has_permissions`, `model_has_permissions`).
+
+- **Acción por capacidad** (`naming=route_name`). Atributos de acción de ruta `permission_ability`
+  (`string|string[]`: sustituye el último segmento del nombre; una lista son alternativas, basta una) y
+  `permission_requires` (`string[]`: acciones adicionales, todas exigidas; `^^show`, `^read`, `=abs`).
+  Las 8 rutas de una relación se reducen a 5 acciones (`read`, `add`, `update`, `delete`, `manage`) y
+  exigen además ver al padre (`^^show`). Los nombres de ruta no cambian. Un atributo inválido o un `^`
+  fuera de rango deja la ruta no resoluble. `RouteMeta` gana `abilities` y `requires`.
+- **`SpatieAuthorize`**: `canAny(abilities) && canAll(requires)`; con `app.debug` el 403 nombra lo que falta.
+- **Catálogo en lote**: se leen las filas existentes una vez, se escribe en una transacción, en lotes de
+  500, sin eventos de modelo, y solo lo que cambia (una resincronización no escribe nada). Con 10.000
+  rutas en SQLite: de ~7 s a ~0,8 s en la prueba de rendimiento (dos sincronizaciones incluidas).
+  Nuevo `refresh($guard, $dry, $prune)` / `refreshPermissions($guard, $dry, $prune)`: `--prune` borra las
+  acciones que ya no produce ninguna ruta y que nadie tiene concedidas; las concedidas se informan como
+  huérfanas (`report()` / `permissionSyncReport()`). El comando generado del proyecto debe añadir la opción.
+- **Notación genérica**: `admin.*`, `admin.crm.*`, `admin.crm.clients.*` (incluye sus relaciones),
+  `admin.crm.clients.pets.*` y `*`, en `--perms` y en los ficheros de rol. Se expande contra el catálogo al
+  conceder; el `*` casa segmentos completos. Un patrón que no casa nada no concede nada; un `*` mal
+  colocado es un error.
+- **Compresor jerárquico** a cualquier profundidad (`canal.*`, `canal.modulo.*`, `….entidad.*`,
+  `….relacion.*`), con la misma notación con la que se concede.
+- **Cargas anidadas**: `eager_relations=require_read` (por defecto `off`) exige
+  `<recurso>.<relación>.read|manage` para cada relación a muchos de `?relations=`; las relaciones a uno
+  quedan exentas con `eager_relations_to_one=allow`. 403 con `filtering.strict_relations=true`; si no, se
+  omite. Se comprueba antes de la caché.
+
+**Cambios de comportamiento a revisar** (correcciones, no opt-in):
+
+- `--prefix` respeta el límite de segmento: `admin.crm.clients` ya no casa `admin.crm.clients-notes.*`, ni
+  `users.ind` casa `users.index`. Un prefijo con `.` final (`admin.`) funciona igual que antes.
+- `--entities` usa `LOWER(col) = LOWER(?)` en vez de `ilike` (antes solo funcionaba en PostgreSQL).
+- La sincronización ya no dispara eventos de modelo por fila; un observer sobre el modelo de permisos
+  deja de ejecutarse en la sincronización. La caché de Spatie se sigue limpiando una vez por sincronización.
+- Las filas devueltas por `refresh()` (`--dump`) son una por acción y, en `route`, `methods` y
+  `controller`, listan todas las rutas que la producen.
+- El compresor puede devolver comodines más profundos (`admin.crm.clients.pets.*`) con nombres de 4 o
+  más segmentos; con nombres de 3 segmentos el resultado es el mismo que en v2.7.
+
+**Para el generador**: no emitir los atributos hasta que el manifiesto exija `^2.8`.
+
+## English
+
+**Vocabulary.** An **action** is something that can be done (`admin.crm.clients.pets.read`); the
+**catalog** is the set of valid actions (Spatie's `permissions` table). A **permission** links an action
+to a role or user.
+
+- **Actions by ability** (`naming=route_name`): `permission_ability` (`string|string[]`, replaces the last
+  segment of the route name; a list is a set of alternatives) and `permission_requires` (`string[]`, extra
+  actions, all required; `^^show`, `^read`, `=absolute`). The 8 routes of a relation collapse into 5
+  actions and also require seeing the parent. Route names are unchanged. Invalid attributes make the route
+  unresolvable. `RouteMeta` gains `abilities` and `requires`.
+- **`SpatieAuthorize`** checks `canAny(abilities) && canAll(requires)`; the debug 403 names what is missing.
+- **Batch catalog sync**: existing rows are read once; writes happen in one transaction, in batches of
+  500, without model events, and only for changed rows (a second sync writes nothing). 10,000 routes on
+  SQLite: ~7 s → ~0.8 s in the performance test (two syncs included). `--prune` (via
+  `refresh($guard, $dry, $prune)`) deletes actions no route produces and nobody holds; held ones are
+  reported as orphans.
+- **Generic notation** (`admin.crm.clients.*`, …) in `--perms` and role files, expanded against the
+  catalog when granting, matching whole segments. A pattern matching nothing grants nothing.
+- **Hierarchical compressor** at any depth, in the same notation used for granting.
+- **Eager loads**: `eager_relations=require_read` (default `off`) requires
+  `<resource>.<relation>.read|manage` for each to-many relation in `?relations=`; to-one relations are
+  exempt with `eager_relations_to_one=allow`. 403 with `filtering.strict_relations=true`, otherwise the
+  relation is left out. Checked before the cache lookup.
+
+**Behaviour changes to review** (fixes, not opt-in): `--prefix` is segment-bounded (a trailing `.` works as
+before); `--entities` no longer uses PostgreSQL-only `ilike`; the sync no longer fires per-row model
+events; `refresh()` rows list every route of each action; the compressor may return deeper wildcards for
+names with 4+ segments (unchanged for 3-segment names).
+
+`vendor/bin/phpunit --display-deprecations`: **323 tests, no failures, errors or deprecations**.
