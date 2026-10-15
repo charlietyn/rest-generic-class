@@ -336,7 +336,7 @@ Versión de parche: sin cambios de comportamiento con la configuración por defe
 
 # v2.8.0 — Actions by ability, generic notation and batch catalog / Acciones por capacidad, notación genérica y catálogo en lote
 
-Status / Estado: **prepared locally; not published / preparada localmente; sin publicar**.
+Status / Estado: **released / publicada** (2026-10-15).
 Everything new is opt-in: without the new route attributes and configuration, authorization behaves as
 in v2.7.1. / Todo lo nuevo es opt-in: sin los atributos y la configuración nuevos, la autorización se
 comporta como en v2.7.1. Reference / referencia: [permissions-public-api.md §10](permissions-public-api.md).
