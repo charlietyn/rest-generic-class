@@ -6,6 +6,10 @@
 [![Laravel](https://img.shields.io/badge/Laravel-12.x%20%7C%2013.x-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 [![License](https://img.shields.io/packagist/l/ronu/rest-generic-class.svg?style=flat-square)](LICENSE.md)
 
+## v2.8.1 — Spatie 7/8 compatibility
+
+`SpatiePermission` and `SpatieRole` failed to load with spatie/laravel-permission 7+ (e.g. Laravel 13.36 + Spatie 8.3.0 stopped `artisan package:discover`). `findByName()`/`findOrCreate()` now accept `BackedEnum|string`, so one release works with Spatie `^6.21 || ^7.0 || ^8.0` on Laravel 12 and 13. See the [release notes](docs/release-notes-channel-authorization.md#v281--spatie-78-compatibility--compatibilidad-con-spatie-78).
+
 ## v2.8.0 — Actions by ability and generic notation
 
 Opt-in route attributes `permission_ability` / `permission_requires` collapse the routes of a relation into `read`/`add`/`update`/`delete`/`manage` actions that also require seeing the parent; grant them with `admin.crm.clients.*`-style patterns; the catalog syncs in batch (with `--prune`), and `eager_relations=require_read` authorizes `?relations=`. See [the public API, §10](docs/permissions-public-api.md) and the [release notes](docs/release-notes-channel-authorization.md).
@@ -28,6 +32,9 @@ Optional channel prefixes, literal route permission names, fail-closed middlewar
 | --- | --- | --- |
 | 12.61.1+ | 8.2+ | PHPUnit 11 |
 | 13.12+ | 8.3+ | PHPUnit 12 |
+
+Optional `spatie/laravel-permission`: `^6.21 || ^7.0 || ^8.0` (Laravel 13 needs 6.25+, 7.2.4+ or 8.x); other
+lines are rejected by Composer `conflict`. See [requirements](documentacion/doc-en/01-getting-started/00-requirements.md).
 
 The package keeps Laravel 12 support while adding Laravel 13 support. See the detailed Spanish
 [Laravel 13 migration guide for junior developers](documentacion/doc-es/01-getting-started/03-migracion-laravel-13-para-juniors.md).

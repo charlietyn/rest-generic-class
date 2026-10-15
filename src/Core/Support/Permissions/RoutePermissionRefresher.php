@@ -171,7 +171,8 @@ final class RoutePermissionRefresher
             }
         });
 
-        if (class_exists(\Spatie\Permission\PermissionRegistrar::class)) {
+        // Installed is not enough: without the Spatie provider the registrar has no configuration.
+        if (class_exists(\Spatie\Permission\PermissionRegistrar::class) && app()->bound(\Spatie\Permission\PermissionRegistrar::class)) {
             app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
         } else {
             Artisan::call('cache:forget', ['key' => 'spatie.permission.cache']);

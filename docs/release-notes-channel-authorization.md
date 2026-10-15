@@ -416,3 +416,82 @@ events; `refresh()` rows list every route of each action; the compressor may ret
 names with 4+ segments (unchanged for 3-segment names).
 
 `vendor/bin/phpunit --display-deprecations`: **323 tests, no failures, errors or deprecations**.
+
+# v2.8.1 — Spatie 7/8 compatibility / Compatibilidad con Spatie 7/8
+
+Status / Estado: **released / publicada** (2026-10-15).
+Patch release: no behaviour changes for string names. / Versión de parche: sin cambios de comportamiento
+con nombres de tipo cadena.
+
+## Español
+
+- **Los modelos no cargaban con Spatie 7+.** Spatie declara `findByName(BackedEnum|string $name, ...)` y
+  `findOrCreate(BackedEnum|string $name, ...)` en sus contratos `Permission` y `Role`; `SpatiePermission` y
+  `SpatieRole` aceptaban solo `string` y PHP rechazaba la clase al cargarla. En Laravel 13.36 con Spatie
+  8.3.0 esto detenía `artisan package:discover` durante el `post-autoload-dump` de Composer.
+- Los cuatro métodos aceptan ahora `BackedEnum|string`. Un parámetro más amplio es compatible con el
+  contrato `string` de Spatie 6 y con el de 7/8, así que **la misma versión** sirve en Laravel 12 y 13, sin
+  condicionales por versión. `create()` normaliza también `name` cuando es un enum, antes de comprobar
+  duplicados y de guardar.
+- La normalización es compartida (trait `NormalizesSpatieNames`) y siempre produce `string`: un enum
+  respaldado por entero se guarda y se busca como nombre (`'1'`), nunca como id, y no llega a la consulta
+  como entero (PostgreSQL rechaza `varchar = integer`).
+- Sin cambios en guards, teams, caché de permisos ni en los contratos de retorno.
+- `RoutePermissionRefresher` solo usa `PermissionRegistrar` si el provider de Spatie lo registró; con Spatie
+  instalado pero sin su provider vuelve a `cache:forget`, como cuando Spatie no está instalado.
+- **Composer:** `conflict: spatie/laravel-permission <6.21 || >=9.0`. Spatie sigue en `suggest` y no es
+  obligatorio; una línea no probada falla al resolver dependencias, no en tiempo de ejecución.
+
+## English
+
+- **The models failed to load with Spatie 7+**: Spatie's `Permission`/`Role` contracts declare
+  `findByName()`/`findOrCreate()` with `BackedEnum|string`; the Ronu models only accepted `string`, so PHP
+  rejected the class (Laravel 13.36 + Spatie 8.3.0 stopped `artisan package:discover`).
+- The four methods now accept `BackedEnum|string`, which is compatible with Spatie 6's `string` contract
+  too: one release for Laravel 12 and 13. `create()` normalizes an enum `name` before the duplicate check.
+- Names are normalized to `string` by the shared `NormalizesSpatieNames` trait: an int-backed enum is a name,
+  never an id. Guards, teams, the permission cache and return contracts are unchanged.
+- `RoutePermissionRefresher` uses `PermissionRegistrar` only when Spatie's provider bound it.
+- Composer `conflict` with `spatie/laravel-permission <6.21 || >=9.0`; Spatie remains optional.
+
+## Verified matrix / Matriz verificada
+
+One revision, Spatie installed in every row / Una sola revisión, con Spatie instalado en todas las filas
+(`composer validate --strict`, `composer audit`, `vendor/bin/phpunit`: **338 tests, 1002 assertions, OK**):
+
+| PHP | Laravel | Testbench | PHPUnit | Spatie |
+| --- | --- | --- | --- | --- |
+| 8.2.30 | 12.69.0 | 10.11.0 | 11.5.57 | 6.21.0 (lowest / mínima) |
+| 8.2.30 | 12.69.0 | 10.11.0 | 11.5.57 | 6.25.0 |
+| 8.3.28 | 12.70.0 | 10.12.0 | 11.5.57 | 7.4.2 |
+| 8.4.15 | 12.70.0 | 10.12.0 | 11.5.57 | 7.0.0 (lowest / mínima) |
+| 8.4.15 | 12.70.0 | 10.12.0 | 11.5.57 | 8.3.0 |
+| 8.3.28 | 13.30.1 | 11.0.0 | 12.5.39 | 6.25.0 |
+| 8.3.28 | 13.36.0 | 11.3.0 | 12.5.39 | 7.4.2 |
+| 8.4.15 | 13.36.0 | 11.3.0 | 12.5.39 | 8.0.0 (lowest / mínima) |
+| 8.4.15 | 13.36.0 | 11.3.0 | 12.5.39 | 8.3.0 (incident / incidente) |
+| 8.5.0 | 13.36.0 | 11.3.0 | 12.5.39 | 8.3.0 |
+
+The new `tests/Integration/Spatie` suite runs against the real Spatie provider, contracts and migration
+stub (no mocks): strings and string/int-backed enums in the four methods, guards, teams, cache and the
+expected exceptions. It fails with the v2.8.0 models on every Spatie line (a fatal declaration error on 7/8).
+/ La nueva suite `tests/Integration/Spatie` usa el provider, los contratos y el stub de migración reales
+(sin mocks) y falla con los modelos de v2.8.0 en todas las líneas de Spatie.
+
+**Consumer applications / Aplicaciones consumidoras** (generated `eros` app, isolated copies, local
+library through a Composer `path` repository, Composer scripts enabled, permission models
+`Modules\Security\Models\{Permissions,Roles}` extending the Ronu models, as in production):
+
+| App | Before (v2.8.0) | After (v2.8.1) | `package:discover` | `route:list` |
+| --- | --- | --- | --- | --- |
+| Laravel 13.36.0 + Spatie 8.3.0 (existing lock, `composer update ronu/rest-generic-class`) | `package:discover` exit 255 (incompatible `findByName`) | installed | OK | 3428 routes |
+| Laravel 12.70.0 + Spatie 6.25.0 (fresh resolution) | — | installed | OK | 3428 routes |
+
+A consumer without Spatie (`laravel/framework ^13.12` + Ronu, `--no-dev`) installs without Spatie or Ronu's dev
+dependencies, and `spatie/laravel-permission 6.20.0` on Laravel 12 is rejected by the `conflict` rule.
+/ Un consumidor sin Spatie instala sin Spatie ni dependencias de desarrollo de Ronu, y Spatie 6.20.0 en
+Laravel 12 queda rechazado por `conflict`.
+
+**apps-generator:** raise the Ronu minimum to `^2.8.1` in the shared catalog and the Laravel 13 profile, then
+run `composer update ronu/rest-generic-class` in existing projects (`composer install` with an old lock keeps
+v2.8.0). / Elevar el mínimo de Ronu a `^2.8.1` y actualizar de forma dirigida los proyectos existentes.
