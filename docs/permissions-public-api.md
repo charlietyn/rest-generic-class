@@ -193,3 +193,142 @@ rutas sin controlador introducidas en v2.6.0, sin alterar las firmas públicas.
 el segmento de URI (`ModSecurity` → `mod_security`), el valor que guarda `permissions.module` con
 `naming=route_name`. Sin `nwidart/laravel-modules` la respuesta es `['--site--']`. `getModules(?bool $type)`
 es estático y lee los módulos del hook `protected static moduleCollection(): Collection`.
+
+## 10. Acciones por capacidad, notación genérica y catálogo en lote (v2.8.0)
+
+### 10.1 Vocabulario
+
+| Término | Qué es | Dónde vive |
+| --- | --- | --- |
+| **Acción** | Algo que se puede hacer: `admin.crm.clients.pets.read`. El **catálogo** es el conjunto de acciones válidas, derivado de las rutas. | tabla `permissions` (Spatie) |
+| **Permiso** | La relación entre una acción y quien puede hacerla (rol o usuario). | `role_has_permissions`, `model_has_permissions` |
+
+El código conserva los nombres de Spatie (`Permission`, `permissions:sync-from-routes`).
+
+### 10.2 Atributos de acción de ruta (solo `naming=route_name`)
+
+| Atributo | Tipo | Efecto |
+| --- | --- | --- |
+| `permission_ability` | `string \| string[]` | Sustituye el **último segmento** del nombre de la ruta. Una lista son **alternativas**: basta una (`canAny`). |
+| `permission_requires` | `string[]` | Acciones **adicionales**, todas exigidas (`canAll`), relativas al nombre de la ruta. |
+
+Gramática de `permission_requires`, relativa al nombre de la ruta (`admin.crm.clients.pets.list`):
+`^^show` → `admin.crm.clients.show`, `^read` → `admin.crm.clients.pets.read`, `=admin.x.y` → `admin.x.y`.
+Cada `^` quita un segmento del final. Un valor que se queda sin segmentos, sin `^` ni `=`, o un
+`permission_ability` vacío, con `.` o con `*`, hace la ruta **no resoluble** (403 con `on_unresolved=deny`).
+Con `naming=derived` los atributos se ignoran y se registra un único `warning`.
+
+Los nombres de ruta no cambian (siguen siendo únicos; `route:cache` y `route()` intactos). Como
+`permission_global`, se declaran en un `Route::group()` o con `setAction()`, nunca con `->defaults()`.
+Laravel fusiona los atributos de grupos anidados con `array_merge_recursive`: decláralos en el grupo
+más interno para no sumar alternativas por accidente.
+
+`RouteMeta` incorpora `abilities` (alternativas absolutas; sin atributo, `[canonicalName]`) y `requires`
+(absolutas; sin atributo, `[]`). `canonicalName` es la primera alternativa. Ambos son parámetros
+opcionales al final del constructor: las llamadas existentes siguen funcionando.
+
+`SpatieAuthorize` exige `canAny($abilities) && canAll($requires)`. Con `app.debug` el 403 nombra lo que
+falta (`Forbidden: missing one of …` / `Forbidden: missing …`); con una sola alternativa el mensaje es el
+de v2.7 (`Forbidden: admin.users.index`). Si autoriza, deja el contexto en el atributo de request
+`SpatieAuthorize::CONTEXT_ATTRIBUTE` (`guard`, `action`, `resource`).
+
+Ejemplo completo: relación O2M `clients → pets` (canal `admin`, módulo `crm`).
+
+```php
+Route::group(['prefix' => 'clients/{id}/pets', 'as' => 'clients.pets.', 'permission_requires' => ['^^show']], function () {
+    Route::group(['permission_ability' => ['read', 'manage']], function () {
+        Route::get('/', [PetsController::class, 'index'])->name('list');
+        Route::get('/{pet}', [PetsController::class, 'show'])->name('show');
+    });
+    Route::group(['permission_ability' => ['add', 'manage']], function () {
+        Route::post('/', [PetsController::class, 'store'])->name('create');
+        Route::post('/bulk', [PetsController::class, 'bulkStore'])->name('bulk-create');
+    });
+    Route::group(['permission_ability' => ['update', 'manage']], function () {
+        Route::put('/{pet}', [PetsController::class, 'update'])->name('update');
+        Route::put('/bulk', [PetsController::class, 'bulkUpdate'])->name('bulk-update');
+    });
+    Route::group(['permission_ability' => ['delete', 'manage']], function () {
+        Route::delete('/{pet}', [PetsController::class, 'destroy'])->name('delete');
+        Route::delete('/bulk', [PetsController::class, 'bulkDestroy'])->name('bulk-delete');
+    });
+});
+```
+
+| Ruta | Se exige |
+| --- | --- |
+| `admin.crm.clients.pets.list` / `show` | (`…clients.pets.read` **o** `…clients.pets.manage`) **y** `…clients.show` |
+| `admin.crm.clients.pets.create` / `bulk-create` | (`…add` o `…manage`) y `…clients.show` |
+| `admin.crm.clients.pets.update` / `bulk-update` | (`…update` o `…manage`) y `…clients.show` |
+| `admin.crm.clients.pets.delete` / `bulk-delete` | (`…delete` o `…manage`) y `…clients.show` |
+
+`manage` no es una ruta: es una alternativa presente en todas, así que «todo sobre la relación» es una
+sola acción concedible. El mismo mecanismo colapsa variantes de una entidad (`bulk-update` → `update`).
+
+### 10.3 Catálogo por capacidad y en lote
+
+`RoutePermissionRefresher::refresh($guard, $dry, bool $prune = false)` registra **cada alternativa** como
+acción: las 8 rutas del ejemplo dan 5 acciones (`read`, `add`, `update`, `delete`, `manage`).
+`permission_requires` no crea acciones. Se deduplica por nombre antes de escribir; `route` y `action`
+salen de la primera ruta, y las filas devueltas (`--dump`) listan todas las rutas de cada acción. Una
+acción compartida es global solo si lo son todas sus rutas.
+
+Las filas existentes del guard se leen una vez; se insertan en lotes de 500 y solo se actualizan las que
+cambian, en una transacción y con el constructor de consultas (sin eventos de modelo). Una segunda
+sincronización no escribe nada. La caché de permisos se limpia una vez al final de cada sincronización
+real; `dry-run` no escribe ni limpia la caché.
+
+Con `$prune`, se borran las acciones del guard que ya no produce ninguna ruta **solo si** nadie tiene
+permiso sobre ellas (`role_has_permissions` ni `model_has_permissions`); las demás se informan como
+huérfanas. `report()` devuelve `created`, `updated`, `unchanged`, `pruned`, `orphans` y `dry_run`. En el
+trait: `refreshPermissions($guard, $dry, $prune)` y `permissionSyncReport()`. El comando generado
+`permissions:sync-from-routes` vive en el módulo de seguridad de cada proyecto; para exponer `--prune`:
+
+```php
+protected $signature = 'permissions:sync-from-routes {--guard=api} {--dry-run} {--dump} {--prune}';
+
+$rows = $this->refreshPermissions($guard, $dry, (bool) $this->option('prune'));
+$report = $this->permissionSyncReport();
+foreach ($report['orphans'] as $name) {
+    $this->components->warn("Kept (still granted): $name");
+}
+```
+
+### 10.4 Notación genérica para conceder permisos
+
+Un **patrón** es un nombre de acción cuyo último segmento puede ser `*`: `admin.*` (canal),
+`admin.crm.*` (módulo), `admin.crm.clients.*` (entidad **y sus relaciones**), `admin.crm.clients.pets.*`
+(relación) y `*` (todo el guard). El `*` casa segmentos completos: `admin.crm.clients.*` no casa
+`admin.crm.clients-notes.read`. Un `*` en otra posición lanza `InvalidArgumentException`.
+
+`TargetPermissionResolver` acepta patrones en `--perms` y en los ficheros de rol (`--from`) y los expande
+contra el catálogo del guard **al conceder**: el permiso se guarda como filas concretas acción↔rol, la
+comprobación por petición sigue siendo exacta y Spatie no necesita `enable_wildcard_permission`. Una
+acción creada después no queda concedida sola: vuelve a aplicar el fichero del rol (modo `SYNC`). Un
+patrón que no casa nada no concede nada (nunca cae en «todos los permisos del guard»).
+
+```json
+["admin.crm.clients.*", "admin.billing.invoices.index", "admin.billing.invoices.show"]
+```
+
+`--prefix` respeta ahora el límite de segmento (`admin.crm.clients` ya no casa `admin.crm.clients-notes`)
+y admite `admin.crm.` o `admin.crm.*`. `--entities` usa `LOWER(col) = LOWER(?)` en vez de `ilike`
+(portable a MySQL, SQLite y SQL Server).
+
+`PermissionCompressor` comprime por prefijo jerárquico a cualquier profundidad y elige el patrón más
+corto que cubre exactamente el subconjunto: es la misma notación con la que se conceden. El nivel 1
+respeta `module_wildcard` y los niveles más profundos `table_wildcard`; los comodines se ordenan por
+profundidad y nombre.
+
+### 10.5 Cargas anidadas (`?relations=`)
+
+`permissions.authorization.eager_relations`: `off` (por defecto, como v2.7) o `require_read`. Con
+`require_read`, cada salto **a muchos** de la relación pedida exige `<recurso>.<ruta de la relación>.read`
+o `….manage`, donde `<recurso>` es el nombre de la acción autorizada sin su último segmento
+(`admin.crm.clients.index` → `?relations=pets` exige `admin.crm.clients.pets.read|manage`; `pets.vaccines`
+exige además `admin.crm.clients.pets.vaccines.read|manage`). Las relaciones **a uno** (`belongsTo`,
+`hasOne`, `morphOne`, `hasOneThrough`, `morphTo`) quedan exentas con `eager_relations_to_one=allow`
+(por defecto). Si falta el permiso: 403 con `filtering.strict_relations=true` (por defecto) y se omite la
+relación en caso contrario. Se aplica en `list_all`, `get_one`, `show`, jerarquías y rutas de relación,
+**antes** de consultar la caché, así que la clave de caché refleja solo las relaciones autorizadas. Solo
+las peticiones autorizadas por `SpatieAuthorize` llevan el contexto; sin él no se comprueba nada.

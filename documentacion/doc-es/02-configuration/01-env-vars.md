@@ -35,6 +35,8 @@ El paquete lee variables de entorno unicamente desde el archivo de configuracion
 | `REST_AUTHZ_GATE_GUARD` | sin definir (`null`) | Guard opcional, por ejemplo `api`. |
 | `REST_AUTHZ_EXPLICIT_GLOBALS` | `false` | Fase 2: `true` hace globales solo las rutas marcadas con el atributo de acción `permission_global`; `false` conserva los globales de rutas sin módulo. |
 | `REST_AUTHZ_CATALOG_MIDDLEWARE` | sin definir (`null`) | Fase 2: marcadores de middleware, alias o FQCN, separados por comas. Sin definir incluye todas las rutas del ámbito; vacío produce `[]` (ninguna ruta en el catálogo). |
+| `REST_AUTHZ_EAGER_RELATIONS` | `off` | v2.8.0: `off` o `require_read` (autoriza las cargas anidadas de `?relations=`). |
+| `REST_AUTHZ_EAGER_RELATIONS_TO_ONE` | `allow` | v2.8.0: `allow` (relaciones a uno exentas) o `require_read`. |
 
 Las listas de prefijos y middleware recortan espacios, descartan entradas vacías y conservan valores como `0`. `null` y una lista vacía tienen significados distintos. Ejemplo:
 

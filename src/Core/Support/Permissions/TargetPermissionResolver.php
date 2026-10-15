@@ -35,22 +35,28 @@ final class TargetPermissionResolver
     ): array {
         $names = collect();
         $permissionClass = app(config('permission.models.permission'));
+        $catalog = null;
+        $catalogNames = function () use (&$catalog, $permissionClass, $guard): array {
+            return $catalog ??= $permissionClass::query()->where('guard_name', $guard)->pluck('name')->all();
+        };
 
         if (!empty($perms)) {
             $names = $names->merge($this->normalizer->normalize($perms));
         }
 
         if ($prefix) {
-            $prefixed = $permissionClass::query()
-                ->where('guard_name', $guard)
-                ->where('name', 'like', $prefix . '%')
-                ->pluck('name');
-            $names = $names->merge($prefixed);
+            // Segment-bounded: admin.crm.clients does not match admin.crm.clients-notes.
+            $names = $names->merge(ActionPattern::expandPrefix($prefix, $catalogNames()));
         }
 
         if ($from) {
             $names = $names->merge($this->loadPermsFromFile($from));
         }
+
+        // Generic notation (admin.crm.clients.*) in --perms and role files, expanded against the catalog.
+        $names = $names->flatMap(fn ($name) => ActionPattern::isPattern((string) $name)
+            ? ActionPattern::expand((string) $name, $catalogNames())
+            : [$name]);
 
         if (!empty($modules)) {
             $byModule = $this->loadPermsByModule($guard, $this->normalizer->normalize($modules), $permissionClass);
@@ -68,15 +74,23 @@ final class TargetPermissionResolver
         $createdNames = [];
         $resolved = collect();
 
-        if ($names->isEmpty() && !$prefix && !$from && empty($modules) && empty($entities)) {
+        // "All of the guard" only when no source was given: a pattern that matches nothing grants nothing.
+        if ($names->isEmpty() && empty($perms) && !$prefix && !$from && empty($modules) && empty($entities)) {
             $all = $permissionClass::query()->where('guard_name', $guard)->get();
             return [$all, $createdNames, true];
         }
 
+        // One query per batch instead of one per name; keep the requested order.
+        $found = collect();
+        foreach ($names->chunk(500) as $chunk) {
+            $found = $found->merge(
+                $permissionClass::query()->where('guard_name', $guard)->whereIn('name', $chunk->values()->all())->get()
+            );
+        }
+        $byName = $found->keyBy('name');
         foreach ($names as $name) {
-            $perm = $permissionClass::where('name', $name)->where('guard_name', $guard)->first();
-            if ($perm) {
-                $resolved->push($perm);
+            if ($byName->has($name)) {
+                $resolved->push($byName->get($name));
             }
         }
 
@@ -106,10 +120,11 @@ final class TargetPermissionResolver
                         $entity = Str::after($raw, '.');
                     }
 
+                    // LOWER() = LOWER() instead of PostgreSQL-only ilike: portable to MySQL, SQLite and SQL Server.
                     $outer->orWhere(function (Builder $sub) use ($entity, $module) {
-                        $sub->where('model', 'ilike', $entity);
+                        $sub->whereRaw('LOWER(model) = LOWER(?)', [$entity]);
                         if (!empty($module)) {
-                            $sub->where('module', 'ilike', $module);
+                            $sub->whereRaw('LOWER(module) = LOWER(?)', [$module]);
                         }
                     });
                 }

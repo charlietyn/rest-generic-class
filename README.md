@@ -6,6 +6,10 @@
 [![Laravel](https://img.shields.io/badge/Laravel-12.x%20%7C%2013.x-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 [![License](https://img.shields.io/packagist/l/ronu/rest-generic-class.svg?style=flat-square)](LICENSE.md)
 
+## v2.8.0 — Actions by ability and generic notation
+
+Opt-in route attributes `permission_ability` / `permission_requires` collapse the routes of a relation into `read`/`add`/`update`/`delete`/`manage` actions that also require seeing the parent; grant them with `admin.crm.clients.*`-style patterns; the catalog syncs in batch (with `--prune`), and `eager_relations=require_read` authorizes `?relations=`. See [the public API, §10](docs/permissions-public-api.md) and the [release notes](docs/release-notes-channel-authorization.md).
+
 ## v2.7.1 — Fixes
 
 `GET /<channel>/modules` no longer fails (with `?enabled=` and the new `?format=uri`), no PHP 8.4 implicit-nullable deprecations, and the [channel authorization migration script](documentacion/doc-en/03-usage/07-enable-channel-authorization-script.md) now ships in `scripts/`.

@@ -33,41 +33,15 @@ final class PermissionCompressor implements PermissionCompressorContract
 
     private function buildPermissionMap(Collection $permissions): array
     {
-        $map = [
-            'by_module_table' => [],
-            'by_module' => [],
-            'all' => [],
-        ];
-
+        $names = [];
         foreach ($permissions as $permission) {
             $name = $this->permissionName($permission);
-
-            if ($name === null) {
-                continue;
+            if ($name !== null) {
+                $names[] = $name;
             }
-
-            $map['all'][] = $name;
-            $parts = explode('.', $name);
-
-            if (count($parts) >= 3) {
-                $module = $parts[0];
-                $table = $parts[1];
-                $action = implode('.', array_slice($parts, 2));
-
-                $map['by_module_table'][$module][$table][] = $action;
-                $map['by_module'][$module][] = $name;
-                continue;
-            }
-
-            if (count($parts) === 2) {
-                $map['by_module'][$parts[0]][] = $name;
-                continue;
-            }
-
-            $map['by_module']['__root'][] = $name;
         }
 
-        return $this->sortMap($map);
+        return ['all' => $this->uniqueSorted($names)];
     }
 
     private function permissionName($permission): ?string
@@ -87,26 +61,6 @@ final class PermissionCompressor implements PermissionCompressorContract
         return $name !== '' ? $name : null;
     }
 
-    private function sortMap(array $map): array
-    {
-        $map['all'] = $this->uniqueSorted($map['all']);
-
-        foreach ($map['by_module'] as $module => $permissionNames) {
-            $map['by_module'][$module] = $this->uniqueSorted($permissionNames);
-        }
-        ksort($map['by_module'], SORT_STRING);
-
-        foreach ($map['by_module_table'] as $module => $tables) {
-            foreach ($tables as $table => $actions) {
-                $map['by_module_table'][$module][$table] = $this->uniqueSorted($actions);
-            }
-            ksort($map['by_module_table'][$module], SORT_STRING);
-        }
-        ksort($map['by_module_table'], SORT_STRING);
-
-        return $map;
-    }
-
     private function uniqueSorted(array $values): array
     {
         $values = array_values(array_unique($values));
@@ -115,12 +69,14 @@ final class PermissionCompressor implements PermissionCompressorContract
         return $values;
     }
 
+    /**
+     * Hierarchical compression at any depth: walks the prefix tree of the universe (`canal`, `canal.modulo`,
+     * `canal.modulo.entidad`, `….entidad.relacion`, …) top-down and emits `prefix.*` for the shortest prefix
+     * whose actions the subject holds completely. Depth 1 honours `module_wildcard`, deeper levels
+     * `table_wildcard`. Wildcards are ordered by depth, then name; individual names alphabetically.
+     */
     private function collapseToWildcards(array $subject, array $universe, array $opts): array
     {
-        $wildcards = [];
-        $individuals = [];
-        $covered = [];
-
         if ($opts['global_wildcard'] && $universe['all'] !== [] && $this->containsAll($subject['all'], $universe['all'])) {
             return [
                 'wildcards' => ['*'],
@@ -129,54 +85,57 @@ final class PermissionCompressor implements PermissionCompressorContract
             ];
         }
 
-        if ($opts['module_wildcard']) {
-            foreach ($universe['by_module'] as $module => $universePerms) {
-                if ($module === '__root') {
-                    continue;
-                }
-
-                $subjectPerms = $subject['by_module'][$module] ?? [];
-
-                if ($subjectPerms !== [] && $this->containsAll($subjectPerms, $universePerms)) {
-                    $wildcards[] = "{$module}.*";
-                    $covered = array_merge($covered, $universePerms);
-                }
+        $held = array_flip($subject['all']);
+        $under = [];
+        $children = ['' => []];
+        foreach ($universe['all'] as $name) {
+            $segments = explode('.', $name);
+            for ($depth = 1; $depth < count($segments); $depth++) {
+                $prefix = implode('.', array_slice($segments, 0, $depth));
+                $parent = $depth === 1 ? '' : implode('.', array_slice($segments, 0, $depth - 1));
+                $under[$prefix][] = $name;
+                $children[$parent][$prefix] = true;
             }
         }
 
-        if ($opts['table_wildcard']) {
-            foreach ($universe['by_module_table'] as $module => $tables) {
-                if (in_array("{$module}.*", $wildcards, true)) {
-                    continue;
+        $wildcards = [];
+        $covered = [];
+        $visit = function (string $prefix, int $depth) use (&$visit, &$wildcards, &$covered, $under, $children, $held, $opts): void {
+            $allowed = $depth === 1 ? $opts['module_wildcard'] : $opts['table_wildcard'];
+            if ($allowed && $this->holdsAll($held, $under[$prefix])) {
+                $wildcards[] = [$depth, "{$prefix}.*"];
+                foreach ($under[$prefix] as $name) {
+                    $covered[$name] = true;
                 }
-
-                foreach ($tables as $table => $universeActions) {
-                    $subjectActions = $subject['by_module_table'][$module][$table] ?? [];
-
-                    if ($subjectActions !== [] && $this->containsAll($subjectActions, $universeActions)) {
-                        $wildcards[] = "{$module}.{$table}.*";
-
-                        foreach ($universeActions as $action) {
-                            $covered[] = "{$module}.{$table}.{$action}";
-                        }
-                    }
-                }
+                return;
             }
+            foreach (array_keys($children[$prefix] ?? []) as $child) {
+                $visit($child, $depth + 1);
+            }
+        };
+        foreach (array_keys($children['']) as $prefix) {
+            $visit($prefix, 1);
         }
 
-        $covered = array_values(array_unique($covered));
-
-        foreach ($subject['all'] as $permissionName) {
-            if (!in_array($permissionName, $covered, true)) {
-                $individuals[] = $permissionName;
-            }
-        }
+        usort($wildcards, static fn (array $a, array $b) => [$a[0], $a[1]] <=> [$b[0], $b[1]]);
+        $wildcards = array_column($wildcards, 1);
+        $individuals = array_values(array_filter($subject['all'], static fn (string $name) => !isset($covered[$name])));
 
         return [
             'wildcards' => $wildcards,
             'individuals' => $individuals,
             'stats' => $this->stats(count($subject['all']), count($wildcards) + count($individuals)),
         ];
+    }
+
+    private function holdsAll(array $held, array $names): bool
+    {
+        foreach ($names as $name) {
+            if (!isset($held[$name])) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private function containsAll(array $subjectValues, array $universeValues): bool

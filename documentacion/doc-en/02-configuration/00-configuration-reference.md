@@ -95,6 +95,8 @@ All keys below live under `permissions.authorization`.
 | `gate_guard` | `null` | Filter the optional Gate's effective permissions by this guard; `null` accepts all guards. Use `api` when the authentication guard is `api`. |
 | `explicit_globals` | `false` | Phase 2: `false` preserves module-based globals (a route without a recognized module is global). `true` stores `restrict=false` only for routes whose **action** carries `'permission_global' => true` (even inside a module); every other synced permission is restricted (fail closed). |
 | `catalog_middleware` | `null` | Phase 2, catalog only: `null` includes all scoped routes. An array includes only routes whose `gatherMiddleware()` contains a string starting with one of the markers (alias or FQCN); `[]` includes none. Non-string middleware entries are ignored. |
+| `eager_relations` | `off` | v2.8.0: `require_read` makes every to-many relation requested with `?relations=` require `<resource>.<relation>.read` or `….manage` (resource = authorized action without its last segment). A denied relation is a 403 with `filtering.strict_relations=true` and is left out otherwise. Checked before the cache lookup. |
+| `eager_relations_to_one` | `allow` | v2.8.0: `allow` exempts to-one relations (`belongsTo`, `hasOne`, `morphOne`, `hasOneThrough`, `morphTo`) from `eager_relations`; `require_read` checks them too. |
 
 `route_prefixes` controls route selection; it does not define authentication guards. The middleware guard parameter and sync command `--guard` must remain real guard names. The obsolete `route-permissions` configuration key is no longer read. `passesFilters()` remains an overridable hook, with no built-in filter rules.
 

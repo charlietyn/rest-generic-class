@@ -81,4 +81,4 @@ php vendor/ronu/rest-generic-class/scripts/enable-channel-authorization.php --pa
 
 El script las imprime al final: restringir el login por canal, filtrar `GET /permissions` por canal, tests de regresión, documentación del proyecto y el orden de despliegue en otros entornos (sincronizar y asignar **antes** de cambiar su `.env`).
 
-Consulta la [configuración](../02-configuration/00-configuration-reference.md) y las [notas de versión](../../docs/release-notes-channel-authorization.md).
+Consulta la [configuración](../02-configuration/00-configuration-reference.md) y las [notas de versión](../../../docs/release-notes-channel-authorization.md).
