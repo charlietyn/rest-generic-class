@@ -3,6 +3,7 @@
 namespace Ronu\RestGenericClass\Core\Models;
 
 
+use BackedEnum;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +16,7 @@ use Spatie\Permission\Guard;
 use Spatie\Permission\PermissionRegistrar;
 use Spatie\Permission\Traits\HasPermissions;
 use Spatie\Permission\Traits\RefreshesPermissionCache;
+use Ronu\RestGenericClass\Core\Traits\NormalizesSpatieNames;
 
 /**
  * @property ?\Illuminate\Support\Carbon $created_at
@@ -24,6 +26,7 @@ class SpatieRole extends BaseModel implements RoleContract
 {
     use HasPermissions;
     use RefreshesPermissionCache;
+    use NormalizesSpatieNames;
 
     protected $guarded = [];
 
@@ -45,6 +48,7 @@ class SpatieRole extends BaseModel implements RoleContract
     public static function create(array $attributes = [])
     {
         $attributes['guard_name'] ??= Guard::getDefaultName(static::class);
+        $attributes = static::normalizeNameAttribute($attributes);
 
         $params = ['name' => $attributes['name'], 'guard_name' => $attributes['guard_name']];
         if (app(PermissionRegistrar::class)->teams) {
@@ -140,8 +144,9 @@ class SpatieRole extends BaseModel implements RoleContract
      *
      * @throws RoleDoesNotExist
      */
-    public static function findByName(string $name, ?string $guardName = null): RoleContract
+    public static function findByName(BackedEnum|string $name, ?string $guardName = null): RoleContract
     {
+        $name = static::normalizeName($name);
         $guardName ??= Guard::getDefaultName(static::class);
 
         $role = static::findByParam(['name' => $name, 'guard_name' => $guardName]);
@@ -176,8 +181,9 @@ class SpatieRole extends BaseModel implements RoleContract
      *
      * @return RoleContract|Role
      */
-    public static function findOrCreate(string $name, ?string $guardName = null): RoleContract
+    public static function findOrCreate(BackedEnum|string $name, ?string $guardName = null): RoleContract
     {
+        $name = static::normalizeName($name);
         $guardName ??= Guard::getDefaultName(static::class);
 
         $role = static::findByParam(['name' => $name, 'guard_name' => $guardName]);

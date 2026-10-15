@@ -2,6 +2,7 @@
 
 namespace Ronu\RestGenericClass\Core\Models;
 
+use BackedEnum;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -12,6 +13,7 @@ use Spatie\Permission\Guard;
 use Spatie\Permission\PermissionRegistrar;
 use Spatie\Permission\Traits\HasRoles;
 use Spatie\Permission\Traits\RefreshesPermissionCache;
+use Ronu\RestGenericClass\Core\Traits\NormalizesSpatieNames;
 
 /**
  * @property ?\Illuminate\Support\Carbon $created_at
@@ -21,6 +23,7 @@ class SpatiePermission extends BaseModel implements PermissionContract
 {
     use HasRoles;
     use RefreshesPermissionCache;
+    use NormalizesSpatieNames;
 
     protected $guarded = [];
     protected $hidden = [
@@ -46,6 +49,7 @@ class SpatiePermission extends BaseModel implements PermissionContract
     public static function create(array $attributes = [])
     {
         $attributes['guard_name'] ??= Guard::getDefaultName(static::class);
+        $attributes = static::normalizeNameAttribute($attributes);
 
         $permission = static::getPermission(['name' => $attributes['name'], 'guard_name' => $attributes['guard_name']]);
 
@@ -109,8 +113,9 @@ class SpatiePermission extends BaseModel implements PermissionContract
      *
      * @throws PermissionDoesNotExist
      */
-    public static function findByName(string $name, ?string $guardName = null): PermissionContract
+    public static function findByName(BackedEnum|string $name, ?string $guardName = null): PermissionContract
     {
+        $name = static::normalizeName($name);
         $guardName ??= Guard::getDefaultName(static::class);
         $permission = static::getPermission(['name' => $name, 'guard_name' => $guardName]);
         if (!$permission) {
@@ -144,8 +149,9 @@ class SpatiePermission extends BaseModel implements PermissionContract
      *
      * @return PermissionContract|Permission
      */
-    public static function findOrCreate(string $name, ?string $guardName = null): PermissionContract
+    public static function findOrCreate(BackedEnum|string $name, ?string $guardName = null): PermissionContract
     {
+        $name = static::normalizeName($name);
         $guardName ??= Guard::getDefaultName(static::class);
         $permission = static::getPermission(['name' => $name, 'guard_name' => $guardName]);
 
