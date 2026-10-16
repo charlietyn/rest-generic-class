@@ -82,6 +82,20 @@ Si una de estas clases no implementa la interface esperada, la app falla en arra
 
 [Volver al índice de documentación](../index.md)
 
+## Autorización del núcleo (v2.9.0)
+
+Claves bajo `authorization` (núcleo, independiente de cualquier paquete de permisos). Un valor `null` recurre a
+la clave antigua `permissions.authorization.*` del mismo nombre y después al valor por defecto. Ver los
+[contratos de autorización](../04-reference/06-authorization-contracts.md).
+
+| Clave | Por defecto | Significado |
+| --- | --- | --- |
+| `eager_relations` | `null` → `off` | `require_read` hace que cada relación a-muchos pedida con `?relations=` necesite alguna de las abilities de relación bajo el recurso autorizado, consultadas al Gate de Laravel. Sin una integración de permisos que aporte el ámbito de la petición, falla de forma cerrada (`MissingAuthorizationContextException`). |
+| `eager_relations_to_one` | `null` → `allow` | `allow` deja exentas las relaciones a-uno; `require_read` también las comprueba. |
+| `relation_abilities` | `['read', 'manage']` | Sufijos de las abilities que conceden una relación (`<recurso>.<relación>.<sufijo>`, cualquiera de ellos). |
+
+`permissions.authorization.eager_relations` y `eager_relations_to_one` (más abajo) siguen funcionando como respaldo.
+
 ## Autorización por canales (v2.6.0)
 
 Todas las claves siguientes pertenecen a `permissions.authorization`.

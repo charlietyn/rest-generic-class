@@ -47,6 +47,7 @@ Welcome to the **Rest Generic Class** package documentation. This library provid
 - [Middleware](04-reference/02-middleware.md)
 - [Events](04-reference/03-events.md)
 - [Exceptions](04-reference/04-exceptions.md)
+- [Authorization contracts](04-reference/06-authorization-contracts.md)
 
 ### Quality
 - [Security](05-quality/00-security.md)

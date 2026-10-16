@@ -495,3 +495,62 @@ Laravel 12 queda rechazado por `conflict`.
 **apps-generator:** raise the Ronu minimum to `^2.8.1` in the shared catalog and the Laravel 13 profile, then
 run `composer update ronu/rest-generic-class` in existing projects (`composer install` with an old lock keeps
 v2.8.0). / Elevar el mínimo de Ronu a `^2.8.1` y actualizar de forma dirigida los proyectos existentes.
+
+# v2.9.0 — Authorization contracts / Contratos de autorización
+
+Status / Estado: **ready / lista** (2026-10-16), not yet published / sin publicar.
+No behaviour change with the default configuration. / Sin cambios de comportamiento con la configuración
+por defecto. First step to move the route permissions to their own package. / Primer paso para llevar los
+permisos por rutas a un paquete propio.
+
+## Español
+
+- **El núcleo CRUD ya no conoce los permisos.** `BaseService`, `RelationReadCoordinator`, `BaseModel` y
+  `FilterRequestByRole` dependen solo de `Core\Contracts\Authorization`:
+  - `AuthorizationContext::current()` devuelve el `AuthorizationScope` (`guard`, `action`, `resource`) que una
+    integración de permisos concedió a la petición, o `null`.
+  - `RelationAuthorizer` decide los `?relations=`. La implementación por defecto, `GateRelationAuthorizer`,
+    pregunta al **Gate de Laravel** (`Gate::forUser($user)->any(...)`), igual que antes hacía `$user->can()`.
+    Los nombres salen de `RelationAbilityNamer` (por defecto `….read` y `….manage`, configurable en
+    `authorization.relation_abilities`).
+  - `FieldWriteAuthorizer` decide los campos que no se pueden escribir. La implementación por defecto aplica
+    `$fieldsByRole` como hasta ahora (`BaseModel::getFieldsByRole()` expone el mapa).
+- Los permisos por rutas de este paquete aportan su contexto (`RouteAuthorizationContext`, lee lo que fija
+  `SpatieAuthorize`). Los bindings del núcleo usan `bindIf`, así que cualquier integración puede sustituirlos.
+- **Cierre por defecto:** `require_read` sin nadie que aporte el ámbito lanza `MissingAuthorizationContextException`
+  al arrancar en HTTP y en el primer uso en consola, en lugar de dejar las relaciones abiertas. Con la
+  configuración de 2.8 no ocurre, porque el contexto de rutas está siempre registrado.
+- **Configuración nueva:** `rest-generic-class.authorization.{eager_relations, eager_relations_to_one,
+  relation_abilities}`. `null` recurre a la clave antigua `permissions.authorization.*`, que sigue valiendo.
+- `EagerRelationAuthorizer` queda obsoleto: es un alias de `GateRelationAuthorizer`.
+- Una prueba de arquitectura impide que el núcleo vuelva a referenciar los permisos o Spatie. Otra prueba
+  garantiza que la autorización de relaciones se ejecuta antes de leer la caché, también en un acierto de caché.
+- **`SpatieRole::enabled_permissions()`** (cambios de comportamiento, son correcciones):
+  - usaba SQL exclusivo de PostgreSQL (`::integer`, …) y fallaba en MySQL y SQLite; ahora los casts solo se
+    emiten en PostgreSQL;
+  - **seguridad:** un permiso con la vigencia del rol caducada se concedía igualmente si **otro rol** tenía una
+    fila activa para él (la subconsulta no estaba correlacionada). Ahora se evalúa la vigencia de la fila del
+    propio rol mediante el scope `active()` del modelo pivote;
+  - en carga perezosa devolvía cada permiso global una vez por cada rol de la tabla; ahora una vez, del rol.
+
+## English
+
+- **The CRUD core no longer knows the permissions.** It depends only on `Core\Contracts\Authorization`:
+  `AuthorizationContext` (the `AuthorizationScope` an integration granted), `RelationAuthorizer` (default
+  `GateRelationAuthorizer`, asking Laravel's Gate like `$user->can()` did, names from `RelationAbilityNamer`)
+  and `FieldWriteAuthorizer` (default: `$fieldsByRole`).
+- The route permissions of this package provide `RouteAuthorizationContext`. Core bindings use `bindIf`.
+- **Fail closed:** `require_read` with nothing providing the scope throws `MissingAuthorizationContextException`
+  (at HTTP boot; at first use in the console).
+- New `rest-generic-class.authorization.*` keys; `null` falls back to `permissions.authorization.*`.
+- `EagerRelationAuthorizer` is deprecated (alias of `GateRelationAuthorizer`).
+- Architecture test (no permission/Spatie references in the core) and an authorize-before-cache order test.
+- **`SpatieRole::enabled_permissions()`** fixes: PostgreSQL-only SQL now emitted only on PostgreSQL;
+  **security:** an expired grant of the role was honoured when another role held an active row for the same
+  permission — the validity window is now checked on the role's own pivot row; lazy loading no longer repeats
+  each global permission once per role.
+
+`vendor/bin/phpunit --display-deprecations`: **354 tests, 1031 assertions, OK** (SQLite); the
+`tests/Integration` suite also passes on MySQL 8.4. A random-order run shows failures that already exist on
+v2.8.1 (Capsule tests sharing global state), unrelated to this change. / Una ejecución en orden aleatorio
+muestra fallos que ya existían en v2.8.1 (pruebas Capsule con estado global compartido), ajenos a este cambio.

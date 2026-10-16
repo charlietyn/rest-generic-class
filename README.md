@@ -6,6 +6,10 @@
 [![Laravel](https://img.shields.io/badge/Laravel-12.x%20%7C%2013.x-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 [![License](https://img.shields.io/packagist/l/ronu/rest-generic-class.svg?style=flat-square)](LICENSE.md)
 
+## v2.9.0 — Authorization contracts
+
+The CRUD core now authorizes eager loads and field writes only through `Core\Contracts\Authorization` (`AuthorizationContext`, `RelationAuthorizer`, `FieldWriteAuthorizer`) and Laravel's Gate, preparing the route permissions to move to their own package. No behaviour change with the default configuration; `require_read` without a request scope now fails closed. Also fixes `SpatieRole::enabled_permissions()` (PostgreSQL-only SQL, and an expired grant being honoured when another role held an active one). See the [contracts](documentacion/doc-en/04-reference/06-authorization-contracts.md) and the [release notes](docs/release-notes-channel-authorization.md#v290--authorization-contracts--contratos-de-autorización).
+
 ## v2.8.1 — Spatie 7/8 compatibility
 
 `SpatiePermission` and `SpatieRole` failed to load with spatie/laravel-permission 7+ (e.g. Laravel 13.36 + Spatie 8.3.0 stopped `artisan package:discover`). `findByName()`/`findOrCreate()` now accept `BackedEnum|string`, so one release works with Spatie `^6.21 || ^7.0 || ^8.0` on Laravel 12 and 13. See the [release notes](docs/release-notes-channel-authorization.md#v281--spatie-78-compatibility--compatibilidad-con-spatie-78).

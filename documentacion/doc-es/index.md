@@ -49,6 +49,7 @@ Bienvenido/a a la documentación del paquete **Rest Generic Class**. Esta librer
 - [Middleware](04-reference/02-middleware.md)
 - [Eventos](04-reference/03-events.md)
 - [Excepciones](04-reference/04-exceptions.md)
+- [Contratos de autorización](04-reference/06-authorization-contracts.md)
 
 ### Calidad
 - [Seguridad](05-quality/00-security.md)

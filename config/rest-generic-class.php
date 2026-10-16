@@ -55,6 +55,20 @@ return [
         ],
     ],
 
+    // Core authorization of eager loads (?relations=). The checks ask Laravel's Gate under the scope
+    // that a permission integration grants (AuthorizationContext). null falls back to the legacy
+    // permissions.authorization.* key of the same name, then to the default.
+    'authorization' => [
+        // off: only the RELATIONS whitelist applies. require_read: each to-many relation needs
+        // <resource>.<relation>.read or ….manage; a denied one is a 403 with
+        // filtering.strict_relations=true and is left out otherwise.
+        'eager_relations' => env('REST_AUTHZ_EAGER_RELATIONS'),
+        // allow: to-one relations (belongsTo, hasOne, ...) are exempt; require_read: checked too.
+        'eager_relations_to_one' => env('REST_AUTHZ_EAGER_RELATIONS_TO_ONE'),
+        // Ability suffixes that grant a relation (any of them).
+        'relation_abilities' => ['read', 'manage'],
+    ],
+
     'permissions' => [
         'authorization' => [
             // null preserves legacy guard-prefix matching; [] matches no routes.

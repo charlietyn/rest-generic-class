@@ -35,7 +35,7 @@ The package reads environment variables only from the configuration file. This i
 | `REST_AUTHZ_GATE_GUARD` | unset (`null`) | Optional guard filter, for example `api`. |
 | `REST_AUTHZ_EXPLICIT_GLOBALS` | `false` | Phase 2: `true` makes only routes marked with the `permission_global` action attribute global; `false` preserves globals for routes without a module. |
 | `REST_AUTHZ_CATALOG_MIDDLEWARE` | unset (`null`) | Phase 2: comma-separated middleware markers, aliases or FQCNs. Unset includes all scoped routes; an empty value yields `[]` (no catalog routes). |
-| `REST_AUTHZ_EAGER_RELATIONS` | `off` | v2.8.0: `off` or `require_read` (authorize `?relations=` eager loads). |
+| `REST_AUTHZ_EAGER_RELATIONS` | `off` | v2.8.0: `off` or `require_read` (authorize `?relations=` eager loads). Since v2.9.0 it feeds `authorization.eager_relations` too. |
 | `REST_AUTHZ_EAGER_RELATIONS_TO_ONE` | `allow` | v2.8.0: `allow` (to-one relations exempt) or `require_read`. |
 
 Prefix and middleware lists trim whitespace, discard empty entries and retain values such as `0`. `null` and an empty list have different meanings. Example:
