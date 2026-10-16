@@ -5,28 +5,14 @@ namespace Ronu\RestGenericClass\Tests\Unit;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The CRUD core must not know the route permissions nor any permission backend: it talks to
- * Core\Contracts\Authorization and Laravel's Gate only. Comments do not count (tokens are scanned).
+ * The CRUD core must not know the route permissions (ronu/rest-permissions, or their 2.x names)
+ * nor any permission backend: it talks to Core\Contracts\Authorization and Laravel's Gate only.
+ * Comments do not count (tokens are scanned).
  */
 final class ArchitectureTest extends TestCase
 {
-    /** Route permissions shipped in this repository until they move to their own package. */
-    private const PERMISSION_AREA = [
-        'Support/Permissions/',
-        'Support/Authorization/',
-        'Resolvers/',
-        'Middleware/SpatieAuthorize.php',
-        'Models/SpatiePermission.php',
-        'Models/SpatieRole.php',
-        'Traits/HasPermissionsService.php',
-        'Traits/HasPermissionsController.php',
-        'Traits/HasReadableUserPermissions.php',
-        'Traits/HasReadableRolePermissions.php',
-        'Traits/NormalizesSpatieNames.php',
-        'Controllers/PermissionsController.php',
-        // Wiring: binds the route permissions' AuthorizationContext while they live here.
-        'Providers/',
-    ];
+    /** Since 3.0 the route permissions live in ronu/rest-permissions: nothing in src/Core is excluded. */
+    private const PERMISSION_AREA = [];
 
     private const FORBIDDEN = [
         'Ronu\\RestGenericClass\\Core\\Support\\Permissions\\',
@@ -39,6 +25,7 @@ final class ArchitectureTest extends TestCase
         'Ronu\\RestGenericClass\\Core\\Traits\\HasReadable',
         'Ronu\\RestGenericClass\\Core\\Traits\\NormalizesSpatieNames',
         'Ronu\\RestGenericClass\\Core\\Controllers\\PermissionsController',
+        'Ronu\\RestPermissions\\',
         'Spatie\\',
     ];
 

@@ -22,16 +22,11 @@
     "suggest": {
         "maatwebsite/excel": "Required for exportExcel()",
         "barryvdh/laravel-dompdf": "Required for exportPdf()",
-        "nwidart/laravel-modules": "Required for module-aware permissions",
-        "spatie/laravel-permission": "Required for permission models and traits (^6.21 || ^7.0 || ^8.0)"
-    },
-    "conflict": {
-        "spatie/laravel-permission": "<6.21 || >=9.0"
+        "ronu/rest-permissions": "Route-based permissions: route catalog, channel authorization middleware, effective-permission Gate and Spatie models (moved out of this package in 3.0)"
     },
     "require-dev": {
         "orchestra/testbench": "^10.9 || ^11.0",
-        "phpunit/phpunit": "^11.5.50 || ^12.5.12",
-        "spatie/laravel-permission": "^6.21 || ^7.0 || ^8.0"
+        "phpunit/phpunit": "^11.5.50 || ^12.5.12"
     },
     "autoload-dev": {
         "psr-4": {

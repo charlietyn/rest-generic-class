@@ -34,7 +34,7 @@ El paquete incluye middleware y traits que integran con **spatie/laravel-permiss
 
 A partir de 3.0.0, la **resolución de roles** del usuario es contractual: tu modelo `User` debe implementar `ProvidesRoles` y tu modelo `Role` debe implementar `ProvidesRolePermissions`. La librería deja de inferir el nombre de la relación; lo declaras tú dentro del método `provideRoles()`. Esto desacopla la librería del nombre concreto de la relación (Spatie u otro), centraliza la resolución en un `UserRolesResolver` inyectable y aplica fail-fast nativo del cargador de clases de PHP.
 
-> Lectura recomendada: [Permisos: arquitectura, contratos y escenarios](../03-usage/06-permissions.md).
+> Lectura recomendada: [Permisos: arquitectura, contratos y escenarios](https://github.com/charlietyn/rest-permissions/blob/main/docs/es/permissions.md).
 
 **Siguiente:** [Requisitos](../01-getting-started/00-requirements.md)
 

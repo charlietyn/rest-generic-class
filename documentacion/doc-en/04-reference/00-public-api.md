@@ -38,8 +38,8 @@ This package exposes classes, traits, and helpers intended for use in your Larav
   - Hierarchy helpers: `hierarchyParent()`, `hierarchyChildren()`.
 - `Ronu\RestGenericClass\Core\Models\BaseModelMongo`
   - MongoDB equivalent with validation helpers.
-- `Ronu\RestGenericClass\Core\Models\SpatieRole`
-- `Ronu\RestGenericClass\Core\Models\SpatiePermission`
+- `Ronu\RestPermissions\Models\SpatieRole`
+- `Ronu\RestPermissions\Models\SpatiePermission`
 
 ## Requests
 
@@ -74,25 +74,27 @@ This package exposes classes, traits, and helpers intended for use in your Larav
 
 ## Permissions: contracts and resolver
 
-Starting in 3.0.0 the user's effective permissions are resolved through a pair of **formal contracts** and an **injectable resolver** (see the [detailed guide](../03-usage/06-permissions.md)). This section documents the public surface only.
+> Since rest-generic-class 3.0 this belongs to [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); 2.x class names keep working through its aliases.
+
+Starting in 3.0.0 the user's effective permissions are resolved through a pair of **formal contracts** and an **injectable resolver** (see the [detailed guide](https://github.com/charlietyn/rest-permissions/blob/main/docs/en/permissions.md)). This section documents the public surface only.
 
 ### Contracts
 
-- `Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRoles`
+- `Ronu\RestPermissions\Support\Permissions\Contracts\ProvidesRoles`
   - `provideRoles(): \Illuminate\Support\Collection` — must be implemented by the User model. Returns a collection whose elements implement `ProvidesRolePermissions`.
-- `Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRolePermissions`
+- `Ronu\RestPermissions\Support\Permissions\Contracts\ProvidesRolePermissions`
   - `provideRolePermissions(): \Illuminate\Support\Collection` — must be implemented by the Role model. Returns the role's effective permissions.
 
 ### Resolver
 
-- `Ronu\RestGenericClass\Core\Support\Permissions\UserRolesResolver`
+- `Ronu\RestPermissions\Support\Permissions\UserRolesResolver`
   - `rolesOf(object $user): Collection` — validates and returns the user's role collection.
   - `permissionsViaRoles(object $user): Collection` — `flatMap` of permissions reachable through those roles, deduplicated by `id`.
   - Registered as a **singleton** in the container; inject it into any service or middleware (`__construct(UserRolesResolver $resolver)`).
 
 ### Dedicated exception
 
-- `Ronu\RestGenericClass\Core\Support\Permissions\Exceptions\RolesContractViolationException`
+- `Ronu\RestPermissions\Support\Permissions\Exceptions\RolesContractViolationException`
   - `::userMissingContract($userOrClass)` — User model does not implement `ProvidesRoles`.
   - `::roleMissingContract($roleOrClass)` — a role returned by `provideRoles()` does not implement `ProvidesRolePermissions`.
 
@@ -112,15 +114,17 @@ When these FQCNs are declared, `RestGenericClassServiceProvider::boot()` validat
 
 ## Permission wildcard compression
 
+> Since rest-generic-class 3.0 this belongs to [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); 2.x class names keep working through its aliases.
+
 The permissions traits expose opt-in read compression for large Spatie permission sets. Compression is presentation-only: it never writes wildcard permissions to the database and does not change authorization checks.
 
 ### Support classes
 
-- `Ronu\RestGenericClass\Core\Support\Permissions\Contracts\PermissionCompressorContract`
+- `Ronu\RestPermissions\Support\Permissions\Contracts\PermissionCompressorContract`
   - `compress(Collection $permissions, Collection $allSystemPerms, array $options = []): PermissionCompressedResult`
-- `Ronu\RestGenericClass\Core\Support\Permissions\PermissionCompressor`
+- `Ronu\RestPermissions\Support\Permissions\PermissionCompressor`
   - Stateless implementation registered as a singleton in the service container.
-- `Ronu\RestGenericClass\Core\Support\Permissions\PermissionCompressedResult`
+- `Ronu\RestPermissions\Support\Permissions\PermissionCompressedResult`
   - `all()` returns wildcard entries first and individual permission names after them.
   - `toArray()` returns `permissions`, `stats`, and optional `expanded`.
 

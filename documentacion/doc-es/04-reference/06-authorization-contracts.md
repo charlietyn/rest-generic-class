@@ -1,4 +1,4 @@
-# Contratos de autorización (v2.9.0)
+# Contratos de autorización (v2.9.0, bindings por defecto de 3.0)
 
 El núcleo CRUD no depende de ningún paquete de permisos. Autoriza mediante tres contratos pequeños de
 `Ronu\RestGenericClass\Core\Contracts\Authorization` y el Gate de Laravel, así que funciona con cualquier
@@ -6,7 +6,7 @@ backend que responda al Gate (spatie/laravel-permission, policies, un `Gate::bef
 
 | Contrato | Lo usa | Binding por defecto |
 | --- | --- | --- |
-| `AuthorizationContext::current(?Request): ?AuthorizationScope` | las comprobaciones de relaciones | los permisos por rutas de este paquete (`RouteAuthorizationContext`, lee lo que concedió `SpatieAuthorize`). `NullAuthorizationContext` no informa ningún ámbito. |
+| `AuthorizationContext::current(?Request): ?AuthorizationScope` | las comprobaciones de relaciones | `NullAuthorizationContext` (sin ámbito: no se comprueba nada). [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) registra `RouteAuthorizationContext`, que expone lo que concedió su middleware `SpatieAuthorize`. |
 | `RelationAuthorizer::enabled()` / `filter(Model, array $relations, ?callable $pathOf)` | `BaseService` (`?relations=`, antes de leer la caché) y los endpoints de relaciones | `GateRelationAuthorizer` |
 | `FieldWriteAuthorizer::deniedFields(Model, mixed $user): list<string>` | `BaseModel::getDeniedFieldsForUser()` → `FilterRequestByRole` | `RoleFieldWriteAuthorizer` (`$fieldsByRole`, con `hasRole()` si el usuario lo tiene) |
 

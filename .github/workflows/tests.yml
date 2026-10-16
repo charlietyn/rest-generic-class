@@ -11,60 +11,28 @@ jobs:
       fail-fast: false
       matrix:
         # Audited pins use patched releases within the unchanged package ranges.
-        # Every row installs Spatie: one Ronu revision against each supported
-        # line (^6.21 || ^7.0 || ^8.0), its lowest and latest resolvable release.
+        # The core has no permission backend: Spatie is tested by ronu/rest-permissions.
         include:
           - php: '8.2'
             laravel: '12.69.0'
             testbench: '10.11.*'
             phpunit: '^11.5.50'
-            spatie: '6.21.0'
-          - php: '8.2'
-            laravel: '12.69.0'
-            testbench: '10.11.*'
-            phpunit: '^11.5.50'
-            spatie: '^6.21'
           - php: '8.3'
             laravel: '^12.61.1'
             testbench: '^10.9'
             phpunit: '^11.5.50'
-            spatie: '^7.0'
-          - php: '8.4'
-            laravel: '^12.61.1'
-            testbench: '^10.9'
-            phpunit: '^11.5.50'
-            spatie: '7.0.0'
-          - php: '8.4'
-            laravel: '^12.61.1'
-            testbench: '^10.9'
-            phpunit: '^11.5.50'
-            spatie: '^8.0'
           - php: '8.3'
             laravel: '13.30.*'
             testbench: '11.0.*'
             phpunit: '^12.5.12'
-            spatie: '^6.21'
-          - php: '8.3'
-            laravel: '^13.12'
-            testbench: '^11.0'
-            phpunit: '^12.5.12'
-            spatie: '^7.0'
           - php: '8.4'
             laravel: '^13.12'
             testbench: '^11.0'
             phpunit: '^12.5.12'
-            spatie: '8.0.0'
-          # Reproduction of the v2.8.0 incident (Laravel 13.36 + Spatie 8.3.0).
-          - php: '8.4'
-            laravel: '^13.12'
-            testbench: '^11.0'
-            phpunit: '^12.5.12'
-            spatie: '8.3.0'
           - php: '8.5'
             laravel: '^13.12'
             testbench: '^11.0'
             phpunit: '^12.5.12'
-            spatie: '^8.0'
 
     steps:
       - uses: actions/checkout@v5
@@ -76,10 +44,8 @@ jobs:
 
       - run: composer validate --strict
       - run: composer require --no-update "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" "phpunit/phpunit:${{ matrix.phpunit }}"
-      - run: composer require --dev --no-update "spatie/laravel-permission:${{ matrix.spatie }}"
       - run: composer update --prefer-dist --no-interaction --no-progress --with-all-dependencies
       - run: composer audit
-      - run: composer show spatie/laravel-permission laravel/framework
       - run: vendor/bin/phpunit
 
   aggregation-databases:
@@ -139,5 +105,3 @@ jobs:
       - run: composer require --no-update "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" "phpunit/phpunit:${{ matrix.phpunit }}"
       - run: composer update --prefer-dist --no-interaction --no-progress --with-all-dependencies
       - run: vendor/bin/phpunit --filter AggregationTest
-      # Spatie models on a real server (e.g. SpatieRole::enabled_permissions SQL per driver).
-      - run: vendor/bin/phpunit --testsuite Integration

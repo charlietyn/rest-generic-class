@@ -1,4 +1,4 @@
-# Authorization contracts (v2.9.0)
+# Authorization contracts (v2.9.0, default bindings of 3.0)
 
 The CRUD core does not depend on any permission package. It authorizes through three small contracts in
 `Ronu\RestGenericClass\Core\Contracts\Authorization` and Laravel's Gate, so any permission backend that
@@ -6,7 +6,7 @@ answers the Gate (spatie/laravel-permission, policies, a custom `Gate::before`, 
 
 | Contract | Used by | Default binding |
 | --- | --- | --- |
-| `AuthorizationContext::current(?Request): ?AuthorizationScope` | relation checks | the route permissions of this package (`RouteAuthorizationContext`, reads what `SpatieAuthorize` granted). `NullAuthorizationContext` reports no scope. |
+| `AuthorizationContext::current(?Request): ?AuthorizationScope` | relation checks | `NullAuthorizationContext` (no scope: nothing is checked). [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) binds `RouteAuthorizationContext`, which exposes what its `SpatieAuthorize` middleware granted. |
 | `RelationAuthorizer::enabled()` / `filter(Model, array $relations, ?callable $pathOf)` | `BaseService` (`?relations=`, before the cache lookup) and the relation endpoints | `GateRelationAuthorizer` |
 | `FieldWriteAuthorizer::deniedFields(Model, mixed $user): list<string>` | `BaseModel::getDeniedFieldsForUser()` → `FilterRequestByRole` | `RoleFieldWriteAuthorizer` (`$fieldsByRole`, `hasRole()` when the user has it) |
 

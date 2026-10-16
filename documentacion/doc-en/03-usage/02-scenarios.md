@@ -106,6 +106,8 @@ Return a category tree with children nested under each parent.
 
 ## Scenario 4: Assign permissions to roles (Spatie integration)
 
+> Since rest-generic-class 3.0 this belongs to [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); 2.x class names keep working through its aliases.
+
 **Goal**
 Sync a list of permissions to roles using the built-in trait.
 
@@ -139,6 +141,8 @@ Content-Type: application/json
 ---
 
 ## Scenario 5: Audit large permission sets with wildcard compression
+
+> Since rest-generic-class 3.0 this belongs to [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); 2.x class names keep working through its aliases.
 
 **Goal**
 Return readable permission payloads for senior admin screens, reports, or audit tooling without changing the real permissions stored by Spatie.

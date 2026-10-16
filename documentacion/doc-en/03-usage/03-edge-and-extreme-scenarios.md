@@ -203,6 +203,8 @@ Write a test that asserts the error message when a forbidden relation is request
 
 ## Channel authorization (v2.6.0)
 
+> Since rest-generic-class 3.0 this belongs to [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); 2.x class names keep working through its aliases.
+
 Applications with `admin/`, `client/` and `mobile/` routes may authenticate all channels with the same `api` guard. Explicit prefixes plus `route_name` preserve permissions such as `admin.mod_security.users.index` and `client.mod_security.users.index` as separate entries. `ModSecurity` also matches URI segment `mod_security`.
 
 No dependency on `ronu/laravel-app-context` is required: applications can supply prefixes directly or construct the list from their own channel configuration.

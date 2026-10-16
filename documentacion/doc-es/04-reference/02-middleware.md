@@ -14,6 +14,8 @@
 
 ## SpatieAuthorize
 
+> Desde rest-generic-class 3.0 esto pertenece a [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); los nombres de clase 2.x siguen funcionando mediante sus alias.
+
 `SpatieAuthorize` resuelve permisos y los comprueba con `$user->can()`.
 
 [Volver al índice de documentación](../index.md)
@@ -31,6 +33,8 @@
 
 ## Autorización por canales (v2.6.0)
 
+> Desde rest-generic-class 3.0 esto pertenece a [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); los nombres de clase 2.x siguen funcionando mediante sus alias.
+
 El middleware y la sincronización comparten ahora `RouteMetaResolver`. La autorización utiliza `$user->can($canonicalName)` con Spatie o con el Gate opcional de permisos efectivos. Registra antes la autenticación, por ejemplo `auth:api` seguido de tu alias `auto.authorize:api`.
 
 **Seguridad:** con la configuración legacy, un prefijo distinto del guard deja la ruta sin resolver y `on_unresolved=allow` omite la autorización. Configura los prefijos de canales explícitamente y usa `deny`. Si falta el usuario o el permiso resuelto, responde 403; con `deny`, también lo hace para rutas no resueltas. En debug se muestra el permiso o el motivo; en producción solo `Forbidden`.
@@ -41,6 +45,8 @@ Consulta la [configuración](../02-configuration/00-configuration-reference.md) 
 
 ## Fase 2: compatibilidad legacy y control del catálogo
 
+> Desde rest-generic-class 3.0 esto pertenece a [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); los nombres de clase 2.x siguen funcionando mediante sus alias.
+
 Con `route_prefixes=null`, la inferencia de módulo vuelve a las reglas de nombre exacto y número de segmentos de v2.5.0. Los nombres de módulo snake_case solo se aceptan con prefijos de canales explícitos. Si sincronizaste nombres legacy con v2.6.0, resincroniza y revisa las asignaciones a los nombres restaurados.
 
 `permissions.authorization.catalog_middleware` filtra únicamente `RoutePermissionRefresher`. Por ejemplo, `['maybe.permission']` coincide con `maybe.permission:api`; un marcador FQCN coincide con ese string de clase, con o sin parámetros. Los marcadores son prefijos literales de strings, sin expansión de alias/grupos; se ignoran middleware que no sean string. `null` incluye todas las rutas del ámbito y `[]` no incluye ninguna. El resolver y `SpatieAuthorize` no aplican ese filtro: excluir una ruta del catálogo no permite saltarse la comprobación de permisos, ni siquiera con `on_unresolved=allow`.
@@ -49,4 +55,4 @@ Con `route_prefixes=null`, la inferencia de módulo vuelve a las reglas de nombr
 
 ## v2.8.0: acciones por capacidad
 
-Con `naming=route_name`, dos atributos de acción de ruta cambian lo que exige el middleware sin cambiar el nombre de la ruta. `permission_ability` (`string|string[]`) sustituye el último segmento del nombre; una lista son alternativas y basta una (`canAny`). `permission_requires` (`string[]`) añade acciones que se exigen todas (`canAll`): cada `^` quita un segmento del final (`^^show` sobre `admin.crm.clients.pets.list` es `admin.crm.clients.show`) y `=nombre` es absoluto. Un valor inválido deja la ruta no resoluble (403 con `on_unresolved=deny`). Decláralos en el `Route::group()` más interno o con `setAction()`, nunca con `->defaults()`. Con `app.debug`, el 403 nombra lo que falta. Consulta [la API pública, §10](../../../docs/permissions-public-api.md) para el ejemplo completo de relación, la sincronización en lote con `--prune`, la notación genérica (`admin.crm.clients.*`) y `eager_relations`.
+Con `naming=route_name`, dos atributos de acción de ruta cambian lo que exige el middleware sin cambiar el nombre de la ruta. `permission_ability` (`string|string[]`) sustituye el último segmento del nombre; una lista son alternativas y basta una (`canAny`). `permission_requires` (`string[]`) añade acciones que se exigen todas (`canAll`): cada `^` quita un segmento del final (`^^show` sobre `admin.crm.clients.pets.list` es `admin.crm.clients.show`) y `=nombre` es absoluto. Un valor inválido deja la ruta no resoluble (403 con `on_unresolved=deny`). Decláralos en el `Route::group()` más interno o con `setAction()`, nunca con `->defaults()`. Con `app.debug`, el 403 nombra lo que falta. Consulta [la API pública, §10](https://github.com/charlietyn/rest-permissions/blob/main/docs/public-api.md) para el ejemplo completo de relación, la sincronización en lote con `--prune`, la notación genérica (`admin.crm.clients.*`) y `eager_relations`.

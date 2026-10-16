@@ -6,6 +6,10 @@
 [![Laravel](https://img.shields.io/badge/Laravel-12.x%20%7C%2013.x-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 [![License](https://img.shields.io/packagist/l/ronu/rest-generic-class.svg?style=flat-square)](LICENSE.md)
 
+## v3.0.0 — Route permissions moved to ronu/rest-permissions
+
+The CRUD core no longer ships or depends on any permission code: the route permissions (catalog sync, `SpatieAuthorize`, the effective-permission Gate, readers, Spatie models, permission routes and the migration script) now live in [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions), and Spatie is no longer a dependency of this package. The core authorizes through its [contracts](documentacion/doc-en/04-reference/06-authorization-contracts.md) and Laravel's Gate. Upgrading: `composer require ronu/rest-generic-class:^3.0 ronu/rest-permissions:^1.0`; 2.x class names, the `permissions` config block and the route names keep working through the plugin. See the [upgrade guide](docs/UPGRADE-3.0.md).
+
 ## v2.9.0 — Authorization contracts
 
 The CRUD core now authorizes eager loads and field writes only through `Core\Contracts\Authorization` (`AuthorizationContext`, `RelationAuthorizer`, `FieldWriteAuthorizer`) and Laravel's Gate, preparing the route permissions to move to their own package. No behaviour change with the default configuration; `require_read` without a request scope now fails closed. Also fixes `SpatieRole::enabled_permissions()` (PostgreSQL-only SQL, and an expired grant being honoured when another role held an active one). See the [contracts](documentacion/doc-en/04-reference/06-authorization-contracts.md) and the [release notes](docs/release-notes-channel-authorization.md#v290--authorization-contracts--contratos-de-autorización).
@@ -16,11 +20,11 @@ The CRUD core now authorizes eager loads and field writes only through `Core\Con
 
 ## v2.8.0 — Actions by ability and generic notation
 
-Opt-in route attributes `permission_ability` / `permission_requires` collapse the routes of a relation into `read`/`add`/`update`/`delete`/`manage` actions that also require seeing the parent; grant them with `admin.crm.clients.*`-style patterns; the catalog syncs in batch (with `--prune`), and `eager_relations=require_read` authorizes `?relations=`. See [the public API, §10](docs/permissions-public-api.md) and the [release notes](docs/release-notes-channel-authorization.md).
+Opt-in route attributes `permission_ability` / `permission_requires` collapse the routes of a relation into `read`/`add`/`update`/`delete`/`manage` actions that also require seeing the parent; grant them with `admin.crm.clients.*`-style patterns; the catalog syncs in batch (with `--prune`), and `eager_relations=require_read` authorizes `?relations=`. See [the public API, §10](https://github.com/charlietyn/rest-permissions/blob/main/docs/public-api.md) and the [release notes](docs/release-notes-channel-authorization.md).
 
 ## v2.7.1 — Fixes
 
-`GET /<channel>/modules` no longer fails (with `?enabled=` and the new `?format=uri`), no PHP 8.4 implicit-nullable deprecations, and the [channel authorization migration script](documentacion/doc-en/03-usage/07-enable-channel-authorization-script.md) now ships in `scripts/`.
+`GET /<channel>/modules` no longer fails (with `?enabled=` and the new `?format=uri`), no PHP 8.4 implicit-nullable deprecations, and the [channel authorization migration script](https://github.com/charlietyn/rest-permissions/blob/main/docs/en/enable-channel-authorization-script.md) now ships in `scripts/`.
 
 ## v2.7.0 — Explicit global permissions
 
@@ -37,8 +41,8 @@ Optional channel prefixes, literal route permission names, fail-closed middlewar
 | 12.61.1+ | 8.2+ | PHPUnit 11 |
 | 13.12+ | 8.3+ | PHPUnit 12 |
 
-Optional `spatie/laravel-permission`: `^6.21 || ^7.0 || ^8.0` (Laravel 13 needs 6.25+, 7.2.4+ or 8.x); other
-lines are rejected by Composer `conflict`. See [requirements](documentacion/doc-en/01-getting-started/00-requirements.md).
+No permission package is required. Route permissions (with spatie/laravel-permission) are provided by
+[`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions). See [requirements](documentacion/doc-en/01-getting-started/00-requirements.md).
 
 The package keeps Laravel 12 support while adding Laravel 13 support. See the detailed Spanish
 [Laravel 13 migration guide for junior developers](documentacion/doc-es/01-getting-started/03-migracion-laravel-13-para-juniors.md).
@@ -246,7 +250,7 @@ Content-Type: application/json
 }
 ```
 
-### 3) Permission sync (Spatie)
+### 3) Permission sync (Spatie, with [ronu/rest-permissions](https://github.com/charlietyn/rest-permissions))
 
 ```http
 POST /api/permissions/assign_roles
@@ -273,6 +277,7 @@ See [Edge and extreme scenarios](documentacion/doc-en/03-usage/03-edge-and-extre
 - [Public API](documentacion/doc-en/04-reference/00-public-api.md)
 - [Middleware](documentacion/doc-en/04-reference/02-middleware.md)
 - [Exceptions](documentacion/doc-en/04-reference/04-exceptions.md)
+- [Authorization contracts](documentacion/doc-en/04-reference/06-authorization-contracts.md)
 
 ## Troubleshooting
 

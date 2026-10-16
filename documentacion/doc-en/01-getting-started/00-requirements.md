@@ -17,9 +17,9 @@ These packages are optional and only needed when you use the related features:
 - **maatwebsite/excel**: required for `exportExcel()`.
 - **barryvdh/laravel-dompdf**: required for `exportPdf()`.
 - **nwidart/laravel-modules**: required when using module-aware permissions.
-- **spatie/laravel-permission**: required for permission models, traits, and middleware.
+- **ronu/rest-permissions** (since 3.0): route permissions — permission models, traits and middleware, on top of spatie/laravel-permission.
 
-### Supported spatie/laravel-permission lines
+### Supported spatie/laravel-permission lines (rest-generic-class 2.8.1–2.9; since 3.0 see ronu/rest-permissions)
 
 | Spatie | Laravel 12 | Laravel 13 | PHP |
 | --- | --- | --- | --- |
@@ -27,9 +27,9 @@ These packages are optional and only needed when you use the related features:
 | 7.x | yes | 7.2.4+ | 8.3+ (7.0.x and 7.2.4 require 8.4) |
 | 8.x | yes | yes | 8.3+ |
 
-Composer declares `conflict: spatie/laravel-permission <6.21 || >=9.0`: installing an untested line
-fails at resolution time instead of at `package:discover`. Spatie stays optional — applications that
-do not use it are not forced to install it. Each row is tested in CI (since v2.8.1).
+In 2.8.1–2.9 Composer declared `conflict: spatie/laravel-permission <6.21 || >=9.0` here. Since 3.0 this
+package has no Spatie dependency or conflict: `ronu/rest-permissions` requires these lines and tests each
+row in its CI.
 
 **Next:** [Installation](01-installation.md)
 

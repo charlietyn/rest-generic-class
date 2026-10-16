@@ -14,9 +14,11 @@ Used throughout the filtering and hierarchy logic to indicate invalid input (uns
 
 ## RolesContractViolationException
 
+> Since rest-generic-class 3.0 this belongs to [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); 2.x class names keep working through its aliases.
+
 Dedicated exception for the permissions system (3.0.0+). Raised when a model fails to implement the expected contract during resolution of the authenticated user's permissions.
 
-**Namespace.** `Ronu\RestGenericClass\Core\Support\Permissions\Exceptions\RolesContractViolationException`
+**Namespace.** `Ronu\RestPermissions\Support\Permissions\Exceptions\RolesContractViolationException`
 
 **Inherits from.** `\RuntimeException`
 
@@ -27,7 +29,7 @@ Dedicated exception for the permissions system (3.0.0+). Raised when a model fai
 | `::userMissingContract($userOrClass)` | The User model does not implement `ProvidesRoles`. Raised by `UserRolesResolver::rolesOf()` and by the optional validation in `RestGenericClassServiceProvider::boot()`. |
 | `::roleMissingContract($roleOrClass)` | A role returned by `provideRoles()` does not implement `ProvidesRolePermissions`. Raised by `UserRolesResolver::rolesOf()`. |
 
-The messages include the exact FQCN of the violating class and the signature of the missing method. See the [permissions guide](../03-usage/06-permissions.md#7-failure-modes-and-diagnostics) for diagnostics.
+The messages include the exact FQCN of the violating class and the signature of the missing method. See the [permissions guide](https://github.com/charlietyn/rest-permissions/blob/main/docs/en/permissions.md#7-failure-modes-and-diagnostics) for diagnostics.
 
 [Back to documentation index](../index.md)
 
