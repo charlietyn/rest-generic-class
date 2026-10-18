@@ -19,16 +19,25 @@ use Spatie\Permission\PermissionRegistrar;
 
 trait HasReadableUserPermissions
 {
+    /**
+     * The model's direct permissions. A model composed with Spatie's HasPermissions answers with
+     * Spatie's own reader; one without it — the generated applications leave it out on purpose,
+     * since it registers Spatie's Gate::before — reads the same morph relation the package
+     * resolves effective permissions from.
+     */
     public function directPermissions(): Collection
     {
-        // Spatie already has: $this->getDirectPermissions()
-        return $this->getDirectPermissions();
+        return method_exists($this, 'getDirectPermissions')
+            ? $this->getDirectPermissions()
+            : $this->enabled_permissions()->get();
     }
 
+    /** The permissions reached through the model's roles; see directPermissions(). */
     public function rolePermissions(): Collection
     {
-        // Spatie already has: $this->getPermissionsViaRoles()
-        return $this->getPermissionsViaRoles();
+        return method_exists($this, 'getPermissionsViaRoles')
+            ? $this->getPermissionsViaRoles()
+            : $this->getEnabledPermissionsViaRoles();
     }
 
     /**

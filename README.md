@@ -10,6 +10,10 @@
 
 The CRUD core now authorizes eager loads and field writes only through `Core\Contracts\Authorization` (`AuthorizationContext`, `RelationAuthorizer`, `FieldWriteAuthorizer`) and Laravel's Gate, preparing the route permissions to move to their own package. No behaviour change with the default configuration; `require_read` without a request scope now fails closed. Also fixes `SpatieRole::enabled_permissions()` (PostgreSQL-only SQL, and an expired grant being honoured when another role held an active one). See the [contracts](documentacion/doc-en/04-reference/06-authorization-contracts.md) and the [release notes](docs/release-notes-channel-authorization.md#v290--authorization-contracts--contratos-de-autorización).
 
+## v2.8.2 — Direct user permissions without Spatie's trait
+
+`users:assign-permissions` and the direct/role permission readers now work on user models without Spatie's `HasPermissions`/`HasRoles` (as generated applications are), and validation messages name the field instead of its value (an array value no longer answers 500). See the [release notes](docs/release-notes-channel-authorization.md#v282--direct-user-permissions-without-spaties-trait--permisos-directos-sin-el-trait-de-spatie).
+
 ## v2.8.1 — Spatie 7/8 compatibility
 
 `SpatiePermission` and `SpatieRole` failed to load with spatie/laravel-permission 7+ (e.g. Laravel 13.36 + Spatie 8.3.0 stopped `artisan package:discover`). `findByName()`/`findOrCreate()` now accept `BackedEnum|string`, so one release works with Spatie `^6.21 || ^7.0 || ^8.0` on Laravel 12 and 13. See the [release notes](docs/release-notes-channel-authorization.md#v281--spatie-78-compatibility--compatibilidad-con-spatie-78).
