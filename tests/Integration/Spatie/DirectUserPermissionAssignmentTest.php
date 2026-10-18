@@ -110,4 +110,12 @@ final class DirectUserPermissionAssignmentTest extends SpatieTestCase
 
         $this->assertSame('global', DB::table('model_has_permissions')->value('range'));
     }
+
+    public function testTheReadersAnswerWithoutSpatiesApi(): void
+    {
+        (new RolePermissionAssignmentService())->applyToUser($this->user, 'ADD', $this->perms('admin.users.index'));
+
+        $this->assertSame(['admin.users.index'], $this->user->fresh()->directPermissions()->pluck('name')->all());
+        $this->assertSame([], $this->user->fresh()->rolePermissions()->all());
+    }
 }
