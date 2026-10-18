@@ -6,6 +6,10 @@
 [![Laravel](https://img.shields.io/badge/Laravel-12.x%20%7C%2013.x-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 [![License](https://img.shields.io/packagist/l/ronu/rest-generic-class.svg?style=flat-square)](LICENSE.md)
 
+## v2.8.2 — Direct user permissions without Spatie's trait
+
+`users:assign-permissions` and the direct/role permission readers now work on user models without Spatie's `HasPermissions`/`HasRoles` (as generated applications are), and validation messages name the field instead of its value (an array value no longer answers 500). See the [release notes](docs/release-notes-channel-authorization.md#v282--direct-user-permissions-without-spaties-trait--permisos-directos-sin-el-trait-de-spatie).
+
 ## v2.8.1 — Spatie 7/8 compatibility
 
 `SpatiePermission` and `SpatieRole` failed to load with spatie/laravel-permission 7+ (e.g. Laravel 13.36 + Spatie 8.3.0 stopped `artisan package:discover`). `findByName()`/`findOrCreate()` now accept `BackedEnum|string`, so one release works with Spatie `^6.21 || ^7.0 || ^8.0` on Laravel 12 and 13. See the [release notes](docs/release-notes-channel-authorization.md#v281--spatie-78-compatibility--compatibilidad-con-spatie-78).
