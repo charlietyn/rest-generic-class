@@ -79,7 +79,7 @@ jobs:
       - run: composer require --dev --no-update "spatie/laravel-permission:${{ matrix.spatie }}"
       - run: composer update --prefer-dist --no-interaction --no-progress --with-all-dependencies
       - run: composer audit
-      - run: composer show spatie/laravel-permission laravel/framework
+      - run: composer show | grep -E "^(laravel/framework|spatie/laravel-permission) "
       - run: vendor/bin/phpunit
 
   aggregation-databases:
