@@ -203,6 +203,8 @@ Escribe un test que valide el mensaje de error cuando se solicita una relación 
 
 ## Autorización por canales (v2.6.0)
 
+> Desde rest-generic-class 3.0 esto pertenece a [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); los nombres de clase 2.x siguen funcionando mediante sus alias.
+
 Una aplicación puede tener rutas `admin/`, `client/` y `mobile/` autenticadas con el mismo guard `api`. Los prefijos explícitos y `route_name` conservan permisos separados como `admin.mod_security.users.index` y `client.mod_security.users.index`. El módulo `ModSecurity` también coincide con el segmento `mod_security`.
 
 No se requiere dependencia de `ronu/laravel-app-context`: cada aplicación puede proporcionar la lista directamente o construirla a partir de su configuración de canales.

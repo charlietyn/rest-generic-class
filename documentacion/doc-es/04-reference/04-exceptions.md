@@ -14,9 +14,11 @@ Se usa en la lógica de filtrado y jerarquía para indicar input inválido (oper
 
 ## RolesContractViolationException
 
+> Desde rest-generic-class 3.0 esto pertenece a [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); los nombres de clase 2.x siguen funcionando mediante sus alias.
+
 Excepción dedicada al sistema de permisos (3.0.0+). Se lanza cuando un modelo no implementa el contrato esperado al resolver permisos del usuario autenticado.
 
-**Namespace.** `Ronu\RestGenericClass\Core\Support\Permissions\Exceptions\RolesContractViolationException`
+**Namespace.** `Ronu\RestPermissions\Support\Permissions\Exceptions\RolesContractViolationException`
 
 **Hereda de.** `\RuntimeException`
 
@@ -27,7 +29,7 @@ Excepción dedicada al sistema de permisos (3.0.0+). Se lanza cuando un modelo n
 | `::userMissingContract($userOrClass)` | El modelo User no implementa `ProvidesRoles`. Producida por `UserRolesResolver::rolesOf()` y por la validación opcional en `RestGenericClassServiceProvider::boot()`. |
 | `::roleMissingContract($roleOrClass)` | Un rol devuelto por `provideRoles()` no implementa `ProvidesRolePermissions`. Producida por `UserRolesResolver::rolesOf()`. |
 
-Los mensajes incluyen el FQCN exacto de la clase violadora y la firma del método que falta. Ver la [guía de permisos](../03-usage/06-permissions.md#7-modos-de-fallo-y-diagnóstico) para diagnóstico.
+Los mensajes incluyen el FQCN exacto de la clase violadora y la firma del método que falta. Ver la [guía de permisos](https://github.com/charlietyn/rest-permissions/blob/main/docs/es/permissions.md#7-modos-de-fallo-y-diagnóstico) para diagnóstico.
 
 [Volver al índice de documentación](../index.md)
 

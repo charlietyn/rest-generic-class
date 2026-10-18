@@ -38,8 +38,8 @@ Este paquete expone clases, traits y helpers pensados para su uso en tu aplicaci
   - Helpers de jerarquía: `hierarchyParent()`, `hierarchyChildren()`.
 - `Ronu\RestGenericClass\Core\Models\BaseModelMongo`
   - Equivalente para MongoDB con helpers de validación.
-- `Ronu\RestGenericClass\Core\Models\SpatieRole`
-- `Ronu\RestGenericClass\Core\Models\SpatiePermission`
+- `Ronu\RestPermissions\Models\SpatieRole`
+- `Ronu\RestPermissions\Models\SpatiePermission`
 
 ## Requests
 
@@ -85,25 +85,27 @@ Ver referencia completa → [05-validation-rules.md](./05-validation-rules.md)
 
 ## Permisos: contratos y resolver
 
-A partir de 3.0.0 los permisos efectivos del usuario se resuelven a traves de un par de **contratos formales** y un **resolver inyectable** (ver [guia detallada](../03-usage/06-permissions.md)). Esta seccion documenta solo la superficie publica.
+> Desde rest-generic-class 3.0 esto pertenece a [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); los nombres de clase 2.x siguen funcionando mediante sus alias.
+
+A partir de 3.0.0 los permisos efectivos del usuario se resuelven a traves de un par de **contratos formales** y un **resolver inyectable** (ver [guia detallada](https://github.com/charlietyn/rest-permissions/blob/main/docs/es/permissions.md)). Esta seccion documenta solo la superficie publica.
 
 ### Contratos
 
-- `Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRoles`
+- `Ronu\RestPermissions\Support\Permissions\Contracts\ProvidesRoles`
   - `provideRoles(): \Illuminate\Support\Collection` — debe ser implementado por el modelo User. Retorna una coleccion cuyos elementos implementan `ProvidesRolePermissions`.
-- `Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRolePermissions`
+- `Ronu\RestPermissions\Support\Permissions\Contracts\ProvidesRolePermissions`
   - `provideRolePermissions(): \Illuminate\Support\Collection` — debe ser implementado por el modelo Role. Retorna los permisos efectivos del rol.
 
 ### Resolver
 
-- `Ronu\RestGenericClass\Core\Support\Permissions\UserRolesResolver`
+- `Ronu\RestPermissions\Support\Permissions\UserRolesResolver`
   - `rolesOf(object $user): Collection` — valida y devuelve la coleccion de roles del usuario.
   - `permissionsViaRoles(object $user): Collection` — devuelve `flatMap` de permisos vinculados a esos roles, deduplicados por `id`.
   - Registrado como **singleton** en el contenedor; puedes inyectarlo en cualquier servicio o middleware (`__construct(UserRolesResolver $resolver)`).
 
 ### Excepcion dedicada
 
-- `Ronu\RestGenericClass\Core\Support\Permissions\Exceptions\RolesContractViolationException`
+- `Ronu\RestPermissions\Support\Permissions\Exceptions\RolesContractViolationException`
   - `::userMissingContract($userOrClass)` — el modelo User no implementa `ProvidesRoles`.
   - `::roleMissingContract($roleOrClass)` — un rol devuelto por `provideRoles()` no implementa `ProvidesRolePermissions`.
 
@@ -123,15 +125,17 @@ Cuando estos FQCN estan declarados, el `RestGenericClassServiceProvider::boot()`
 
 ## Compresion wildcard de permisos
 
+> Desde rest-generic-class 3.0 esto pertenece a [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); los nombres de clase 2.x siguen funcionando mediante sus alias.
+
 Los traits de permisos exponen compresion opt-in para lecturas grandes de permisos Spatie. La compresion es solo de presentacion: no escribe permisos wildcard en la base de datos y no cambia las comprobaciones de autorizacion.
 
 ### Clases de soporte
 
-- `Ronu\RestGenericClass\Core\Support\Permissions\Contracts\PermissionCompressorContract`
+- `Ronu\RestPermissions\Support\Permissions\Contracts\PermissionCompressorContract`
   - `compress(Collection $permissions, Collection $allSystemPerms, array $options = []): PermissionCompressedResult`
-- `Ronu\RestGenericClass\Core\Support\Permissions\PermissionCompressor`
+- `Ronu\RestPermissions\Support\Permissions\PermissionCompressor`
   - Implementacion stateless registrada como singleton en el service container.
-- `Ronu\RestGenericClass\Core\Support\Permissions\PermissionCompressedResult`
+- `Ronu\RestPermissions\Support\Permissions\PermissionCompressedResult`
   - `all()` devuelve primero wildcards y despues permisos individuales.
   - `toArray()` devuelve `permissions`, `stats` y `expanded` opcional.
 

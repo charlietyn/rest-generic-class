@@ -1,9 +1,10 @@
 <?php
 
-namespace Ronu\RestGenericClass\Tests\Integration;
+namespace Ronu\RestGenericClass\Tests\Unit;
 
 use Illuminate\Validation\ValidationException;
 use Orchestra\Testbench\TestCase;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Ronu\RestGenericClass\Core\Requests\BaseFormRequest;
 
 /** A request whose rules are inline: the scenario/rules-file machinery is not what is under test. */
@@ -15,6 +16,8 @@ class ScheduledRequest extends BaseFormRequest
     }
 }
 
+/** Its own process: Testbench's teardown leaves a global container the pure unit tests would inherit. */
+#[RunTestsInSeparateProcesses]
 final class BaseFormRequestMessagesTest extends TestCase
 {
     private function validateWith(array $data): ValidationException

@@ -34,6 +34,8 @@
 
 ## Spatie authorization fails unexpectedly
 
+> Since rest-generic-class 3.0 this belongs to [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); 2.x class names keep working through its aliases.
+
 **Cause**: Permission cache not refreshed or tenant/guard mismatch.
 
 **Fix**: Clear Spatie permission cache and ensure guard/team ID is set before authorization.
@@ -42,12 +44,14 @@
 
 ## "The authenticated user model must implement ... ProvidesRoles" (HTTP 500)
 
+> Since rest-generic-class 3.0 this belongs to [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); 2.x class names keep working through its aliases.
+
 **Cause**: The `User` model does not declare `implements ProvidesRoles`. From 3.0.0 the library requires this contract to resolve role-based permissions.
 
 **Fix**: Add the `implements` clause and the `provideRoles()` method. Minimal example:
 
 ```php
-use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRoles;
+use Ronu\RestPermissions\Support\Permissions\Contracts\ProvidesRoles;
 
 class User extends Authenticatable implements ProvidesRoles
 {
@@ -58,11 +62,13 @@ class User extends Authenticatable implements ProvidesRoles
 }
 ```
 
-See the [permissions guide](../03-usage/06-permissions.md#5-migrating-from-2x-to-300).
+See the [permissions guide](https://github.com/charlietyn/rest-permissions/blob/main/docs/en/permissions.md#5-migrating-from-2x-to-300).
 
 ---
 
 ## `RolesContractViolationException::roleMissingContract` at runtime
+
+> Since rest-generic-class 3.0 this belongs to [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); 2.x class names keep working through its aliases.
 
 **Cause**: `provideRoles()` returned one or more objects that do not implement `ProvidesRolePermissions` (e.g., `stdClass`, a legacy model, or a `Role` missing the `implements` clause).
 
@@ -72,6 +78,8 @@ See the [permissions guide](../03-usage/06-permissions.md#5-migrating-from-2x-to
 
 ## The app fails to boot with `RolesContractViolationException`
 
+> Since rest-generic-class 3.0 this belongs to [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); 2.x class names keep working through its aliases.
+
 **Cause**: You declared `permissions.contracts.user_model` or `permissions.contracts.role_model` in `config/rest-generic-class.php` pointing to a class that does not implement the expected interface. That validation runs in `RestGenericClassServiceProvider::boot()`.
 
 **Fix**: Either implement the contract in the declared class or remove the config entry until the model is ready.
@@ -79,6 +87,8 @@ See the [permissions guide](../03-usage/06-permissions.md#5-migrating-from-2x-to
 ---
 
 ## N+1 queries when calling `/api/permissions`
+
+> Since rest-generic-class 3.0 this belongs to [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); 2.x class names keep working through its aliases.
 
 **Cause**: `provideRoles()` does not eager-load `enabled_permissions`. Every role then triggers an extra query inside the resolver's `flatMap`.
 

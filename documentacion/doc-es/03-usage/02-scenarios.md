@@ -106,6 +106,8 @@ Devolver un árbol de categorías con hijos anidados bajo cada padre.
 
 ## Escenario 4: Asignar permisos a roles (integración Spatie)
 
+> Desde rest-generic-class 3.0 esto pertenece a [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); los nombres de clase 2.x siguen funcionando mediante sus alias.
+
 **Objetivo**
 Sincronizar una lista de permisos a roles usando el trait integrado.
 
@@ -139,6 +141,8 @@ Content-Type: application/json
 ---
 
 ## Escenario 5: Auditar permisos grandes con compresion wildcard
+
+> Desde rest-generic-class 3.0 esto pertenece a [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`composer require ronu/rest-permissions`); los nombres de clase 2.x siguen funcionando mediante sus alias.
 
 **Objetivo**
 Devolver payloads de permisos legibles para pantallas admin senior, reportes o auditorias sin cambiar los permisos reales almacenados por Spatie.

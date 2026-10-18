@@ -50,7 +50,7 @@ La sincronización marca como globales las rutas sin módulo reconocido: revisa 
 
 La caché evita repetir la carga de permisos efectivos; esa carga puede ejecutar varias
 consultas SQL. Si se cambian permisos o el contexto de tenant dentro de la misma petición,
-limpia `app(\Ronu\RestGenericClass\Core\Support\Authorization\EffectivePermissionGate::class)->clear()`.
+limpia `app(\Ronu\RestPermissions\Support\Authorization\EffectivePermissionGate::class)->clear()`.
 No se interpretan comodines de presentación ni se crean asignaciones por nombre de rol.
 `passesFilters()` sigue siendo un punto de extensión; se elimina la lectura de la clave
 inexistente `route-permissions` y se utiliza la configuración pública del paquete.
@@ -308,7 +308,7 @@ Versión de parche: sin cambios de comportamiento con la configuración por defe
   `HasPermissionsController::getModules()`: desaparecen los avisos de PHP ≥ 8.4 por nullable implícito.
   La firma efectiva no cambia, así que las subclases no se ven afectadas.
 - **Script `scripts/enable-channel-authorization.php`**, distribuido con la biblioteca
-  ([guía](../documentacion/doc-es/03-usage/07-enable-channel-authorization-script.md)):
+  ([guía](https://github.com/charlietyn/rest-permissions/blob/main/docs/es/enable-channel-authorization-script.md)):
   - el informe de `--apply` muestra en cada archivo de rutas solo los nombres de su canal (antes listaba los
     de todos los canales en cada archivo; los cambios en disco ya eran correctos);
   - detecta también las declaraciones que van justo después de `<?php`;
@@ -328,7 +328,7 @@ Versión de parche: sin cambios de comportamiento con la configuración por defe
 - **Explicit nullable parameters** in `BaseModel`, `BaseModelMongo` and `getModules()`: no more PHP ≥ 8.4
   implicit-nullable deprecations. The effective signatures are unchanged, so subclasses are unaffected.
 - **`scripts/enable-channel-authorization.php`** now ships with the library
-  ([guide](../documentacion/doc-en/03-usage/07-enable-channel-authorization-script.md)): per-file `--apply`
+  ([guide](https://github.com/charlietyn/rest-permissions/blob/main/docs/en/enable-channel-authorization-script.md)): per-file `--apply`
   report with only that channel's names, detection of declarations right after `<?php`,
   `--grant=Role:@file.json` for explicit permission lists, and a completed/interrupted step summary.
 
@@ -339,7 +339,7 @@ Versión de parche: sin cambios de comportamiento con la configuración por defe
 Status / Estado: **released / publicada** (2026-10-15).
 Everything new is opt-in: without the new route attributes and configuration, authorization behaves as
 in v2.7.1. / Todo lo nuevo es opt-in: sin los atributos y la configuración nuevos, la autorización se
-comporta como en v2.7.1. Reference / referencia: [permissions-public-api.md §10](permissions-public-api.md).
+comporta como en v2.7.1. Reference / referencia: [permissions-public-api.md §10](https://github.com/charlietyn/rest-permissions/blob/main/docs/public-api.md).
 
 ## Español
 
@@ -571,3 +571,67 @@ permisos por rutas a un paquete propio.
 `tests/Integration` suite also passes on MySQL 8.4. A random-order run shows failures that already exist on
 v2.8.1 (Capsule tests sharing global state), unrelated to this change. / Una ejecución en orden aleatorio
 muestra fallos que ya existían en v2.8.1 (pruebas Capsule con estado global compartido), ajenos a este cambio.
+
+# v3.0.0 — Route permissions moved to ronu/rest-permissions / Permisos por rutas en ronu/rest-permissions
+
+Status / Estado: **released / publicada** (2026-10-18). Includes / Incluye v2.8.2 and / y v2.9.0. Released together with
+`ronu/rest-permissions` 1.0.0. / Se publica junto con `ronu/rest-permissions` 1.0.0.
+Upgrade guide / guía de actualización: [UPGRADE-3.0.md](UPGRADE-3.0.md).
+
+## Español
+
+- **Major:** los permisos por rutas salen de este paquete y pasan, con su historial de git, a
+  [`ronu/rest-permissions`](https://github.com/charlietyn/rest-permissions) (`Ronu\RestPermissions\…`):
+  `Support\Permissions\*`, `SpatieAuthorize`, `RouteMetaResolver`, el Gate de permisos efectivos, los lectores,
+  los modelos Spatie, `PermissionsController`, `routes/permissions.php`, el bloque `permissions` de la
+  configuración y `scripts/`.
+- El núcleo ya no depende de ningún paquete de permisos: sin Spatie en `require-dev`, `suggest` ni `conflict`.
+  Autoriza solo mediante `Core\Contracts\Authorization` y el Gate de Laravel (v2.9.0). Por defecto registra
+  `NullAuthorizationContext`; el plugin aporta el suyo.
+- Una prueba de arquitectura sin exclusiones garantiza que nada en `src/Core` referencia los nombres movidos,
+  `Ronu\RestPermissions\` ni `Spatie\`.
+- La matriz de CI vuelve a ser Laravel × PHP (5 filas); la matriz de Spatie (10 filas) y la suite de integración
+  contra MySQL/PostgreSQL pasan al CI del plugin.
+- `BaseFormRequest::validate_request()` nombra el campo en los mensajes de validación, no su valor (corrección de
+  v2.8.2; un valor array ya no responde 500).
+- **Compatibilidad:** con `ronu/rest-permissions` instalado, el código y la configuración 2.x siguen funcionando
+  sin cambios durante toda su línea 1.x (alias perezosos, bloque `permissions` heredado, mismas variables de
+  entorno y mismos nombres de ruta). Sin el plugin, `require_read` falla de forma cerrada.
+
+## English
+
+- **Major:** the route permissions move, with their git history, to `ronu/rest-permissions`. The core depends on
+  no permission package (no Spatie in `require-dev`, `suggest` or `conflict`) and binds `NullAuthorizationContext`
+  by default. An exclusion-free architecture test forbids the moved names, `Ronu\RestPermissions\` and `Spatie\`
+  in `src/Core`. The CI matrix is back to Laravel × PHP; the Spatie matrix moves to the plugin's CI.
+- `BaseFormRequest::validate_request()` names the field in validation messages, not its value (the v2.8.2 fix;
+  an array value no longer answers 500).
+- **Compatibility:** with `ronu/rest-permissions` installed, 2.x code and configuration keep working unchanged
+  for its whole 1.x line. Without it, `require_read` fails closed.
+
+## Verification / Verificación (2026-10-16 and 2026-10-18, local)
+
+One revision of each package / una revisión de cada paquete. `composer validate --strict` and `composer audit` clean in every row.
+
+| Package | PHP | Laravel | Spatie | Result |
+| --- | --- | --- | --- | --- |
+| rest-generic-class 3.0 | 8.2.30 / 8.3.28 / 8.3.28 / 8.4.15 / 8.5.0 | 12.69.0 / 12.70.0 / 13.30.1 / 13.37.0 / 13.37.0 | not installed / no instalado | 192 tests, 500 assertions, OK (×5); 194 tests, 503 assertions with the v2.8.2 fix |
+| rest-permissions 1.0 | 8.2.30 | 12.69.0 | 6.21.0, 6.25.0 | 172 tests, 598 assertions, OK |
+| rest-permissions 1.0 | 8.3.28 / 8.4.15 | 12.70.0 | 7.4.2, 7.0.0, 8.3.0 | 172 tests, OK |
+| rest-permissions 1.0 | 8.3.28 / 8.4.15 / 8.5.0 | 13.30.1 / 13.37.0 | 6.25.0, 7.4.2, 8.0.0, 8.3.0 | 172 tests, OK |
+
+The plugin's `tests/Integration` suite also passes on MySQL 8.4 (19 tests). / La suite de integración del plugin
+también pasa en MySQL 8.4.
+
+Generated `eros` apps, isolated copies, both packages from local `path` repositories, **app code unchanged**
+(it still uses the 2.x names: `bootstrap/app.php` registers `…\Core\Middleware\SpatieAuthorize`, models extend
+`…\Core\Models\SpatiePermission|SpatieRole`, console commands use `…\Core\Traits\HasPermissionsService`):
+
+| App | `package:discover` | `route:list` | Protected route through the app's `auto.authorize` (2.x alias) |
+| --- | --- | --- | --- |
+| Laravel 12.70.0 + Spatie 6.25.0 | OK (rest-generic-class, rest-permissions, spatie) | 3428 routes | 403 without the permission, 200 with it |
+| Laravel 13.36.0 + Spatie 8.3.0 (existing lock, targeted update) | OK | 3428 routes | 403 / 200 |
+
+In both, the old middleware name resolves to `Ronu\RestPermissions\Middleware\SpatieAuthorize`, the core's
+`AuthorizationContext` is the plugin's `RouteAuthorizationContext` and `require_read` (set in the app's `.env`)
+works. Only generated `bootstrap/cache/*.php` files differ from the original app.
