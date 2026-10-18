@@ -495,3 +495,20 @@ Laravel 12 queda rechazado por `conflict`.
 **apps-generator:** raise the Ronu minimum to `^2.8.1` in the shared catalog and the Laravel 13 profile, then
 run `composer update ronu/rest-generic-class` in existing projects (`composer install` with an old lock keeps
 v2.8.0). / Elevar el mínimo de Ronu a `^2.8.1` y actualizar de forma dirigida los proyectos existentes.
+
+# v2.8.2 — Direct user permissions without Spatie's trait / Permisos directos sin el trait de Spatie
+
+Status / Estado: **released / publicada** (2026-10-18).
+Patch release. / Versión de parche.
+
+## Español
+
+`users:assign-permissions` (y `assignPermissionToUsers`) fallaba con `BadMethodCallException: givePermissionTo()` cuando el modelo de usuario no usa `HasPermissions`/`HasRoles` de Spatie. Las aplicaciones generadas lo omiten a propósito: ese trait registra el `Gate::before` de Spatie y se saltaría la autorización por canal. El paquete ya LEÍA los permisos directos por su propia relación (`enabled_permissions`, un `morphToMany` sobre `model_has_permissions`) y ahora también ESCRIBE por ella: ADD, SYNC y REVOKE, con atributos de pivote y con teams, e invalida la caché de Spatie. Un modelo que sí usa el trait de Spatie sigue usando la API de Spatie: el cambio es compatible.
+
+También: `BaseFormRequest::validate_request()` pasaba los DATOS de la petición como nombres de atributo. Un mensaje decía «The 2020-01-01 field…» en vez del nombre del campo, y un valor array (una fecha enviada como objeto) hacía fallar el formateo del mensaje: 500 en lugar de 422. Ahora usa `attributes()`.
+
+## English
+
+`users:assign-permissions` (and `assignPermissionToUsers`) failed with `BadMethodCallException: givePermissionTo()` when the user model does not use Spatie's `HasPermissions`/`HasRoles`. Generated applications leave it out on purpose: that trait registers Spatie's `Gate::before`, which would bypass channel authorization. The package already READ direct permissions through its own relation (`enabled_permissions`, a `morphToMany` over `model_has_permissions`); it now WRITES through it too — ADD, SYNC and REVOKE, with pivot attributes and teams — and flushes Spatie's cache. A model that does use Spatie's trait keeps Spatie's API: the change is backward compatible.
+
+Also: `BaseFormRequest::validate_request()` passed the request DATA as attribute names, so a message read "The 2020-01-01 field…" instead of the field's name, and an array value (a date sent as an object) made formatting the message throw — a 500 instead of a 422. It now uses `attributes()`.

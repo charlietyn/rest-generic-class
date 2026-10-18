@@ -2,7 +2,9 @@
 
 namespace Ronu\RestGenericClass\Core\Support\Permissions;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Spatie\Permission\PermissionRegistrar;
 
 /**
  * Applies an ADD/SYNC/REVOKE decision to a role or user and builds the
@@ -56,9 +58,21 @@ final class RolePermissionAssignmentService
     /**
      * Apply the given mode to a user, preserving optional pivot attributes on
      * model_has_permissions when provided.
+     *
+     * A user model composed with Spatie's HasPermissions keeps Spatie's own API.
+     * One that is not — the generated applications deliberately leave it out,
+     * because that trait registers Spatie's Gate::before and would bypass the
+     * channel authorization — is written through the same morph relation the
+     * package READS direct permissions from (HasReadableUserPermissions::
+     * enabled_permissions), so what is assigned is what is later resolved.
      */
     public function applyToUser(object $user, string $mode, Collection $perms, array $pivot = []): void
     {
+        if (!method_exists($user, 'givePermissionTo')) {
+            $this->applyToUserDirectly($user, $mode, $perms, $pivot);
+            return;
+        }
+
         if ($mode === 'REVOKE') {
             $user->revokePermissionTo($perms);
             return;
@@ -79,6 +93,38 @@ final class RolePermissionAssignmentService
         } else {
             $user->givePermissionTo($perms);
         }
+    }
+
+    /**
+     * ADD/SYNC/REVOKE on model_has_permissions for a model without Spatie's
+     * HasPermissions, honouring teams like Spatie does, then flushing Spatie's
+     * permission cache.
+     */
+    private function applyToUserDirectly(Model $user, string $mode, Collection $perms, array $pivot): void
+    {
+        $registrar = app(PermissionRegistrar::class);
+        $relation = $user->morphToMany(
+            config('permission.models.permission'),
+            'model',
+            config('permission.table_names.model_has_permissions'),
+            config('permission.column_names.model_morph_key'),
+            $registrar->pivotPermission
+        );
+        if ($registrar->teams) {
+            $teamsKey = $registrar->teamsKey;
+            $relation->withPivot($teamsKey)->wherePivot($teamsKey, getPermissionsTeamId());
+            $pivot[$teamsKey] = getPermissionsTeamId();
+        }
+
+        if ($mode === 'REVOKE') {
+            $relation->detach($perms->map(fn($perm) => $perm->getKey())->all());
+        } elseif ($mode === 'SYNC') {
+            $relation->sync($this->pivotMap($perms, $pivot));
+        } else { // ADD
+            $relation->syncWithoutDetaching($this->pivotMap($perms, $pivot));
+        }
+
+        $registrar->forgetCachedPermissions();
     }
 
     /**
