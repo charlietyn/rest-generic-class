@@ -146,10 +146,13 @@ class BaseFormRequest extends \Illuminate\Foundation\Http\FormRequest
      */
     public function validate_request(): void
     {
-        $specific = isset($this->all()['_specific']);
-        $attributes = $this->all();
-        $rules = $specific ? array_intersect_key($this->rules(), $attributes) : $this->rules();
-        $this->validate($this, $rules, $this->messages(), $attributes);
+        $data = $this->all();
+        $specific = isset($data['_specific']);
+        $rules = $specific ? array_intersect_key($this->rules(), $data) : $this->rules();
+        // The fourth argument NAMES the attributes in the error messages. It used to receive the
+        // request data, so a value became the field's name ("The 2020-01-01 is not a valid date")
+        // and an array value made formatting the message throw — a 500 instead of a 422.
+        $this->validate($this, $rules, $this->messages(), $this->attributes());
     }
 
     /**
