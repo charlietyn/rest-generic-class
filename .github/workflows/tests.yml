@@ -139,3 +139,5 @@ jobs:
       - run: composer require --no-update "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" "phpunit/phpunit:${{ matrix.phpunit }}"
       - run: composer update --prefer-dist --no-interaction --no-progress --with-all-dependencies
       - run: vendor/bin/phpunit --filter AggregationTest
+      # Spatie models on a real server (e.g. SpatieRole::enabled_permissions SQL per driver).
+      - run: vendor/bin/phpunit --testsuite Integration

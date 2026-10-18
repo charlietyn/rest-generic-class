@@ -82,6 +82,20 @@ If any of these classes does not implement the expected interface, the applicati
 
 [Back to documentation index](../index.md)
 
+## Core authorization (v2.9.0)
+
+Keys under `authorization` (core, independent of any permission package). A `null` value falls back to the
+legacy `permissions.authorization.*` key of the same name, then to the default. See the
+[authorization contracts](../04-reference/06-authorization-contracts.md).
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `eager_relations` | `null` → `off` | `require_read` makes every to-many relation requested with `?relations=` require one of the relation abilities under the authorized resource, asked to Laravel's Gate. Without a permission integration providing the request scope it fails closed (`MissingAuthorizationContextException`). |
+| `eager_relations_to_one` | `null` → `allow` | `allow` exempts to-one relations; `require_read` checks them too. |
+| `relation_abilities` | `['read', 'manage']` | Suffixes of the abilities that grant a relation (`<resource>.<relation>.<suffix>`, any of them). |
+
+`permissions.authorization.eager_relations` and `eager_relations_to_one` (below) keep working as fallbacks.
+
 ## Channel authorization (v2.6.0)
 
 All keys below live under `permissions.authorization`.

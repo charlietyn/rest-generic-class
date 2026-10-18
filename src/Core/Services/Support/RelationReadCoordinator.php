@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
 use Ronu\RestGenericClass\Core\Helpers\Helper;
-use Ronu\RestGenericClass\Core\Support\Authorization\EagerRelationAuthorizer;
+use Ronu\RestGenericClass\Core\Authorization\Authorizers;
 use Ronu\RestGenericClass\Core\Exports\ModelExport;
 
 class RelationReadCoordinator
@@ -80,7 +80,7 @@ class RelationReadCoordinator
         $params = $this->parseParams($request);
 
         if (!empty($params['relations'])) {
-            $query->with(app(EagerRelationAuthorizer::class)->filter($query->getRelated(), $params['relations']));
+            $query->with(Authorizers::relations()->filter($query->getRelated(), $params['relations']));
         }
 
         $related = $query->find($relatedId, $params['select']);
@@ -254,7 +254,7 @@ class RelationReadCoordinator
         }
 
         if (!empty($params['relations'])) {
-            $query->with(app(EagerRelationAuthorizer::class)->filter($query->getRelated(), $params['relations']));
+            $query->with(Authorizers::relations()->filter($query->getRelated(), $params['relations']));
         }
     }
 

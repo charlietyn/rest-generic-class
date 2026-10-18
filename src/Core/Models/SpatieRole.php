@@ -102,22 +102,31 @@ class SpatieRole extends BaseModel implements RoleContract
         $keyName = $relation->getRelated()->getKeyName();
         $pivotTable = $relation->getTable();
         /** Range Permissions**/
-        $idsSub = $roleHasPermissionsClass::query()
-            ->active($at)
-            ->select('permission_id');
-        $relation->whereIn("{$permTable}.{$keyName}", $idsSub);
+        // The validity window of the joined pivot row itself. Before 2.9 an uncorrelated subquery
+        // granted a permission whenever ANY role had an active row for it, even when this role's own
+        // row had expired. The pivot model's active() scope runs against the relation's pivot table.
+        $activePivot = $roleHasPermissionsClass->newInstance()->setTable($pivotTable);
+        $relation->where(fn ($query) => $activePivot->callNamedScope('active', [$query, $at]));
         /** Non Restrict Permissions**/
         $roleId = $this->getKey();
+        $roleKeyName = $roleModel->getKeyName();
+        // PostgreSQL needs typed ids/NULLs to unify the UNION ALL column types; the `::type` syntax
+        // is PostgreSQL-only and MySQL has no CAST(... AS INTEGER|BOOLEAN), so others get plain values.
+        [$int, $bool, $timestamp] = $permModel->getConnection()->getDriverName() === 'pgsql'
+            ? ['::integer', '::boolean', '::timestamp']
+            : ['', '', ''];
         $globalPerms = $permModel::query()
             ->notRestricted()
             ->when($guard, fn($q) => $q->where("{$permTable}.guard_name", $this->guard_name))
             ->crossJoin($rolesTable . ' as r')
+            // Lazy loading belongs to this role; eager loading (no key) needs every role to match by pivot.
+            ->when($roleId !== null, fn ($q) => $q->where("r.{$roleKeyName}", $roleId))
             ->selectRaw(" {$permTable}.*,
-            r.id::integer          as pivot_{$pivotRoleKey},
-            {$permTable}.id::integer as pivot_{$pivotPermKey},
-            NULL::boolean          as pivot_range,
-            NULL::timestamp        as pivot_start_range,
-            NULL::timestamp        as pivot_end_range")
+            r.id{$int}          as pivot_{$pivotRoleKey},
+            {$permTable}.id{$int} as pivot_{$pivotPermKey},
+            NULL{$bool}          as pivot_range,
+            NULL{$timestamp}        as pivot_start_range,
+            NULL{$timestamp}        as pivot_end_range")
             ->toBase();
         $relation->getQuery()->unionAll($globalPerms);
         return $relation;

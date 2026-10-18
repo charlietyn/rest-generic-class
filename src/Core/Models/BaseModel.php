@@ -10,6 +10,7 @@ use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
+use Ronu\RestGenericClass\Core\Authorization\Authorizers;
 use Ronu\RestGenericClass\Core\Contracts\HasRestCache;
 use Ronu\RestGenericClass\Core\Contracts\HasRestFieldPermissions;
 use Ronu\RestGenericClass\Core\Contracts\HasRestRelations;
@@ -139,17 +140,13 @@ class BaseModel extends Model implements HasRestCache, HasRestFieldPermissions, 
      *  - FilterRequestByRole middleware  → strips denied fields from request payload
      *  - BaseRequest::mergeProhibitedRules() → adds 'prohibited' validation rules
      *
-     * Resolution algorithm:
+     * Decided by the bound FieldWriteAuthorizer; the default (RoleFieldWriteAuthorizer) applies:
      *  1. $fieldsByRole is empty?          → [] (no restrictions — fast path)
      *  2. $user->is_superuser === true?    → [] (unrestricted access — fast path)
      *  3. universe = unique(flatten($fieldsByRole values))
      *  4. allowed  = union of $fieldsByRole[$role] for each role the user holds
+     *     (via $user->hasRole() when the user has it, e.g. Spatie's HasRoles)
      *  5. return universe − allowed
-     *
-     * Type note: $user is typed as mixed (not Authenticatable interface) because
-     * hasRole() is provided by Spatie's HasRoles trait, which is not part of
-     * Laravel's Authenticatable contract. A strict interface type hint would
-     * require a custom contract — unnecessary complexity for this use case.
      *
      * @param  mixed $user  The currently authenticated Eloquent user model.
      * @return list<string> Field names the user cannot write.
@@ -161,26 +158,17 @@ class BaseModel extends Model implements HasRestCache, HasRestFieldPermissions, 
             return [];
         }
 
-        // Fast path: superuser bypasses all field-level restrictions
-        if ($user->is_superuser ?? false) {
-            return [];
-        }
+        return Authorizers::fields()->deniedFields($this, $user);
+    }
 
-        // Build the universe: every field mentioned across all roles
-        $allPrivileged = array_unique(
-            array_merge(...array_values($this->fieldsByRole))
-        );
-
-        // Build the allowed set: fields the user CAN write via their roles
-        $allowed = [];
-        foreach ($this->fieldsByRole as $role => $fields) {
-            if (method_exists($user, 'hasRole') && $user->hasRole($role)) {
-                $allowed = array_merge($allowed, $fields);
-            }
-        }
-
-        // Denied = universe − allowed
-        return array_values(array_diff($allPrivileged, $allowed));
+    /**
+     * The role-to-field restriction map declared on this model.
+     *
+     * @return array<string, list<string>>
+     */
+    public function getFieldsByRole(): array
+    {
+        return $this->fieldsByRole;
     }
 
     // =========================================================================

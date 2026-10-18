@@ -13,7 +13,7 @@ use Ronu\RestGenericClass\Core\Traits\HasReadableUserPermissions;
 
 abstract class ChannelAuthorizationTestCase extends TestCase
 {
-    private array $paginationResolvers = [];
+    use RestoresPaginationResolvers;
 
     protected function getPackageProviders($app): array
     {
@@ -35,15 +35,7 @@ abstract class ChannelAuthorizationTestCase extends TestCase
 
     protected function setUp(): void
     {
-        // Testbench installs static callbacks bound to its application. Restore
-        // them afterwards so the standalone Capsule tests remain independent.
-        foreach ([\Illuminate\Pagination\AbstractPaginator::class, \Illuminate\Pagination\AbstractCursorPaginator::class] as $class) {
-            foreach ((new \ReflectionClass($class))->getProperties(\ReflectionProperty::IS_STATIC) as $property) {
-                if (str_ends_with($property->getName(), 'Resolver')) {
-                    $this->paginationResolvers[] = [$property, $property->getValue()];
-                }
-            }
-        }
+        $this->capturePaginationResolvers();
         parent::setUp();
         Schema::create('channel_permissions', function ($table) {
             $table->increments('id');
@@ -64,9 +56,7 @@ abstract class ChannelAuthorizationTestCase extends TestCase
         try {
             parent::tearDown();
         } finally {
-            foreach ($this->paginationResolvers as [$property, $value]) {
-                $property->setValue(null, $value);
-            }
+            $this->restorePaginationResolvers();
         }
     }
 

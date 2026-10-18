@@ -5,6 +5,16 @@ namespace Ronu\RestGenericClass\Core\Providers;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Support\Facades\Gate;
+use Ronu\RestGenericClass\Core\Authorization\AuthorizationConfig;
+use Ronu\RestGenericClass\Core\Authorization\GateRelationAuthorizer;
+use Ronu\RestGenericClass\Core\Authorization\MissingAuthorizationContextException;
+use Ronu\RestGenericClass\Core\Authorization\NullAuthorizationContext;
+use Ronu\RestGenericClass\Core\Authorization\RelationAbilityNamer;
+use Ronu\RestGenericClass\Core\Authorization\RoleFieldWriteAuthorizer;
+use Ronu\RestGenericClass\Core\Contracts\Authorization\AuthorizationContext;
+use Ronu\RestGenericClass\Core\Contracts\Authorization\FieldWriteAuthorizer;
+use Ronu\RestGenericClass\Core\Contracts\Authorization\RelationAuthorizer;
+use Ronu\RestGenericClass\Core\Support\Authorization\RouteAuthorizationContext;
 use Ronu\RestGenericClass\Core\Support\Authorization\EffectivePermissionGate;
 use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\PermissionCompressorContract;
 use Ronu\RestGenericClass\Core\Support\Permissions\Contracts\ProvidesRolePermissions;
@@ -18,6 +28,7 @@ class RestGenericClassServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom($this->configPath(), 'rest-generic-class');
+        $this->registerAuthorizationContracts();
         $this->app->singleton(PermissionCompressorContract::class, PermissionCompressor::class);
         $this->app->singleton(UserRolesResolver::class);
         $this->app->scoped(EffectivePermissionGate::class);
@@ -25,6 +36,8 @@ class RestGenericClassServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->assertAuthorizationContextWhenRequired();
+
         if (config('rest-generic-class.permissions.authorization.register_gate', false)) {
             Gate::before(static fn ($user, string $ability) => app(EffectivePermissionGate::class)->allows($user, $ability));
             $this->app['events']->listen(RequestHandled::class, function (): void {
@@ -53,6 +66,35 @@ class RestGenericClassServiceProvider extends ServiceProvider
         }
 
         $this->assertContractsIfDeclared();
+    }
+
+    /**
+     * Core authorization seams. bindIf/singletonIf: a permission integration may bind its own
+     * implementation before or after this provider registers.
+     */
+    private function registerAuthorizationContracts(): void
+    {
+        // The route permissions shipped with this package provide the request scope (v2.9).
+        $this->app->bindIf(AuthorizationContext::class, RouteAuthorizationContext::class);
+        $this->app->bindIf(RelationAuthorizer::class, GateRelationAuthorizer::class);
+        $this->app->singletonIf(FieldWriteAuthorizer::class, RoleFieldWriteAuthorizer::class);
+        $this->app->singletonIf(RelationAbilityNamer::class);
+    }
+
+    /**
+     * require_read with nothing that provides the request scope would leave relations unchecked.
+     * Fail at boot for HTTP; console commands (composer package:discover, route:list, ...) keep
+     * running and the check fails closed at first use instead.
+     */
+    private function assertAuthorizationContextWhenRequired(): void
+    {
+        if ($this->app->runningInConsole()
+            || AuthorizationConfig::eagerRelations() !== AuthorizationConfig::REQUIRE_READ) {
+            return;
+        }
+        if ($this->app->make(AuthorizationContext::class) instanceof NullAuthorizationContext) {
+            throw MissingAuthorizationContextException::forEagerRelations();
+        }
     }
 
     /**

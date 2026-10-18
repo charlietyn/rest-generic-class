@@ -24,7 +24,7 @@ use Ronu\RestGenericClass\Core\Services\Support\OperFilterPipeline;
 use Ronu\RestGenericClass\Core\Services\Support\PaginationCoordinator;
 use Ronu\RestGenericClass\Core\Services\Support\QueryBuilderPipeline;
 use Ronu\RestGenericClass\Core\Services\Support\RelationResolver;
-use Ronu\RestGenericClass\Core\Support\Authorization\EagerRelationAuthorizer;
+use Ronu\RestGenericClass\Core\Authorization\Authorizers;
 use Ronu\RestGenericClass\Core\Traits\HasDynamicFilter;
 use Ronu\RestGenericClass\Core\Traits\HasDynamicOrderBy;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -251,8 +251,8 @@ class BaseService
             }
         }
 
-        // permissions.authorization.eager_relations=require_read: who may load each to-many relation.
-        $processed = app(EagerRelationAuthorizer::class)
+        // authorization.eager_relations=require_read: who may load each to-many relation.
+        $processed = Authorizers::relations()
             ->filter($this->modelClass, $processed, static fn (array $parsed) => $parsed['relation']);
         if ($processed === []) {
             return $query;
@@ -310,7 +310,7 @@ class BaseService
      */
     private function authorizeRequestedRelations(array $params): array
     {
-        $authorizer = app(EagerRelationAuthorizer::class);
+        $authorizer = Authorizers::relations();
         if (empty($params['relations']) || !$authorizer->enabled()) {
             return $params;
         }
