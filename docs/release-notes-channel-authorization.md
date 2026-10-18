@@ -496,9 +496,26 @@ Laravel 12 queda rechazado por `conflict`.
 run `composer update ronu/rest-generic-class` in existing projects (`composer install` with an old lock keeps
 v2.8.0). / Elevar el mínimo de Ronu a `^2.8.1` y actualizar de forma dirigida los proyectos existentes.
 
+# v2.8.2 — Direct user permissions without Spatie's trait / Permisos directos sin el trait de Spatie
+
+Status / Estado: **released / publicada** (2026-10-18).
+Patch release. / Versión de parche.
+
+## Español
+
+`users:assign-permissions` (y `assignPermissionToUsers`) fallaba con `BadMethodCallException: givePermissionTo()` cuando el modelo de usuario no usa `HasPermissions`/`HasRoles` de Spatie. Las aplicaciones generadas lo omiten a propósito: ese trait registra el `Gate::before` de Spatie y se saltaría la autorización por canal. El paquete ya LEÍA los permisos directos por su propia relación (`enabled_permissions`, un `morphToMany` sobre `model_has_permissions`) y ahora también ESCRIBE por ella: ADD, SYNC y REVOKE, con atributos de pivote y con teams, e invalida la caché de Spatie. Un modelo que sí usa el trait de Spatie sigue usando la API de Spatie: el cambio es compatible.
+
+También: `BaseFormRequest::validate_request()` pasaba los DATOS de la petición como nombres de atributo. Un mensaje decía «The 2020-01-01 field…» en vez del nombre del campo, y un valor array (una fecha enviada como objeto) hacía fallar el formateo del mensaje: 500 en lugar de 422. Ahora usa `attributes()`.
+
+## English
+
+`users:assign-permissions` (and `assignPermissionToUsers`) failed with `BadMethodCallException: givePermissionTo()` when the user model does not use Spatie's `HasPermissions`/`HasRoles`. Generated applications leave it out on purpose: that trait registers Spatie's `Gate::before`, which would bypass channel authorization. The package already READ direct permissions through its own relation (`enabled_permissions`, a `morphToMany` over `model_has_permissions`); it now WRITES through it too — ADD, SYNC and REVOKE, with pivot attributes and teams — and flushes Spatie's cache. A model that does use Spatie's trait keeps Spatie's API: the change is backward compatible.
+
+Also: `BaseFormRequest::validate_request()` passed the request DATA as attribute names, so a message read "The 2020-01-01 field…" instead of the field's name, and an array value (a date sent as an object) made formatting the message throw — a 500 instead of a 422. It now uses `attributes()`.
+
 # v2.9.0 — Authorization contracts / Contratos de autorización
 
-Status / Estado: **ready / lista** (2026-10-16), not yet published / sin publicar.
+Status / Estado: **released / publicada** (2026-10-18). Includes / Incluye v2.8.2.
 No behaviour change with the default configuration. / Sin cambios de comportamiento con la configuración
 por defecto. First step to move the route permissions to their own package. / Primer paso para llevar los
 permisos por rutas a un paquete propio.
@@ -550,14 +567,14 @@ permisos por rutas a un paquete propio.
   permission — the validity window is now checked on the role's own pivot row; lazy loading no longer repeats
   each global permission once per role.
 
-`vendor/bin/phpunit --display-deprecations`: **354 tests, 1031 assertions, OK** (SQLite); the
+`vendor/bin/phpunit --display-deprecations`: **361 tests, 1043 assertions, OK** (SQLite, with v2.8.2); the
 `tests/Integration` suite also passes on MySQL 8.4. A random-order run shows failures that already exist on
 v2.8.1 (Capsule tests sharing global state), unrelated to this change. / Una ejecución en orden aleatorio
 muestra fallos que ya existían en v2.8.1 (pruebas Capsule con estado global compartido), ajenos a este cambio.
 
 # v3.0.0 — Route permissions moved to ronu/rest-permissions / Permisos por rutas en ronu/rest-permissions
 
-Status / Estado: **ready / lista** (2026-10-16), not yet published / sin publicar. Released together with
+Status / Estado: **released / publicada** (2026-10-18). Includes / Incluye v2.8.2 and / y v2.9.0. Released together with
 `ronu/rest-permissions` 1.0.0. / Se publica junto con `ronu/rest-permissions` 1.0.0.
 Upgrade guide / guía de actualización: [UPGRADE-3.0.md](UPGRADE-3.0.md).
 
@@ -575,6 +592,8 @@ Upgrade guide / guía de actualización: [UPGRADE-3.0.md](UPGRADE-3.0.md).
   `Ronu\RestPermissions\` ni `Spatie\`.
 - La matriz de CI vuelve a ser Laravel × PHP (5 filas); la matriz de Spatie (10 filas) y la suite de integración
   contra MySQL/PostgreSQL pasan al CI del plugin.
+- `BaseFormRequest::validate_request()` nombra el campo en los mensajes de validación, no su valor (corrección de
+  v2.8.2; un valor array ya no responde 500).
 - **Compatibilidad:** con `ronu/rest-permissions` instalado, el código y la configuración 2.x siguen funcionando
   sin cambios durante toda su línea 1.x (alias perezosos, bloque `permissions` heredado, mismas variables de
   entorno y mismos nombres de ruta). Sin el plugin, `require_read` falla de forma cerrada.
@@ -585,16 +604,18 @@ Upgrade guide / guía de actualización: [UPGRADE-3.0.md](UPGRADE-3.0.md).
   no permission package (no Spatie in `require-dev`, `suggest` or `conflict`) and binds `NullAuthorizationContext`
   by default. An exclusion-free architecture test forbids the moved names, `Ronu\RestPermissions\` and `Spatie\`
   in `src/Core`. The CI matrix is back to Laravel × PHP; the Spatie matrix moves to the plugin's CI.
+- `BaseFormRequest::validate_request()` names the field in validation messages, not its value (the v2.8.2 fix;
+  an array value no longer answers 500).
 - **Compatibility:** with `ronu/rest-permissions` installed, 2.x code and configuration keep working unchanged
   for its whole 1.x line. Without it, `require_read` fails closed.
 
-## Verification / Verificación (2026-10-16, local)
+## Verification / Verificación (2026-10-16 and 2026-10-18, local)
 
 One revision of each package / una revisión de cada paquete. `composer validate --strict` and `composer audit` clean in every row.
 
 | Package | PHP | Laravel | Spatie | Result |
 | --- | --- | --- | --- | --- |
-| rest-generic-class 3.0 | 8.2.30 / 8.3.28 / 8.3.28 / 8.4.15 / 8.5.0 | 12.69.0 / 12.70.0 / 13.30.1 / 13.37.0 / 13.37.0 | not installed / no instalado | 192 tests, 500 assertions, OK (×5) |
+| rest-generic-class 3.0 | 8.2.30 / 8.3.28 / 8.3.28 / 8.4.15 / 8.5.0 | 12.69.0 / 12.70.0 / 13.30.1 / 13.37.0 / 13.37.0 | not installed / no instalado | 192 tests, 500 assertions, OK (×5); 194 tests, 503 assertions with the v2.8.2 fix |
 | rest-permissions 1.0 | 8.2.30 | 12.69.0 | 6.21.0, 6.25.0 | 172 tests, 598 assertions, OK |
 | rest-permissions 1.0 | 8.3.28 / 8.4.15 | 12.70.0 | 7.4.2, 7.0.0, 8.3.0 | 172 tests, OK |
 | rest-permissions 1.0 | 8.3.28 / 8.4.15 / 8.5.0 | 13.30.1 / 13.37.0 | 6.25.0, 7.4.2, 8.0.0, 8.3.0 | 172 tests, OK |
