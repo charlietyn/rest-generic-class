@@ -10,11 +10,15 @@ The filtering engine limits `oper` depth and total conditions with `filtering.ma
 
 ## Operator allowlist
 
-Only operators defined in `filtering.allowed_operators` are accepted. Unsupported operators throw an exception.
+Only the operators of the [filter's list](../03-usage/00-basic-usage.md#query-rules-v310) are accepted; any other is a 400.
 
 ## Column validation
 
-`filtering.validate_columns` and `filtering.strict_column_validation` are used to validate column usage before queries are applied.
+With `filtering.strict_column_validation` (default `true`) every column of `oper`, `attr`/`eq`, `select` and `orderby` is checked against the table's listing before anything runs: an unknown column, another table's or an expression is a 400 that carries no SQL.
+
+## Hidden columns
+
+What the model hides (`$hidden`, timestamps included) is not queryable either: a `like` on a value the response hides recovers it one character at a time (`password|like|$2y$%`). It is a 400 in `oper`, `attr`/`eq` and `orderby`, also through relations and on relation endpoints, and it is dropped from `select`. The `create` response is serialised like `update`'s, without hidden attributes and with casts. `filtering.allow_hidden_columns=true` restores the pre-3.1 behaviour.
 
 ## Permissions
 

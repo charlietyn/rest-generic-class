@@ -43,8 +43,9 @@ class QueryBuilderPipeline
             $query = ($this->applyRelations)($query, $params['relations'], $nested ? $oper : null);
         }
 
-        if (isset($params['select'])) {
-            $query = $query->select($params['select']);
+        $select = isset($params['select']) ? ColumnGuard::selectable($this->model, (array) $params['select']) : null;
+        if ($select !== null) {
+            $query = $query->select($select);
         } else {
             $query = $query->select($this->model->getTable() . '.*');
         }
@@ -52,6 +53,7 @@ class QueryBuilderPipeline
         if (isset($params['with_aggregates'])) {
             $query = (new AggregateCoordinator())->relations($query, $params['with_aggregates'], function (Builder $related, array $spec) {
                 foreach ($spec['attr'] ?? [] as $field => $value) {
+                    ColumnGuard::assertQueryable($related->getModel(), (string) $field, 'filter');
                     $field = $related->getModel()->qualifyColumn($field);
                     is_array($value) ? $related->whereIn($field, $value) : $related->where($field, $value);
                 }
@@ -96,12 +98,6 @@ class QueryBuilderPipeline
 
     private function decodeOper(mixed $oper): mixed
     {
-        if (!is_string($oper)) {
-            return $oper;
-        }
-
-        $decoded = json_decode($oper, true);
-
-        return json_last_error() === JSON_ERROR_NONE ? $decoded : $oper;
+        return JsonParameter::decode($oper, 'oper');
     }
 }

@@ -35,12 +35,7 @@ class OperFilterPipeline
             return [];
         }
 
-        if (is_string($oper)) {
-            $decoded = json_decode($oper, true);
-            if (json_last_error() === JSON_ERROR_NONE) {
-                $oper = $decoded;
-            }
-        }
+        $oper = JsonParameter::decode($oper, 'oper');
 
         if (!is_array($oper)) {
             return [];
@@ -95,7 +90,7 @@ class OperFilterPipeline
                     throw new HttpException(400, "Maximum conditions ({$maxConditions}) exceeded.");
                 }
 
-                $query = ($this->applyFilters)($query, $baseOper, $boolean, $modelClass);
+                $query = ($this->applyFilters)($query, $baseOper, $boolean, $modelClass, ($this->getDepth)());
             }
 
             foreach ($relationFilters as $relationPath => $subOper) {

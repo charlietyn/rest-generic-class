@@ -39,6 +39,7 @@ class RelationReadCoordinator
         $parent = ($this->resolveParent)($config, $parentId);
         $query = $parent->{$config['relationship']}();
         $params = $this->parseParams($request);
+        $params['select'] = ColumnGuard::selectable($query->getRelated(), $params['select']) ?? ['*'];
 
         if (AggregateSpecParser::requested($params)) {
             $params = (new AggregateSpecParser())->normalize($params);
@@ -78,6 +79,7 @@ class RelationReadCoordinator
 
         $query = $parent->{$config['relationship']}();
         $params = $this->parseParams($request);
+        $params['select'] = ColumnGuard::selectable($query->getRelated(), $params['select']) ?? ['*'];
 
         if (!empty($params['relations'])) {
             $query->with(Authorizers::relations()->filter($query->getRelated(), $params['relations']));
@@ -164,7 +166,7 @@ class RelationReadCoordinator
 
     public function processPagination(array $params, $query): mixed
     {
-        $pagination = $this->normalizeArray($params['pagination'] ?? []);
+        $pagination = $this->normalizeArray($params['pagination'] ?? [], 'pagination');
         $paginationLower = array_change_key_case($pagination);
         $pageSize = array_key_exists('pagesize', $paginationLower)
             ? $paginationLower['pagesize']
@@ -260,10 +262,10 @@ class RelationReadCoordinator
 
     private function parseJsonParam(Request $request, string $key, ?string $alias = null): array
     {
-        $decoded = $this->normalizeArray($request->get($key));
+        $decoded = $this->normalizeArray($request->get($key), $key);
 
         if ($alias) {
-            $decoded = array_merge($decoded, $this->normalizeArray($request->get($alias)));
+            $decoded = array_merge($decoded, $this->normalizeArray($request->get($alias), $alias));
         }
 
         return $decoded;
@@ -289,11 +291,10 @@ class RelationReadCoordinator
         return (array)$relations;
     }
 
-    private function normalizeArray(mixed $value): array
+    private function normalizeArray(mixed $value, string $param): array
     {
         if (is_string($value)) {
-            $decoded = json_decode($value, true);
-            return is_array($decoded) ? $decoded : [];
+            return JsonParameter::decodeArray($value, $param);
         }
 
         return is_array($value) ? $value : [];

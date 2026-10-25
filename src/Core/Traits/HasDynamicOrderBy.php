@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Query\Builder as QueryBuilder;
+use Ronu\RestGenericClass\Core\Services\Support\ColumnGuard;
+use Ronu\RestGenericClass\Core\Services\Support\JsonParameter;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 trait HasDynamicOrderBy
@@ -41,14 +43,12 @@ trait HasDynamicOrderBy
     protected function applyDynamicAggregateOrderBy($query, array|string $params, $modelContext, array $aggregateAliases)
     {
         if (is_string($params)) {
-            $decoded = json_decode($params, true);
-            $params = is_array($decoded) ? $decoded : [];
+            $params = JsonParameter::decodeArray($params, 'orderby');
         }
 
         foreach ($params as $elements) {
             if (is_string($elements)) {
-                $decoded = json_decode($elements, true);
-                $elements = is_array($decoded) ? $decoded : [];
+                $elements = JsonParameter::decodeArray($elements, 'orderby');
             }
             if (!is_array($elements)) {
                 continue;
@@ -76,6 +76,9 @@ trait HasDynamicOrderBy
     {
         if (!str_contains($column, '.')) {
             $model = $this->resolveModelInstance($modelContext);
+            if ($model) {
+                ColumnGuard::assertQueryable($model, $column, 'sort');
+            }
             $table = $model ? $model->getTable() : null;
             $target = $table ? $table . '.' . $column : $column;
             return $query->orderBy($target, $direction);
@@ -92,6 +95,9 @@ trait HasDynamicOrderBy
         // segment is not even a method on the model, treat it as a literal
         // "table.column" reference (consumers may already JOIN manually).
         if (!$rootModel || !method_exists($rootModel, $firstSegment)) {
+            if ($rootModel) {
+                ColumnGuard::assertQueryable($rootModel, $column, 'sort');
+            }
             return $query->orderBy($column, $direction);
         }
 
@@ -163,6 +169,7 @@ trait HasDynamicOrderBy
         );
 
         if (empty($relationPath)) {
+            ColumnGuard::assertQueryable($related, $finalColumn, 'sort');
             return $sub->select($related->getTable() . '.' . $finalColumn)->limit(1);
         }
 

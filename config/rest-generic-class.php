@@ -20,10 +20,20 @@ return [
         'strict_relations' => true,
         'allowed_operators' => ['=', '!=', '<', '>', '<=', '>=', 'like', 'not like',
             'ilike', 'not ilike', 'in', 'not in', 'between',
-            'not between', 'null', 'not null', 'exists',
-            'not exists', 'date', 'not date'],
+            'not between', 'null', 'not null', 'date', 'not date'],
         'validate_columns' => env('REST_VALIDATE_COLUMNS', true),
+        // A column the table does not have (oper, attr/eq, select, orderby; also another table's
+        // `table.column` or an expression) is a 400 before any SQL runs. false: it reaches the database.
         'strict_column_validation' => env('REST_STRICT_COLUMNS', true),
+        // A hidden column ($hidden, timestamps included) is a 400 in oper, attr/eq and orderby, and is
+        // dropped from select. true: hidden columns are queryable again (pre-3.1 behaviour).
+        'allow_hidden_columns' => env('REST_ALLOW_HIDDEN_COLUMNS', false),
+        // A structured parameter (oper, attr, eq, orderby, pagination) that is not valid JSON is a 400.
+        // false: it is ignored as before 3.1 (the request answers as if it had not been sent).
+        'reject_invalid_json' => env('REST_REJECT_INVALID_JSON', true),
+        // regexp / not regexp: ~ / !~ on PostgreSQL, REGEXP on MySQL/MariaDB, 400 on SQLite and SQL Server.
+        // false: the operator is forwarded verbatim (pre-3.1; e.g. SQLite with a user-defined REGEXP).
+        'translate_regexp' => env('REST_TRANSLATE_REGEXP', true),
         'column_cache_ttl' => 3600, // Cache column lists for 1 hour
     ],
 

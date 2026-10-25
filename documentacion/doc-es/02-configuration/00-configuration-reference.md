@@ -18,13 +18,16 @@ El paquete publica un único archivo de configuración: `config/rest-generic-cla
 
 | Clave | Tipo | Default | Descripción |
 | --- | --- | --- | --- |
-| `filtering.max_depth` | int | `5` | Profundidad máxima de anidación para filtros `oper`. |
+| `filtering.max_depth` | int | `5` | Profundidad máxima de `oper`: la raíz cuenta 1 y cada salto de relación y cada grupo `and`/`or` anidado suma 1 (desde 3.1 también los grupos). Superarla: 400 «Maximum nesting depth (5) exceeded.» |
 | `filtering.max_conditions` | int | `100` | Número máximo de condiciones de filtro por solicitud. |
 | `filtering.strict_relations` | bool | `true` | Requiere `const RELATIONS` en los modelos (recomendado). |
-| `filtering.allowed_operators` | array | (ver configuración) | Operadores permitidos para el filtrado `oper`. |
-| `filtering.validate_columns` | bool | `true` | Valida nombres de columnas antes de aplicar filtros. |
-| `filtering.strict_column_validation` | bool | `true` | Aplica validación estricta de columnas. |
-| `filtering.column_cache_ttl` | int | `3600` | TTL de caché (segundos) para listas de columnas. |
+| `filtering.allowed_operators` | array | (ver configuración) | Documental: el filtro valida contra su propia lista (ver [Uso básico](../03-usage/00-basic-usage.md#reglas-de-la-consulta-v310)). Desde 3.1 sin `exists`/`not exists`. |
+| `filtering.validate_columns` | bool | `true` | Reservada: hoy no tiene efecto. |
+| `filtering.strict_column_validation` | bool | `true` | v3.1: una columna que la tabla no tiene (o de otra tabla, o una expresión) es un 400 «Column '<col>' does not exist on <tabla>.» en `oper`, `attr`/`eq`, `select` y `orderby`, también en los endpoints de relación. `false`: llega a la base de datos como antes. |
+| `filtering.allow_hidden_columns` | bool | `false` | v3.1: con `false`, una columna de `$hidden` (timestamps incluidos) es un 400 «Column '<col>' of <Modelo> cannot be used to filter\|sort.» y se omite en silencio de `select`. `true`: comportamiento anterior. |
+| `filtering.reject_invalid_json` | bool | `true` | v3.1: `oper`, `attr`, `eq`, `orderby` o `pagination` con JSON inválido es un 400 «The <param> parameter is not valid JSON.». `false`: se ignora como antes. |
+| `filtering.translate_regexp` | bool | `true` | v3.1: `regexp`/`not regexp` → `~`/`!~` en PostgreSQL, `REGEXP` en MySQL/MariaDB, 400 en SQLite y SQL Server. `false`: el operador se envía tal cual. |
+| `filtering.column_cache_ttl` | int | `3600` | Reservada: el listado de columnas se lee una vez por conexión y tabla durante el proceso. |
 
 ## Validación
 

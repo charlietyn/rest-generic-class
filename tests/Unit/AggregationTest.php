@@ -519,6 +519,8 @@ final class AggregationTest extends TestCase
             'unauthorized column' => [['aggregate' => [array_replace($metric, ['column' => 'name'])]]],
             'column collision' => [['aggregate' => [array_replace($metric, ['as' => 'name'])]]],
             'accessor collision' => [['aggregate' => [array_replace($metric, ['as' => 'display_name'])]]],
+            'relation collision' => [['aggregate' => [array_replace($metric, ['as' => 'orders'])]]],
+            'case relation collision' => [['with_aggregates' => [array_replace($relation, ['as' => 'firstorder'])]]],
             'unknown option' => [['aggregate' => [$metric + ['distinct' => true]]]],
             'pagination' => [['aggregate' => [$metric], 'pagination' => ['pageSize' => 2]]],
             'select' => [['aggregate' => [$metric], 'select' => ['id']]],
@@ -547,6 +549,23 @@ final class AggregationTest extends TestCase
             $this->assertSame(400, $e->getStatusCode());
             $this->assertCount(0, $this->dataQueries());
         }
+    }
+
+    public static function eloquentMethodAliases(): array
+    {
+        return ['all' => ['all'], 'query' => ['query'], 'find' => ['find'], 'save' => ['save']];
+    }
+
+    /** An alias only conflicts with a column, attribute or declared relation (as in NestJS), not with any method. */
+    #[DataProvider('eloquentMethodAliases')]
+    public function testEloquentMethodNamesAreValidAliases(string $alias): void
+    {
+        $metrics = (new BaseService(AggregateCustomer::class))->list_all([
+            'aggregate' => [['function' => 'count', 'column' => '*', 'as' => $alias]],
+        ])['data'];
+
+        $this->assertSame([$alias], array_keys($metrics));
+        $this->assertGreaterThan(0, (int) $metrics[$alias]);
     }
 
     public static function unsupportedEndpoints(): array

@@ -10,11 +10,15 @@ El motor de filtrado limita la profundidad de `oper` y el total de condiciones c
 
 ## Allowlist de operadores
 
-Solo se aceptan operadores definidos en `filtering.allowed_operators`. Los operadores no soportados lanzan una excepción.
+Solo se aceptan los operadores de la [lista del filtro](../03-usage/00-basic-usage.md#reglas-de-la-consulta-v310); cualquier otro es un 400.
 
 ## Validación de columnas
 
-`filtering.validate_columns` y `filtering.strict_column_validation` se usan para validar el uso de columnas antes de aplicar consultas.
+Con `filtering.strict_column_validation` (por defecto `true`) cada columna de `oper`, `attr`/`eq`, `select` y `orderby` se valida contra el listado de la tabla antes de ejecutar nada: una columna desconocida, de otra tabla o una expresión es un 400 que no contiene SQL.
+
+## Columnas ocultas
+
+Lo que el modelo oculta (`$hidden`, timestamps incluidos) tampoco es consultable: un `like` sobre un valor que la respuesta oculta lo reconstruye carácter a carácter (`password|like|$2y$%`). Es un 400 en `oper`, `attr`/`eq` y `orderby`, también a través de relaciones y en los endpoints de relación, y se omite de `select`. La respuesta de `create` se serializa como la de `update`, sin ocultos y con casts. `filtering.allow_hidden_columns=true` restaura el comportamiento anterior a 3.1.
 
 ## Permisos
 

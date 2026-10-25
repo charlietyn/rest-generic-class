@@ -31,8 +31,10 @@ class AggregatePolicyResolver
                 throw new HttpException(400, "{$path}.column: column does not exist.");
             }
             $alias = $spec['as'];
-            $reserved = array_merge($this->columns($model), array_keys($model->getAttributes()), array_keys($model->getCasts()), $model->getAppends(), $model->getMutatedAttributes());
-            if (in_array(strtolower($alias), array_map('strtolower', $reserved), true) || method_exists($model, $alias)) {
+            // Columns, attributes and declared relations, as in the NestJS libraries. Any method used to be
+            // reserved too, so `as: "all"` was a 400 because Eloquent has Model::all().
+            $reserved = array_merge($this->columns($model), array_keys($model->getAttributes()), array_keys($model->getCasts()), $model->getAppends(), $model->getMutatedAttributes(), $this->declaredRelations($model));
+            if (in_array(strtolower($alias), array_map('strtolower', $reserved), true)) {
                 throw new HttpException(400, "{$path}.as: alias conflicts with a model attribute or relation.");
             }
             foreach ($params['select'] ?? [] as $selected) {
@@ -60,9 +62,7 @@ class AggregatePolicyResolver
     public function relation(Model $model, string $name, string $path): Relation
     {
         // Aggregations always require explicit permission, even when legacy filters auto-detect relations.
-        $allowed = $model instanceof HasRestRelations
-            ? $model->getRestRelations()
-            : (defined(get_class($model).'::RELATIONS') ? $model::RELATIONS : []);
+        $allowed = $this->declaredRelations($model);
         if (!in_array($name, $allowed, true) || !method_exists($model, $name)) {
             throw new HttpException(400, "{$path}.relation: relation is not authorized.");
         }
@@ -74,6 +74,13 @@ class AggregatePolicyResolver
             throw new HttpException(400, "{$path}.relation: cross-connection aggregates are not supported.");
         }
         return $relation;
+    }
+
+    private function declaredRelations(Model $model): array
+    {
+        return $model instanceof HasRestRelations
+            ? $model->getRestRelations()
+            : (defined(get_class($model).'::RELATIONS') ? $model::RELATIONS : []);
     }
 
     private function columns(Model $model): array

@@ -22,6 +22,7 @@ use Ronu\RestGenericClass\Core\Helpers\Helper;
 use Ronu\RestGenericClass\Core\Models\BaseModel;
 use Ronu\RestGenericClass\Core\Requests\BaseFormRequest;
 use Ronu\RestGenericClass\Core\Services\BaseService;
+use Ronu\RestGenericClass\Core\Services\Support\JsonParameter;
 
 class RestController extends BaseController
 {
@@ -86,7 +87,12 @@ class RestController extends BaseController
         array_key_exists('_nested', $payloads) ? $parameters['_nested'] = $request['_nested'] : $parameters['_nested'] = false;
         array_key_exists('soft_delete', $payloads) ? $parameters['soft_delete'] = $request['soft_delete'] : $parameters['soft_delete'] = null;
         if (array_key_exists('attr', $payloads) && array_key_exists('eq', $payloads)) {
-            $parameters['attr'] = array_merge((array)$request['attr'], (array)$request['eq']);
+            // Decoded before merging (both usually arrive as JSON strings, which (array) turned into
+            // ["{...}"], a filter on column '0'); attr wins a repeated key, as in the aggregate path.
+            $parameters['attr'] = array_merge(
+                JsonParameter::decodeArray($request['eq'], 'eq'),
+                JsonParameter::decodeArray($request['attr'], 'attr')
+            );
         } elseif (array_key_exists('attr', $payloads)) {
             $parameters['attr'] = $request['attr'];
         } elseif (array_key_exists('eq', $payloads)) {
@@ -288,10 +294,12 @@ class RestController extends BaseController
      */
     public function deleteById(Request $request): array
     {
-        $params = count($request->all()) != 0 ? $request->all() : json_decode($request->getContent(), true);
+        // {"ids": [...]}, {"<model>": [...]} or a bare list, like restore/force-delete: the whole body
+        // used to reach Model::destroy(), so {"ids":[1,2]} was whereIn(id, [[1,2]]) and a 500.
+        $ids = $this->resolveBulkIds($request);
         DB::beginTransaction();
         try {
-            $result = $this->service->destroybyid($params);
+            $result = $this->service->destroybyid($ids);
             DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
