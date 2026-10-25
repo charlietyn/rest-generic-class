@@ -22,7 +22,9 @@ use Ronu\RestGenericClass\Core\Helpers\Helper;
 use Ronu\RestGenericClass\Core\Models\BaseModel;
 use Ronu\RestGenericClass\Core\Requests\BaseFormRequest;
 use Ronu\RestGenericClass\Core\Services\BaseService;
+use Ronu\RestGenericClass\Core\Services\Support\EntityKey;
 use Ronu\RestGenericClass\Core\Services\Support\JsonParameter;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class RestController extends BaseController
 {
@@ -231,9 +233,13 @@ class RestController extends BaseController
     {
         DB::beginTransaction();
         try {
-            $entity = strtolower($this->modelClass::MODEL);
-            $params = $request->all()[$entity];
-            $result = $this->service->update_multiple($params);
+            $body = $request->all();
+            $entity = EntityKey::find($body, $this->modelClass::MODEL);
+            if ($entity === null || !is_array($body[$entity]) || !array_is_list($body[$entity])) {
+                $keys = implode("' or '", EntityKey::candidates($this->modelClass::MODEL));
+                throw new HttpException(400, "bulk-update: the body must carry '{$keys}' with a list of records.");
+            }
+            $result = $this->service->update_multiple($body[$entity]);
             if ($result['success'])
                 DB::commit();
         } catch (\Throwable $e) {
@@ -437,8 +443,8 @@ class RestController extends BaseController
             return $body['ids'];
         }
 
-        $entity = strtolower($this->modelClass::MODEL);
-        if ($entity !== '' && isset($body[$entity]) && is_array($body[$entity])) {
+        $entity = EntityKey::find($body, $this->modelClass::MODEL);
+        if ($entity !== null && is_array($body[$entity])) {
             return $body[$entity];
         }
 

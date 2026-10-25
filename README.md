@@ -6,6 +6,10 @@
 [![Laravel](https://img.shields.io/badge/Laravel-12.x%20%7C%2013.x-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 [![License](https://img.shields.io/packagist/l/ronu/rest-generic-class.svg?style=flat-square)](LICENSE.md)
 
+## v3.1.1 — Bulk endpoints read the validated key
+
+The bulk endpoints (bulk create, `bulk-update`, `delete-by-id`, restore, force-delete) accept the records under `Str::snake(MODEL)` (`appointment_types`, the key the generated validation rules name) as well as `strtolower(MODEL)` (`appointmenttypes`). Before, an entity with a compound name skipped validation or lost its records. A `bulk-update` without that key, with a non-list value or with a record without its primary key is now a 400 instead of a 500.
+
 ## v3.1.0 — Query contract fixes
 
 Fixes the 12 defects the apps-generator contract suite measured (`KI-*`), with the rules the NestJS libraries already follow. **Two data leaks closed:** `create` no longer returns hidden attributes (it is serialised like `update`, with casts), and hidden columns (`$hidden`, timestamps included) are no longer an oracle: a 400 in `oper`, `attr`/`eq` and `orderby`, dropped from `select`. **Responses that change:** an unknown column, invalid JSON in `oper`/`attr`/`eq`/`orderby`/`pagination`, more than `max_depth` nested `and`/`or` groups, and `exists`/`not exists` (removed) are now a 400 instead of a 500 or of a 200 that ignored the filter; `regexp` works on PostgreSQL (`~`); filters through a self relation (`roles.father`) compare the related row; `delete-by-id` accepts `{"ids": [...]}`; `eq`+`attr` merge (attr wins); `_nested=true` works with every relation; hierarchy nodes honour `select`; an aggregate alias may be an Eloquent method name (`as: "all"`). Each change that turns a 200 into a 4xx has a switch (`filtering.strict_column_validation`, `allow_hidden_columns`, `reject_invalid_json`, `translate_regexp`). See the [upgrade guide](docs/UPGRADE-3.1.md) and the [query rules](documentacion/doc-en/03-usage/00-basic-usage.md#query-rules-v310).
