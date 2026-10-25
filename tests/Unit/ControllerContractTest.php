@@ -71,6 +71,65 @@ final class ControllerContractTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // bulk-update / bulk create read the key the generated rules validate (KI-BULK-UPDATE-UNVALIDATED)
+    // -------------------------------------------------------------------------
+
+    public static function bulkKeys(): array
+    {
+        // strtolower(MODEL) is what the library read; Str::snake(MODEL) is what the generated rules validate.
+        return ['lower-case model' => ['contractuser'], 'snake_case model' => ['contract_user']];
+    }
+
+    #[DataProvider('bulkKeys')]
+    public function testBulkUpdateReadsEitherEntityKey(string $key): void
+    {
+        $request = Request::create('/', 'POST', [$key => [['id' => 3, 'name' => 'Vet 2'], ['id' => 4, 'name' => 'Tech 2']]]);
+
+        $result = $this->controller()->updateMultiple($request);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame(['Vet 2', 'Tech 2'], ContractUser::query()->whereIn('id', [3, 4])->orderBy('id')->pluck('name')->all());
+    }
+
+    #[DataProvider('bulkKeys')]
+    public function testBulkCreateReadsEitherEntityKey(string $key): void
+    {
+        $result = (new BaseService(ContractUser::class))->create([$key => [['name' => 'A'], ['name' => 'B']]]);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame(2, ContractUser::query()->whereIn('name', ['A', 'B'])->count());
+    }
+
+    public static function invalidBulkUpdates(): array
+    {
+        return [
+            'no entity key' => [['other' => [['id' => 3]]], "bulk-update: the body must carry 'contractuser' or 'contract_user' with a list of records."],
+            'not a list' => [['contract_user' => 'x'], "bulk-update: the body must carry 'contractuser' or 'contract_user' with a list of records."],
+            'item without id' => [['contract_user' => [['name' => 'x']]], "bulk-update: record 0 has no 'id'."],
+        ];
+    }
+
+    #[DataProvider('invalidBulkUpdates')]
+    public function testInvalidBulkUpdateIsABadRequest(array $body, string $message): void
+    {
+        try {
+            $this->controller()->updateMultiple(Request::create('/', 'POST', $body));
+            $this->fail('Expected a 400');
+        } catch (HttpException $e) {
+            $this->assertSame(400, $e->getStatusCode());
+            $this->assertSame($message, $e->getMessage());
+        }
+    }
+
+    public function testDeleteByIdAcceptsTheSnakeCaseEntityKey(): void
+    {
+        $request = Request::create('/', 'DELETE', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode(['contract_user' => [3, 4]]));
+
+        $this->assertTrue($this->controller()->deleteById($request)['success']);
+        $this->assertSame([1, 2, 5], $this->remaining());
+    }
+
+    // -------------------------------------------------------------------------
     // eq + attr (KI-EQ-ATTR-MERGE) — attr wins a repeated key
     // -------------------------------------------------------------------------
 

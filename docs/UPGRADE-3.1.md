@@ -25,6 +25,8 @@ existing `config/rest-generic-class.php` keeps working (add the new keys only to
 | `DELETE delete-by-id` `{"ids": [...]}` / `{"<model>": [...]}` | 500 | deletes them (a bare list keeps working) | — |
 | `eq` and `attr` together | 500 | merged, `attr` wins a repeated key | — |
 | `_nested=true` with `relations` | 500 (TypeError) for every relation | the eager-loaded relation is filtered too | — |
+| (3.1.1) bulk create / `bulk-update` / `delete-by-id` with `Str::snake(MODEL)` as the key (`appointment_types`) | records missed, or a 500 | read like `strtolower(MODEL)` | — |
+| (3.1.1) `bulk-update` without the key, with a non-list value or a record without its primary key | 500 `Undefined array key` | 400 | — |
 | `hierarchy.filter_mode` + `select` | added ancestors/descendants were full rows | every node has the selected columns, plus the primary key and the hierarchy field | — |
 
 ### What to check

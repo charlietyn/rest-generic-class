@@ -17,6 +17,7 @@ use Nwidart\Modules\Facades\Module;
 use Ronu\RestGenericClass\Core\Contracts\HasRestRelations;
 use Ronu\RestGenericClass\Core\Services\Support\CacheCoordinator;
 use Ronu\RestGenericClass\Core\Services\Support\ColumnGuard;
+use Ronu\RestGenericClass\Core\Services\Support\EntityKey;
 use Ronu\RestGenericClass\Core\Services\Support\AggregateCoordinator;
 use Ronu\RestGenericClass\Core\Services\Support\AggregatePolicyResolver;
 use Ronu\RestGenericClass\Core\Services\Support\AggregateSpecParser;
@@ -701,8 +702,9 @@ class BaseService
      */
     public function create(array $params): array
     {
-        if (isset($params[strtolower($this->modelClass::MODEL)]) || array_key_exists(0, $params)) {
-            $params = $params[strtolower($this->modelClass::MODEL)] ?? $params;
+        $entityKey = EntityKey::find($params, $this->modelClass::MODEL);
+        if (($entityKey !== null && isset($params[$entityKey])) || array_key_exists(0, $params)) {
+            $params = $entityKey !== null ? $params[$entityKey] : $params;
             if (!$params)
                 throw new HttpException(400, 'Bad Request:Params must be an array or object value');
             $result = $this->save_array($params);
@@ -757,7 +759,12 @@ class BaseService
         $result = [];
         $result['success'] = true;
         foreach ($params as $index => $item) {
-            $id = $item[$this->modelClass->getPrimaryKey()];
+            $primaryKey = $this->modelClass->getPrimaryKey();
+            if (!is_array($item) || !isset($item[$primaryKey])) {
+                // It used to be a 500 "Undefined array key" (KI-BULK-UPDATE-UNVALIDATED).
+                throw new HttpException(400, "bulk-update: record {$index} has no '{$primaryKey}'.");
+            }
+            $id = $item[$primaryKey];
             $res = $this->update($item, $id, $validate);
             $result["models"][] = $res;
             if (!$res['success'])
