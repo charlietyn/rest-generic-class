@@ -106,7 +106,7 @@ Las llamadas PHP directas a `process_query()` y `process_all()` también admiten
 
 El `oper` principal determina qué clientes aparecen. El `attr`/`oper` de una métrica determina qué pedidos participan en ella. `_nested` conserva su significado para las relaciones cargadas y no copia filtros implícitamente a las métricas. Un cliente sin pedidos coincidentes permanece en el listado salvo que un filtro principal lo excluya.
 
-Se pueden solicitar varias métricas de la misma relación con filtros diferentes. Cada alias debe ser único, de hasta 63 caracteres, y no colisionar con columnas, accessors, relaciones, casts ni alias de `select`. Los alias explícitamente solicitados se hacen visibles en la respuesta, manteniendo oculta cualquier otra columna que el modelo oculte.
+Se pueden solicitar varias métricas de la misma relación con filtros diferentes. Cada alias debe ser único, de hasta 63 caracteres, y no colisionar con columnas, accessors, relaciones declaradas (`RELATIONS`), casts ni alias de `select`. Desde 3.1 un nombre de método de Eloquent (`all`, `query`, `save`…) es un alias válido, como en las librerías de NestJS. Los alias explícitamente solicitados se hacen visibles en la respuesta, manteniendo oculta cualquier otra columna que el modelo oculte.
 
 La paginación normal cuenta registros principales. La paginación por cursor admite ordenación por columnas originales; no admite ordenar por alias de métricas. Incluir un orden estable y su clave de desempate, como en las consultas habituales con cursor.
 

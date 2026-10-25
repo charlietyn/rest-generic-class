@@ -9,17 +9,20 @@ namespace Ronu\RestGenericClass\Core\Services;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Pagination\CursorPaginator;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Mail;
 use Nwidart\Modules\Facades\Module;
 use Ronu\RestGenericClass\Core\Contracts\HasRestRelations;
 use Ronu\RestGenericClass\Core\Services\Support\CacheCoordinator;
+use Ronu\RestGenericClass\Core\Services\Support\ColumnGuard;
 use Ronu\RestGenericClass\Core\Services\Support\AggregateCoordinator;
 use Ronu\RestGenericClass\Core\Services\Support\AggregatePolicyResolver;
 use Ronu\RestGenericClass\Core\Services\Support\AggregateSpecParser;
 use Ronu\RestGenericClass\Core\Services\Support\ExportCoordinator;
 use Ronu\RestGenericClass\Core\Services\Support\HierarchyCoordinator;
+use Ronu\RestGenericClass\Core\Services\Support\JsonParameter;
 use Ronu\RestGenericClass\Core\Services\Support\OperFilterPipeline;
 use Ronu\RestGenericClass\Core\Services\Support\PaginationCoordinator;
 use Ronu\RestGenericClass\Core\Services\Support\QueryBuilderPipeline;
@@ -127,7 +130,7 @@ class BaseService
     {
         return new OperFilterPipeline(
             $this->relationResolver(),
-            fn (Builder $query, array $params, string $condition, $modelClass): Builder => $this->applyFilters($query, $params, $condition, $modelClass),
+            fn (Builder $query, array $params, string $condition, $modelClass, int $depth = 1): Builder => $this->applyFilters($query, $params, $condition, $modelClass, $depth),
             fn (): int => $this->currentDepth,
             fn (int $depth): int => $this->currentDepth = $depth,
             fn (int $count): int => $this->conditionCount += $count,
@@ -293,7 +296,10 @@ class BaseService
                 $relatedModel = $this->getRelatedModel($this->modelClass, $baseRelation);
 
                 $with[$withKey] = function ($relationQuery) use ($filters, $relatedModel) {
-                    $this->applyOperTree($relationQuery, $filters, 'and', $relatedModel);
+                    // An eager-load constraint receives the Relation (BelongsTo, HasMany, ...), not its
+                    // builder: passing it as is was a TypeError for every relation (KI-NESTED-BELONGSTO).
+                    $builder = $relationQuery instanceof Relation ? $relationQuery->getQuery() : $relationQuery;
+                    $this->applyOperTree($builder, $filters, 'and', $relatedModel);
                 };
             } else {
                 $with[] = $withKey;
@@ -375,10 +381,9 @@ class BaseService
      */
     private function eq_attr(Builder $query, array|string $params): Builder
     {
-        if (is_string($params)) {
-            $params = json_decode($params);
-        }
+        $params = JsonParameter::decodeArray($params, 'attr');
         foreach ($params as $index => $parameter) {
+            ColumnGuard::assertQueryable($this->modelClass, (string)$index, 'filter');
             if (is_array($parameter)) {
                 $query = $query->whereIn($index, $parameter);
             } else
@@ -442,8 +447,6 @@ class BaseService
      *  - `notdate`
      *  - `null`
      *  - `not null`
-     *  - `exists`
-     *  - `not exists`
      *  - `regexp`
      *  - `not regexp`
      *
@@ -687,7 +690,9 @@ class BaseService
         $this->modelClass = new $this->modelClass;
         $this->modelClass->fill($attributes);
         $this->modelClass->save();
-        $result = ["success" => true, "model" => $this->modelClass->getAttributes()];
+        // Serialised like update()/destroy(): getAttributes() was the raw array, without $hidden or
+        // casts, so a create answered the password hash and every timestamp (KI-HIDDEN-ON-CREATE).
+        $result = ["success" => true, "model" => $this->modelClass->jsonSerialize()];
         return $result;
     }
 
@@ -774,8 +779,9 @@ class BaseService
         if (isset($params['relations'])) {
             $query = $this->relations($query, $params['relations'], $nested ? $params["oper"] : null);
         }
-        if (isset($params['select'])) {
-            $query = $query->select($params['select']);
+        $select = isset($params['select']) ? ColumnGuard::selectable($this->modelClass, (array)$params['select']) : null;
+        if ($select !== null) {
+            $query = $query->select($select);
         }
         return $query->findOrFail($id);
     }

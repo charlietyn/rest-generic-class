@@ -24,6 +24,7 @@ class RelationQueryFilter
             if ($field === '_relation' || $field === '_scenario') {
                 continue;
             }
+            $this->guard($query, (string) $field);
 
             if (is_array($value)) {
                 $query->whereIn($field, $value);
@@ -81,6 +82,7 @@ class RelationQueryFilter
 
         if (preg_match('/^(.+?)\s+(not\s+null|null)$/i', $condition, $m)) {
             $field = trim($m[1]);
+            $this->guard($query, $field);
             $op = strtolower(trim($m[2]));
 
             if ($op === 'null') {
@@ -94,6 +96,7 @@ class RelationQueryFilter
 
         if (preg_match('/^(.+?)\s+(not\s+between|between)\s+(.+)$/i', $condition, $m)) {
             $field = trim($m[1]);
+            $this->guard($query, $field);
             $op = strtolower(trim($m[2]));
             $values = array_map('trim', explode(',', $m[3]));
 
@@ -110,6 +113,7 @@ class RelationQueryFilter
 
         if (preg_match('/^(.+?)\s+(not\s+in|in)\s+(.+)$/i', $condition, $m)) {
             $field = trim($m[1]);
+            $this->guard($query, $field);
             $op = strtolower(trim($m[2]));
             $rawValues = trim($m[3], '[] ');
             $values = array_map('trim', explode(',', $rawValues));
@@ -132,6 +136,7 @@ class RelationQueryFilter
             }
 
             $field = trim(substr($condition, 0, $pos));
+            $this->guard($query, $field);
             $value = trim(substr($condition, $pos + strlen($op) + 2));
             $normalizedOp = strtolower($op);
 
@@ -151,6 +156,15 @@ class RelationQueryFilter
             }
 
             return;
+        }
+    }
+
+    /** The related model's hidden columns are not filterable here either (ColumnGuard). */
+    private function guard($query, string $field): void
+    {
+        $model = $query instanceof Relation ? $query->getRelated() : ($query instanceof Builder ? $query->getModel() : null);
+        if ($model) {
+            ColumnGuard::assertQueryable($model, $field, 'filter');
         }
     }
 

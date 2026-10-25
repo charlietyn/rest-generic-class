@@ -112,11 +112,30 @@ final class OrderByRelationsTest extends TestCase
      * --------------------------------------------------------------------- */
     public function testLiteralTableColumnIsPassedThroughWhenNotARelationMethod(): void
     {
-        // 'foo_bar' no es método en OrderTestClient → se pasa tal cual al builder.
-        $query = OrderTestClient::query();
-        $this->applier()->apply($query, [['foo_bar.name' => 'desc']], OrderTestClient::class);
+        // 'foo_bar' no es método en OrderTestClient → se pasa tal cual al builder, pero solo sin
+        // filtering.strict_column_validation (desde 3.1 activo por defecto: otra tabla es un 400).
+        $container = Container::getInstance();
+        $previous = $container->bound('config') ? $container->make('config') : null;
+        $container->instance('config', new \Illuminate\Config\Repository([
+            'rest-generic-class' => ['filtering' => ['strict_column_validation' => false]],
+        ]));
 
-        $this->assertStringContainsString('order by "foo_bar"."name" desc', $query->toSql());
+        try {
+            $query = OrderTestClient::query();
+            $this->applier()->apply($query, [['foo_bar.name' => 'desc']], OrderTestClient::class);
+
+            $this->assertStringContainsString('order by "foo_bar"."name" desc', $query->toSql());
+        } finally {
+            $previous ? $container->instance('config', $previous) : $container->forgetInstance('config');
+        }
+    }
+
+    public function testLiteralTableColumnOfAnotherTableIsRejectedInStrictMode(): void
+    {
+        $this->expectException(HttpException::class);
+        $this->expectExceptionMessage("Column 'foo_bar.name' does not exist on clients.");
+
+        $this->applier()->apply(OrderTestClient::query(), [['foo_bar.name' => 'desc']], OrderTestClient::class);
     }
 
     /* ---------------------------------------------------------------------

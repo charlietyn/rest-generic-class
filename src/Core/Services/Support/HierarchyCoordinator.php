@@ -74,6 +74,7 @@ class HierarchyCoordinator
         $maxDepth = $hierarchyConfig['max_depth'];
         $filterMode = $hierarchyConfig['filter_mode'];
         $includeEmptyChildren = $hierarchyConfig['include_empty_children'];
+        $params = $this->withTreeSelect($params, $primaryKey, $hierarchyFieldId);
 
         $query = $this->model->query();
         $query = ($this->processQuery)($params, $query);
@@ -83,7 +84,8 @@ class HierarchyCoordinator
             $allRecords,
             $filterMode,
             $hierarchyFieldId,
-            $primaryKey
+            $primaryKey,
+            $params
         );
 
         $tree = $this->buildTree(
@@ -123,6 +125,7 @@ class HierarchyCoordinator
         $maxDepth = $hierarchyConfig['max_depth'];
         $mode = $hierarchyConfig['mode'];
         $includeEmptyChildren = $hierarchyConfig['include_empty_children'];
+        $params = $this->withTreeSelect($params, $primaryKey, $hierarchyFieldId);
 
         $nested = $params['_nested'] ?? false;
         $query = $this->model->query();
@@ -447,7 +450,8 @@ class HierarchyCoordinator
         Collection $matchedRecords,
         string $filterMode,
         string $hierarchyFieldId,
-        string $primaryKey
+        string $primaryKey,
+        array $params = []
     ): Collection {
         if ($matchedRecords->isEmpty()) {
             return $matchedRecords;
@@ -458,18 +462,18 @@ class HierarchyCoordinator
                 return $matchedRecords;
 
             case 'with_ancestors':
-                return $this->addAncestorsToCollection($matchedRecords, $hierarchyFieldId, $primaryKey);
+                return $this->addAncestorsToCollection($matchedRecords, $hierarchyFieldId, $primaryKey, $params);
 
             case 'with_descendants':
-                return $this->addDescendantsToCollection($matchedRecords, $hierarchyFieldId, $primaryKey);
+                return $this->addDescendantsToCollection($matchedRecords, $hierarchyFieldId, $primaryKey, $params);
 
             case 'full_branch':
-                $withAncestors = $this->addAncestorsToCollection($matchedRecords, $hierarchyFieldId, $primaryKey);
-                return $this->addDescendantsToCollection($withAncestors, $hierarchyFieldId, $primaryKey);
+                $withAncestors = $this->addAncestorsToCollection($matchedRecords, $hierarchyFieldId, $primaryKey, $params);
+                return $this->addDescendantsToCollection($withAncestors, $hierarchyFieldId, $primaryKey, $params);
 
             case 'root_filter':
                 $rootRecords = $matchedRecords->filter(fn($record) => $record->{$hierarchyFieldId} === null);
-                return $this->addDescendantsToCollection($rootRecords, $hierarchyFieldId, $primaryKey);
+                return $this->addDescendantsToCollection($rootRecords, $hierarchyFieldId, $primaryKey, $params);
 
             default:
                 return $matchedRecords;
@@ -479,7 +483,8 @@ class HierarchyCoordinator
     private function addAncestorsToCollection(
         Collection $records,
         string $hierarchyFieldId,
-        string $primaryKey
+        string $primaryKey,
+        array $params = []
     ): Collection {
         $existingIds = $records->pluck($primaryKey)->toArray();
         $ancestorIds = [];
@@ -488,13 +493,15 @@ class HierarchyCoordinator
             $parentId = $record->{$hierarchyFieldId};
             while ($parentId !== null && !in_array($parentId, $existingIds) && !in_array($parentId, $ancestorIds)) {
                 $ancestorIds[] = $parentId;
-                $parent = $this->model->query()->find($parentId);
+                $parent = $this->model->query()
+                    ->select([$primaryKey, $hierarchyFieldId])
+                    ->find($parentId);
                 $parentId = $parent ? $parent->{$hierarchyFieldId} : null;
             }
         }
 
         if (!empty($ancestorIds)) {
-            $ancestors = $this->model->query()
+            $ancestors = $this->addedNodesQuery($params)
                 ->whereIn($primaryKey, $ancestorIds)
                 ->get();
             $records = $records->merge($ancestors)->unique($primaryKey);
@@ -506,7 +513,8 @@ class HierarchyCoordinator
     private function addDescendantsToCollection(
         Collection $records,
         string $hierarchyFieldId,
-        string $primaryKey
+        string $primaryKey,
+        array $params = []
     ): Collection {
         $existingIds = $records->pluck($primaryKey)->toArray();
         $allDescendantIds = [];
@@ -528,13 +536,61 @@ class HierarchyCoordinator
         }
 
         if (!empty($allDescendantIds)) {
-            $descendants = $this->model->query()
+            $descendants = $this->addedNodesQuery($params)
                 ->whereIn($primaryKey, $allDescendantIds)
                 ->get();
             $records = $records->merge($descendants)->unique($primaryKey);
         }
 
         return $records;
+    }
+
+    /**
+     * The nodes a filter_mode adds are read with the same select and relations as the matched ones.
+     * They used to be re-read as full rows, so one tree mixed two column sets (KI-HIERARCHY-SELECT).
+     */
+    private function addedNodesQuery(array $params): \Illuminate\Database\Eloquent\Builder
+    {
+        $query = $this->model->query();
+
+        if (isset($params['relations'])) {
+            $query = ($this->applyRelations)($query, $params['relations'], null);
+        }
+
+        if (isset($params['select'])) {
+            $query = $query->select($params['select']);
+        }
+
+        return $query;
+    }
+
+    /**
+     * $params with a select the tree can be built from: hidden columns dropped, unknown ones a 400
+     * (ColumnGuard), and the primary key and the hierarchy field always present.
+     */
+    private function withTreeSelect(array $params, string $primaryKey, string $hierarchyFieldId): array
+    {
+        if (!isset($params['select'])) {
+            return $params;
+        }
+
+        $select = ColumnGuard::selectable($this->model, (array) $params['select']);
+        if ($select === null) {
+            unset($params['select']);
+            return $params;
+        }
+
+        $whole = in_array('*', $select, true) || in_array($this->model->getTable() . '.*', $select, true);
+        if (!$whole) {
+            foreach ([$hierarchyFieldId, $primaryKey] as $key) {
+                if (!in_array($key, $select, true)) {
+                    array_unshift($select, $key);
+                }
+            }
+        }
+        $params['select'] = $select;
+
+        return $params;
     }
 
     public function buildTree(
@@ -631,9 +687,7 @@ class HierarchyCoordinator
 
     private function paginateRoots(array $tree, mixed $pagination): array
     {
-        if (is_string($pagination)) {
-            $pagination = json_decode($pagination, true);
-        }
+        $pagination = JsonParameter::decode($pagination, 'pagination');
 
         $pagination = is_array($pagination) ? $pagination : [];
         $totalRoots = count($tree);

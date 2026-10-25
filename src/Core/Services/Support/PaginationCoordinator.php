@@ -45,8 +45,7 @@ class PaginationCoordinator
     private function normalize(mixed $pagination): array
     {
         if (is_string($pagination)) {
-            $decoded = json_decode($pagination, true);
-            return is_array($decoded) ? $decoded : [];
+            return JsonParameter::decodeArray($pagination, 'pagination');
         }
 
         return is_array($pagination) ? $pagination : [];

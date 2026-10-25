@@ -5,8 +5,10 @@
  */
 namespace Ronu\RestGenericClass\Core\Traits;
 
+use Ronu\RestGenericClass\Core\Services\Support\ColumnGuard;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 trait HasDynamicFilter
 {
@@ -51,22 +53,32 @@ trait HasDynamicFilter
      * - `notdate`
      * - `null`
      * - `not null`
-     * - `exists`
-     * - `not exists`
      * - `regexp`
      * - `not regexp`
+     *
+     * `exists` / `not exists` are not operators since 3.1 (they were always a TypeError: a condition
+     * string can only name a column, never the sub-query whereExists needs). "Has related rows" is a
+     * relation filter: `{"oper": {"devices": {"and": ["id|>|0"]}}}`.
      *
      * The value can be a single value, or an array of values.
      * @param Builder $query
      * @param array $params
      * @param string $condition
      * @param mixed $model Model instance or class for determining table name
+     * @param int $depth Nesting level of $params: the root of oper is 1, each relation hop and each
+     *                   nested and/or group adds one (filtering.max_depth, as in the NestJS libraries)
      * @return Builder
      */
-    private function applyFilters($query, $params, $condition = "and", $model = null): Builder
+    private function applyFilters($query, $params, $condition = "and", $model = null, int $depth = 1): Builder
     {
         if (is_string($params)) {
             $params = json_decode($params, true);
+        }
+
+        $maxDepth = $this->getFilterMaxDepth();
+        if ($depth > $maxDepth) {
+            // Only relation hops were counted, so {"and":{"and":…}} six levels deep passed a limit of 5.
+            throw new HttpException(400, "Maximum nesting depth ({$maxDepth}) exceeded.");
         }
 
         if (!($query instanceof Builder)) {
@@ -75,15 +87,17 @@ trait HasDynamicFilter
 
         // Determine table name for prefixing
         $tableName = $this->getTableName($query, $model);
+        // The model whose columns are named here: hidden ones are refused (ColumnGuard).
+        $filterModel = $this->getFilterModel($query, $model);
 
-        $postgresDriver = $query->getConnection()->getDriverName() === 'pgsql';
+        $driver = $query->getConnection()->getDriverName();
 
         foreach ($params as $logic => $conditions) {
             if (!in_array($logic, ['and', 'or'])) {
                 throw new HttpException(400, "Unsupported logical key '$logic'. Only 'and' and 'or' are allowed.");
             }
 
-            $query->{$condition === 'or' ? 'orWhere' : 'where'}(function ($subQuery) use ($conditions, $logic, $tableName) {
+            $query->{$condition === 'or' ? 'orWhere' : 'where'}(function ($subQuery) use ($conditions, $logic, $tableName, $filterModel, $driver, $depth) {
                 $laravelOperators = [
                     '=', '!=', '<>', '<', '>', '<=', '>=',
                     'like', 'not like', 'ilike', 'ilikeu', 'not ilike',
@@ -91,7 +105,6 @@ trait HasDynamicFilter
                     'between', 'not between', 'notbetween',
                     'date', 'not date', 'notdate',
                     'null', 'not null', 'notnull',
-                    'exists', 'not exists', 'notexists',
                     'regexp', 'not regexp'
                 ];
 
@@ -102,6 +115,10 @@ trait HasDynamicFilter
 
                             if (!in_array($operator, $laravelOperators)) {
                                 throw new HttpException(400, "The $operator value is not a valid operator.");
+                            }
+
+                            if ($filterModel) {
+                                ColumnGuard::assertQueryable($filterModel, $field, 'filter');
                             }
 
                             // Prefix field with table name if not already prefixed
@@ -115,12 +132,11 @@ trait HasDynamicFilter
                                 'notin', 'not in' => $subQuery->{$method . 'NotIn'}($field, (array)$value),
                                 'null' => $subQuery->{$method . 'Null'}($field),
                                 'notnull', 'not null' => $subQuery->{$method . 'NotNull'}($field),
-                                'exists' => $subQuery->{$method . 'Exists'}($field),
-                                'notexists', 'not exists' => $subQuery->{$method . 'NotExists'}($field),
                                 'between' => $subQuery->{$method . 'Between'}($field, $this->toBetweenArray($value)),
                                 'notbetween', 'not between' => $subQuery->{$method . 'NotBetween'}($field, $this->toBetweenArray($value)),
                                 'date' => $subQuery->{$method . 'Date'}($field, $value),
                                 'notdate', 'not date' => $subQuery->{$method . 'Date'}($field, '!=', $value),
+                                'regexp', 'not regexp' => $subQuery->{$method}($field, $this->regexpOperator($driver, strtolower($operator)), $value),
                                 'ilikeu' => $logic == 'or'
                                     ? $subQuery->orWhereRaw("unaccent({$field}) ILIKE unaccent(?)", ["%$value%"])
                                     : $subQuery->whereRaw("unaccent({$field}) ILIKE unaccent(?)", ["%$value%"]),
@@ -129,13 +145,49 @@ trait HasDynamicFilter
                         }
                     } else {
                         // Recursive call for nested conditions
-                        $this->applyFilters($subQuery, $conditions, $logic, null);
+                        $this->applyFilters($subQuery, $conditions, $logic, $filterModel, $depth + 1);
                     }
                 }
             });
         }
 
         return $query;
+    }
+
+    private function getFilterMaxDepth(): int
+    {
+        try {
+            return (int) config('rest-generic-class.filtering.max_depth', 5);
+        } catch (\Throwable $e) {
+            return 5;
+        }
+    }
+
+    /**
+     * The SQL operator of `regexp` / `not regexp` on `$driver` (the same translation as the
+     * NestJS libraries). PostgreSQL has no REGEXP keyword: forwarding it verbatim was a 500
+     * (KI-REGEXP-POSTGRES). SQLite and SQL Server have no regular-expression operator at all.
+     * `filtering.translate_regexp=false` forwards the operator verbatim, as before 3.1 (for a
+     * SQLite connection with a user-defined REGEXP function).
+     */
+    private function regexpOperator(string $driver, string $operator): string
+    {
+        $negated = $operator === 'not regexp';
+
+        try {
+            $translate = config('rest-generic-class.filtering.translate_regexp', true);
+        } catch (\Throwable $e) {
+            $translate = true;
+        }
+        if (!$translate) {
+            return $operator;
+        }
+
+        return match ($driver) {
+            'pgsql' => $negated ? '!~' : '~',
+            'mysql', 'mariadb' => $operator,
+            default => throw new HttpException(400, "The regexp operator is not supported on the {$driver} driver."),
+        };
     }
 
     /**
@@ -147,6 +199,18 @@ trait HasDynamicFilter
      */
     private function getTableName(Builder $query, $model = null): ?string
     {
+        // The builder's own model first: inside whereHas over a self relation (roles.father) Laravel
+        // aliases the inner table and sets that alias on the builder's model (laravel_reserved_N).
+        // The static table name bound every column to the OUTER row (KI-SELF-RELATION-FILTER).
+        try {
+            $builderModel = $query->getModel();
+            if ($builderModel && (!$model || is_a($builderModel, is_object($model) ? get_class($model) : $model))) {
+                return $builderModel->getTable();
+            }
+        } catch (\Throwable $e) {
+            // fall back to the given model
+        }
+
         if ($model) {
             if (is_string($model)) {
                 $modelInstance = new $model;
@@ -160,6 +224,29 @@ trait HasDynamicFilter
         // Fallback: get from query
         try {
             return $query->getModel()->getTable();
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * The model whose columns a filter names: the given one, else the builder's.
+     *
+     * @param Builder $query
+     * @param mixed $model
+     * @return Model|null
+     */
+    private function getFilterModel(Builder $query, $model = null): ?Model
+    {
+        if ($model instanceof Model) {
+            return $model;
+        }
+        if (is_string($model) && is_subclass_of($model, Model::class)) {
+            return new $model;
+        }
+
+        try {
+            return $query->getModel();
         } catch (\Throwable $e) {
             return null;
         }

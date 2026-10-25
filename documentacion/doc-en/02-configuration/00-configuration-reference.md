@@ -18,13 +18,16 @@ The package publishes a single configuration file: `config/rest-generic-class.ph
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `filtering.max_depth` | int | `5` | Maximum nesting depth for `oper` filters. |
+| `filtering.max_depth` | int | `5` | Maximum depth of `oper`: the root counts 1 and each relation hop and each nested `and`/`or` group adds 1 (groups too since 3.1). Beyond it: 400 "Maximum nesting depth (5) exceeded." |
 | `filtering.max_conditions` | int | `100` | Maximum number of filter conditions per request. |
 | `filtering.strict_relations` | bool | `true` | Require `const RELATIONS` on models (recommended). |
-| `filtering.allowed_operators` | array | (see config) | Allowed operators for `oper` filtering. |
-| `filtering.validate_columns` | bool | `true` | Validate column names before applying filters. |
-| `filtering.strict_column_validation` | bool | `true` | Enforce strict column validation. |
-| `filtering.column_cache_ttl` | int | `3600` | Cache TTL (seconds) for column lists. |
+| `filtering.allowed_operators` | array | (see config) | Informational: the filter validates against its own list (see [Basic usage](../03-usage/00-basic-usage.md#query-rules-v310)). No `exists`/`not exists` since 3.1. |
+| `filtering.validate_columns` | bool | `true` | Reserved: no effect today. |
+| `filtering.strict_column_validation` | bool | `true` | v3.1: a column the table does not have (or another table's, or an expression) is a 400 "Column '<col>' does not exist on <table>." in `oper`, `attr`/`eq`, `select` and `orderby`, relation endpoints included. `false`: it reaches the database as before. |
+| `filtering.allow_hidden_columns` | bool | `false` | v3.1: with `false`, a `$hidden` column (timestamps included) is a 400 "Column '<col>' of <Model> cannot be used to filter\|sort." and is silently dropped from `select`. `true`: previous behaviour. |
+| `filtering.reject_invalid_json` | bool | `true` | v3.1: `oper`, `attr`, `eq`, `orderby` or `pagination` with invalid JSON is a 400 "The <param> parameter is not valid JSON.". `false`: ignored as before. |
+| `filtering.translate_regexp` | bool | `true` | v3.1: `regexp`/`not regexp` → `~`/`!~` on PostgreSQL, `REGEXP` on MySQL/MariaDB, 400 on SQLite and SQL Server. `false`: the operator is forwarded verbatim. |
+| `filtering.column_cache_ttl` | int | `3600` | Reserved: the column listing is read once per connection and table for the life of the process. |
 
 ## Validation
 
